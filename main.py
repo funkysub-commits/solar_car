@@ -1,8 +1,8 @@
 import time
 import random
 import asyncio
-import bms_gui
-from smart_bms import SmartBMS, mac
+import display.bms_gui as bms_gui
+from battery_data.smart_bms import SmartBMS, mac
 
 
 bms = SmartBMS(mac)
