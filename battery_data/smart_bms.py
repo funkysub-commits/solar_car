@@ -451,21 +451,43 @@ class SmartBMS:
 
         # ── Pack‑level fields ────────────────────────────────────────
         info.total_voltage      = _u16(data, pb + 0) / 10.0        # reg 0x28
-        info.nominal_capacity   = _u16(data, pb + 2) / 100.0       # reg 0x29
+        info.current            = (_u16(data, pb + 2) - 30000) / 10.0  # reg 0x29: offset encoding!
         info.soc                = _u16(data, pb + 4) / 10.0        # reg 0x2A
         info.max_cell_voltage   = _u16(data, pb + 6) / 1000.0      # reg 0x2B
         info.min_cell_voltage   = _u16(data, pb + 8) / 1000.0      # reg 0x2C
         info.mos_temperature    = _u16(data, pb + 10) - 40          # reg 0x2D  (max temp)
         info.env_temperature    = _u16(data, pb + 12) - 40          # reg 0x2E  (min temp)
-        info.current            = _s16(data, pb + 14) / 100.0       # reg 0x2F
-        info.remaining_capacity = _u16(data, pb + 16) / 100.0      # reg 0x30
+        #                       pb + 14 = reg 0x2F (reserved)
+        info.remaining_capacity = _u16(data, pb + 16) / 10.0       # reg 0x30
         info.cell_count         = _u16(data, pb + 18)               # reg 0x31
         ntc_count               = _u16(data, pb + 20)               # reg 0x32
         mos                     = _u16(data, pb + 22)               # reg 0x33
         info.protection_status  = ProtectionStatus(_u16(data, pb + 24))  # reg 0x34
-        info.balance_status     = _u16(data, pb + 28)               # reg 0x36
+        #                       pb + 26 = reg 0x35 (fault flag)
+        #                       pb + 28 = reg 0x36 (balance flag)
         info.avg_cell_voltage   = _u16(data, pb + 30) / 1000.0     # reg 0x37
         info.delta_cell_voltage = _u16(data, pb + 32) / 1000.0     # reg 0x38
+
+        # Alarm info (regs 0x3A-0x3D = absolute byte offsets 116-123)
+        info.alarm_info = []
+        for i in range(4):
+            off = 116 + i * 2
+            if off + 2 <= len(data):
+                val = _u16(data, off)
+                if val:
+                    info.alarm_info.append(f"alarm{i+1}=0x{val:04X}")
+
+        # Balance state (regs 0x3E-0x41 = absolute byte offsets 124-131)
+        if 132 <= len(data):
+            info.cycle_count   = _u16(data, 124)                     # reg 0x3E (里程)
+            balance_on_flag    = _u16(data, 126)                     # reg 0x3F
+            # reg 0x40 = balance current: (raw-30000)*0.1
+            info.balance_status = _u16(data, 130)                    # reg 0x41
+            info.balance_active = balance_on_flag == 1
+
+        # MOS temperature (reg 0x42 = absolute byte offset 132)
+        if 134 <= len(data):
+            info.mos_temperature = _u16(data, 132) - 40              # reg 0x42
 
         info.charge_mos_on      = bool(mos & 0x01)
         info.discharge_mos_on   = bool(mos & 0x02)
@@ -529,23 +551,24 @@ class SmartBMS:
         info = self._info
         info.raw_settings_hex = data.hex()
 
-        info.balance_start_voltage = _u16(data, 2) / 1000.0      # reg 0x81
-        info.cell_ovp            = _u16(data, 20) / 1000.0        # reg 0x8A
-        info.cell_ovp_recovery   = _u16(data, 22) / 1000.0        # reg 0x8B
-        info.cell_uvp_recovery   = _u16(data, 26) / 1000.0        # reg 0x8D
-        info.cell_uvp            = _u16(data, 28) / 1000.0        # reg 0x8E
-        info.pack_ovp            = _u16(data, 30) / 10.0           # reg 0x8F
-        info.pack_uvp            = _u16(data, 34) / 10.0           # reg 0x91
-        info.charge_ocp          = _u16(data, 38) / 1000.0        # reg 0x93
-        info.discharge_ocp       = _u16(data, 42) / 1000.0        # reg 0x95
-        info.charge_otp          = _u16(data, 46) - 40             # reg 0x97
-        info.discharge_otp       = _u16(data, 54) - 40             # reg 0x9B
-        info.short_circuit_delay = _u16(data, 62)                  # reg 0x9F  (µs)
-        info.ocp_delay           = _u16(data, 64)                  # reg 0xA0  (ms)
+        info.nominal_capacity    = _u16(data, 0) / 10.0              # reg 0x80
+        info.balance_start_voltage = _u16(data, 2) / 1000.0          # reg 0x81
+        info.cell_ovp            = _u16(data, 20) / 1000.0           # reg 0x8A
+        info.cell_ovp_recovery   = _u16(data, 22) / 1000.0           # reg 0x8B
+        info.cell_uvp_recovery   = _u16(data, 26) / 1000.0           # reg 0x8D
+        info.cell_uvp            = _u16(data, 28) / 1000.0           # reg 0x8E
+        info.pack_ovp            = _u16(data, 30) / 10.0             # reg 0x8F
+        info.pack_uvp            = _u16(data, 34) / 10.0             # reg 0x91
+        info.charge_ocp          = _u16(data, 38) / 1000.0           # reg 0x93
+        info.discharge_ocp       = _u16(data, 42) / 1000.0           # reg 0x95
+        info.charge_otp          = _u16(data, 46) - 40               # reg 0x97
+        info.discharge_otp       = _u16(data, 54) - 40               # reg 0x9B
+        info.short_circuit_delay = _u16(data, 62)                    # reg 0x9F  (µs)
+        info.ocp_delay           = _u16(data, 64)                    # reg 0xA0  (ms)
 
         if len(data) > 72:
-            info.balance_start_voltage = _u16(data, 70) / 1000.0  # reg 0xA3
-            info.balance_delta = _u16(data, 72) / 1000.0          # reg 0xA4
+            info.balance_start_voltage = _u16(data, 70) / 1000.0     # reg 0xA3
+            info.balance_delta = _u16(data, 72) / 1000.0             # reg 0xA4
 
     # ── high-level data getters ──────────────────────────────────────────
 
