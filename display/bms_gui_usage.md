@@ -1,6 +1,8 @@
 # BMS GUI Usage
 
-A real-time telemetry dashboard for the solar car's battery management system and solar array, built with [Dear PyGui](https://github.com/hoffstadt/DearPyGui).
+A real-time telemetry dashboard for the solar car's battery management system, built with [Dear PyGui](https://github.com/hoffstadt/DearPyGui).
+
+The GUI is a thin viewer over [`BMSInfo`](../battery_data/smart_bms.py): the worker thread polls the BMS and pushes a `BMSInfo` snapshot via `bms_gui.update(info)`. Every field the BMS reports has a place in the dashboard.
 
 ## Installation
 
@@ -13,54 +15,100 @@ pip install dearpygui
 The dashboard must run on the **main thread**. Your data-producing code runs in a background worker passed via `worker_callback`.
 
 ```python
+import asyncio
 import time
-import random
 from display import bms_gui
+from battery_data.smart_bms import SmartBMS, mac
 
-def my_data_loop():
+bms = SmartBMS(mac)
+
+def data_loop():
     while True:
-        bms_gui.battery_soc(0.85)
-        bms_gui.battery_temp(28.4)
-        bms_gui.battery_cells([3.7 + random.uniform(-0.1, 0.1) for _ in range(16)])
-        bms_gui.solar_performance(array_watts=450.0, bus_amps=12.3, mppt_efficiency_pct=96.5)
-        time.sleep(0.5)
+        info = asyncio.run(bms.refresh_all())
+        bms_gui.update(info)
+        time.sleep(0.1)
 
-bms_gui.start_dashboard(num_cells=16, worker_callback=my_data_loop)
+asyncio.run(bms.connect())
+bms_gui.start_dashboard(
+    num_cells=asyncio.run(bms.get_cell_count()),
+    worker_callback=data_loop,
+)
 ```
 
 ## API Reference
 
-### `start_dashboard(num_cells=16, worker_callback=None)`
+### `start_dashboard(num_cells=16, worker_callback=None, sections=None)`
 
 Initializes the Dear PyGui context, builds the dashboard layout, and enters the render loop. Blocks until the window is closed, then calls `sys.exit()`.
 
-- `num_cells` — number of cells displayed in the telemetry matrix.
-- `worker_callback` — a zero-argument function. Started in a daemon thread before the render loop begins. Use it to push telemetry into the GUI via the write functions below.
+- `num_cells` — number of cells displayed in the cell matrix.
+- `worker_callback` — a zero-argument function. Started in a daemon thread before the render loop begins. Use it to push telemetry via `update()`.
+- `sections` — iterable of section names to include. `None` (default) includes every section. Pass a subset to slim the dashboard down. Unknown names raise `ValueError`.
 
-### Write functions (call from your worker thread)
+### `update(info: BMSInfo)`
 
-All write functions are thread-safe.
+Thread-safe. Replaces the current snapshot. Call this from your worker thread.
 
-| Function | Description |
+### `update_screen()`
+
+No-op, retained for backwards compatibility. The render loop redraws every frame automatically.
+
+## Sections
+
+`ALL_SECTIONS` lists every selectable section:
+
+| Section | Contents |
 | --- | --- |
-| `battery_soc(percentage_decimal)` | State of charge as a 0.0–1.0 decimal. Clamped to range. |
-| `battery_temp(celsius_value)` | Pack core temperature in °C. Display unit toggles via the Fahrenheit checkbox. |
-| `battery_cells(voltage_list)` | Per-cell voltages. Extra entries beyond `num_cells` are ignored. |
-| `solar_performance(array_watts, bus_amps, mppt_efficiency_pct)` | Solar array input power, bus current, and MPPT efficiency percentage. |
-| `update_screen()` | No-op. The render loop redraws every frame automatically. |
+| `options` | Top bar with the °C / °F toggle. |
+| `summary` | Top status header: pack voltage, current (signed), power, SoC bar. |
+| `pack` | Total voltage, current, power, SoC, SoH, remaining/nominal capacity, cycle count, cycle throughput. |
+| `cells` | Per-cell voltage table with min/max markers, balance indicator dots, and a summary row (min, max, avg, Δ). |
+| `temperatures` | MOS temperature, environment temperature, all NTC sensor readings. |
+| `mos` | Charge MOSFET, discharge MOSFET, active balancing state. |
+| `protection` | Grid of every `ProtectionStatus` flag — red when active, gray when inactive. |
+| `alarms` | Raw alarm strings reported by the BMS. |
+| `settings` | Configured thresholds read from the BMS: cell/pack OVP/UVP, OCP, OTP/UTP, balance start & delta, short-circuit and OCP delays. |
+| `identity` | Serial number, production date, MCU/BLE/machine firmware versions, comms protocol and mode. |
+| `heating` | Heating on/off, force-start, heating start/stop temperatures. |
 
-## Dashboard Sections
+### Examples
 
-- **System Options** — toggle temperature units between °C and °F.
-- **Solar Array & Powertrain Performance** — array watts, bus amps, MPPT efficiency.
-- **Battery Pack Status** — SoC progress bar and pack temperature.
-- **Individual Cell Telemetry Matrix** — per-cell voltage with color-coded balance status:
-  - Green "Nominal" — ≥ 3.5 V
-  - Orange "Low Balance" — 3.0–3.5 V
-  - Red "CRITICAL LOW" — < 3.0 V
+Show everything (the default):
+
+```python
+bms_gui.start_dashboard(num_cells=16, worker_callback=data_loop)
+```
+
+Minimal race-day view — just the summary and cells:
+
+```python
+bms_gui.start_dashboard(
+    num_cells=16,
+    worker_callback=data_loop,
+    sections=["options", "summary", "cells"],
+)
+```
+
+Diagnostic view — everything except the heating tab:
+
+```python
+bms_gui.start_dashboard(
+    num_cells=16,
+    worker_callback=data_loop,
+    sections=set(bms_gui.ALL_SECTIONS) - {"heating"},
+)
+```
+
+## Cell colour coding
+
+- Green "Nominal" — ≥ 3.3 V
+- Orange "Low" — 3.0–3.3 V
+- Red "CRITICAL" — < 3.0 V
+
+A `●` in the Balancing column means the BMS is actively balancing that cell.
 
 ## Notes
 
-- Dear PyGui requires the render loop on the main thread — do not call `start_dashboard` from a background thread.
+- Dear PyGui requires the render loop on the main thread — never call `start_dashboard` from a background thread.
 - The worker thread is a daemon, so it exits when the main process exits.
-- The internal cache initializes to a full pack (SoC 1.0, 3.7 V per cell, 25 °C) until your worker pushes real data.
+- The internal snapshot starts as a fresh `BMSInfo()` (zeros) until your worker pushes real data.
