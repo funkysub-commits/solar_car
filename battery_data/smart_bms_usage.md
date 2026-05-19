@@ -57,6 +57,46 @@ The scanner filters for BLE names containing `DL`, `SmartBMS`, `BMS`, `JBD`, or 
 
 ---
 
+## Safety — Restricted Commands
+
+To prevent accidental damage to the BMS, the following command groups are **blocked by default** and raise `BMSPermissionError` if called:
+
+- **Control Commands** — every `set_*`, `sync_time`
+- **AT / Identity Commands** — `rename_device`, `set_baud_rate`, `query_firmware_version`
+- **Raw Register Access** — `read_registers`, `write_register`, `write_registers`, `read_history`
+- **Module-Level** — `scan_for_bms`
+
+Reading runtime data, settings, and the `info` snapshot is always allowed.
+
+To opt in for the current process, call:
+
+```python
+from smart_bms import enable_unsafe_commands, unsafe_commands_enabled, BMSPermissionError
+
+enable_unsafe_commands(True)            # permit restricted commands
+enable_unsafe_commands(False)           # re-lock them
+print(unsafe_commands_enabled())        # current state
+```
+
+The flag is **process-wide and persists** until you clear it. Treat the call to `enable_unsafe_commands(True)` as a deliberate human-in-the-loop confirmation — do not call it from a library, on import, or unconditionally at script start.
+
+The bundled CLI (`python smart_bms.py …`) and `main.py` both ask for or perform that opt-in explicitly:
+
+- `main.py` prompts the operator at startup before launching the GUI.
+- `smart_bms.py` CLI enables it automatically because running the CLI is itself an explicit user action.
+
+Calling a restricted command without the opt-in:
+
+```python
+await bms.set_discharge_mos(True)
+# BMSPermissionError: 'SmartBMS.set_discharge_mos' is a restricted command and is blocked.
+# Call smart_bms.enable_unsafe_commands(True) to permit it.
+```
+
+`BMSPermissionError` subclasses `PermissionError`, so existing `except PermissionError` blocks catch it too.
+
+---
+
 ## All Available Functions
 
 ### Connection
@@ -117,6 +157,8 @@ Each triggers a fresh BLE read and returns the parsed value.
 
 ### Control Commands
 
+> ⚠ **Restricted** — blocked until `enable_unsafe_commands(True)` is called. See [Safety — Restricted Commands](#safety--restricted-commands).
+
 All return `True` if the BMS acknowledged.
 
 | Method | Description |
@@ -136,6 +178,8 @@ All return `True` if the BMS acknowledged.
 
 ### AT / Identity Commands
 
+> ⚠ **Restricted** — blocked until `enable_unsafe_commands(True)` is called.
+
 | Method | Description |
 |--------|-------------|
 | `rename_device(name)` | Change BLE advertised name (causes disconnect) |
@@ -143,6 +187,8 @@ All return `True` if the BMS acknowledged.
 | `query_firmware_version()` | Query BLE module firmware version |
 
 ### Raw Register Access
+
+> ⚠ **Restricted** — blocked until `enable_unsafe_commands(True)` is called.
 
 | Method | Returns | Description |
 |--------|---------|-------------|
@@ -153,9 +199,14 @@ All return `True` if the BMS acknowledged.
 
 ### Module-Level
 
+> ⚠ **Restricted** — blocked until `enable_unsafe_commands(True)` is called.
+
 | Function | Returns | Description |
 |----------|---------|-------------|
 | `scan_for_bms(timeout)` | `list[BLEDevice]` | Scan for Smart BMS devices |
+| `enable_unsafe_commands(enabled=True)` | `None` | Opt in to restricted commands for this process |
+| `unsafe_commands_enabled()` | `bool` | Whether restricted commands are currently allowed |
+| `BMSPermissionError` | — | Exception raised by gated calls when locked (subclass of `PermissionError`) |
 
 ---
 

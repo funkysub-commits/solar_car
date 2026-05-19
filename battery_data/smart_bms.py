@@ -28,6 +28,7 @@ Requirements: pip install bleak
 from __future__ import annotations
 
 import asyncio
+import functools
 import struct
 import logging
 from dataclasses import dataclass, field
@@ -40,10 +41,60 @@ __all__ = [
     "SmartBMS",
     "BMSInfo",
     "ProtectionStatus",
+    "BMSPermissionError",
+    "enable_unsafe_commands",
+    "unsafe_commands_enabled",
     "scan_for_bms",
 ]
 
 log = logging.getLogger("smart_bms")
+
+
+# ─── Restricted-command guard ────────────────────────────────────────────────
+# All write / control / AT / raw-register / module-level commands are blocked
+# by default. The caller must explicitly opt in once at startup by calling
+# enable_unsafe_commands(True). This prevents accidental writes to the BMS
+# (e.g. during interactive exploration, imports, or a runaway loop).
+
+class BMSPermissionError(PermissionError):
+    """Raised when a restricted command is called while unsafe mode is off."""
+
+
+_UNSAFE_ENABLED = False
+
+
+def enable_unsafe_commands(enabled: bool = True) -> None:
+    """Enable or disable restricted BMS commands for this process.
+
+    Restricted commands include every write/control method on :class:`SmartBMS`,
+    AT / identity commands, raw register access, and module-level scanning.
+    They are disabled by default; calling these while disabled raises
+    :class:`BMSPermissionError`.
+    """
+    global _UNSAFE_ENABLED
+    _UNSAFE_ENABLED = bool(enabled)
+
+
+def unsafe_commands_enabled() -> bool:
+    """Whether restricted BMS commands are currently permitted."""
+    return _UNSAFE_ENABLED
+
+
+def _require_unsafe(name: str) -> None:
+    if not _UNSAFE_ENABLED:
+        raise BMSPermissionError(
+            f"{name!r} is a restricted command and is blocked. "
+            "Call smart_bms.enable_unsafe_commands(True) to permit it."
+        )
+
+
+def _restricted(func):
+    """Decorator that gates an async method behind the unsafe-commands flag."""
+    @functools.wraps(func)
+    async def wrapper(*args, **kwargs):
+        _require_unsafe(func.__qualname__)
+        return await func(*args, **kwargs)
+    return wrapper
 
 mac = "41:18:12:01:18:4B"
 
@@ -246,6 +297,7 @@ def _s16(data: bytes, offset: int) -> int:
 
 
 # ─── Scanning ────────────────────────────────────────────────────────────────
+@_restricted
 async def scan_for_bms(timeout: float = 10.0) -> list[BLEDevice]:
     """Scan for Smart BMS devices and return a list of BleakScanner results."""
     devices = await BleakScanner.discover(timeout=timeout)
@@ -730,7 +782,10 @@ class SmartBMS:
         return self._info.password
 
     # ── Write / control commands ─────────────────────────────────────────
+    # All methods below are gated by enable_unsafe_commands(). They raise
+    # BMSPermissionError unless the caller has explicitly opted in.
 
+    @_restricted
     async def set_discharge_mos(self, on: bool) -> bool:
         """Turn the discharge MOSFET on or off.
 
@@ -740,12 +795,14 @@ class SmartBMS:
         resp = await self._send(_build_write_single(REG_FORCE_START, value))
         return len(resp) >= 8
 
+    @_restricted
     async def set_charge_mos(self, on: bool) -> bool:
         """Turn the charge MOSFET on or off."""
         value = 0x0001 if on else 0x0000
         resp = await self._send(_build_write_single(REG_FORCE_START + 1, value))
         return len(resp) >= 8
 
+    @_restricted
     async def set_balance(self, on: bool) -> bool:
         """Enable or disable active balancing.
 
@@ -755,18 +812,21 @@ class SmartBMS:
         resp = await self._send(_build_write_single(REG_BALANCE_STATE, value))
         return len(resp) >= 8
 
+    @_restricted
     async def set_heating(self, on: bool) -> bool:
         """Turn the heating pad on or off (reg 0xE3)."""
         value = 0x0001 if on else 0x0000
         resp = await self._send(_build_write_single(REG_HEATING, value))
         return len(resp) >= 8
 
+    @_restricted
     async def set_force_start(self, on: bool) -> bool:
         """Force-start the BMS (wake from sleep)."""
         value = 0x0001 if on else 0x0000
         resp = await self._send(_build_write_single(REG_FORCE_START, value))
         return len(resp) >= 8
 
+    @_restricted
     async def set_password(self, new_password: str) -> bool:
         """Change the BMS control password (max 6 ASCII characters).
 
@@ -778,6 +838,7 @@ class SmartBMS:
         resp = await self._send(cmd)
         return len(resp) >= 8
 
+    @_restricted
     async def sync_time(self, year: int, month: int, day: int,
                         hour: int, minute: int, second: int) -> bool:
         """Synchronise the BMS real-time clock.
@@ -793,26 +854,31 @@ class SmartBMS:
         resp = await self._send(cmd)
         return len(resp) >= 8
 
+    @_restricted
     async def set_cell_ovp(self, voltage_mv: int) -> bool:
         """Set cell over-voltage protection threshold (millivolts)."""
         resp = await self._send(_build_write_single(0x008A, voltage_mv))
         return len(resp) >= 8
 
+    @_restricted
     async def set_cell_uvp(self, voltage_mv: int) -> bool:
         """Set cell under-voltage protection threshold (millivolts)."""
         resp = await self._send(_build_write_single(0x008E, voltage_mv))
         return len(resp) >= 8
 
+    @_restricted
     async def set_charge_ocp(self, current_x1000: int) -> bool:
         """Set charge over-current protection (value in mA, e.g. 28800 = 28.8 A)."""
         resp = await self._send(_build_write_single(0x0093, current_x1000))
         return len(resp) >= 8
 
+    @_restricted
     async def set_discharge_ocp(self, current_x1000: int) -> bool:
         """Set discharge over-current protection (value in mA, e.g. 31500 = 31.5 A)."""
         resp = await self._send(_build_write_single(0x0095, current_x1000))
         return len(resp) >= 8
 
+    @_restricted
     async def set_comm_mode(self, mode: int) -> bool:
         """Set communication mode / protocol type (reg 0xD1).
 
@@ -822,7 +888,9 @@ class SmartBMS:
         return len(resp) >= 8
 
     # ── Device identity / AT commands ────────────────────────────────────
+    # Gated by enable_unsafe_commands(). See BMSPermissionError.
 
+    @_restricted
     async def rename_device(self, new_name: str) -> None:
         """Change the BLE advertised name (AT+NAME=…).
 
@@ -830,10 +898,12 @@ class SmartBMS:
         """
         await self._write_at_command(f"AT+NAME={new_name}")
 
+    @_restricted
     async def set_baud_rate(self, baud: int) -> None:
         """Change the UART baud rate via AT command (AT+BAND=…)."""
         await self._write_at_command(f"AT+BAND={baud}")
 
+    @_restricted
     async def query_firmware_version(self) -> Optional[str]:
         """Query the BLE module firmware version (AT+VER=?).
 
@@ -849,16 +919,20 @@ class SmartBMS:
             return None
 
     # ── Raw register access ──────────────────────────────────────────────
+    # Gated by enable_unsafe_commands(). See BMSPermissionError.
 
+    @_restricted
     async def read_registers(self, address: int, length: int) -> bytes:
         """Read arbitrary registers. Returns the raw payload bytes."""
         return await self._read_registers(address, length)
 
+    @_restricted
     async def write_register(self, address: int, value: int) -> bool:
         """Write a single 16-bit register. Returns True on ACK."""
         resp = await self._send(_build_write_single(address, value))
         return len(resp) >= 8
 
+    @_restricted
     async def write_registers(self, address: int, count: int, data_hex: str) -> bool:
         """Write multiple registers using D210. Returns True on ACK."""
         resp = await self._send(_build_write_multi(address, count, data_hex))
@@ -866,6 +940,7 @@ class SmartBMS:
 
     # ── History ──────────────────────────────────────────────────────────
 
+    @_restricted
     async def read_history(self) -> bytes:
         """Read the history/fault log block (0x63–0x7E).
 
@@ -885,6 +960,9 @@ async def _cli_main():
     parser.add_argument("--loop", "-l", type=float, default=0,
                         help="Repeat every N seconds (0 = once)")
     args = parser.parse_args()
+
+    # Running the CLI is itself an explicit opt-in; permit the BLE scan.
+    enable_unsafe_commands(True)
 
     if args.scan or not args.address:
         devices = await scan_for_bms()
