@@ -1,0 +1,370 @@
+pages: 4
+metadata: {'format': 'PDF 1.7', 'title': '', 'author': '', 'subject': '', 'keywords': '', 'creator': '', 'producer': '', 'creationDate': '', 'modDate': '', 'trapped': '', 'encryption': None}
+============================================================
+
+--- PAGE 1 (1412 chars text) ---
+EZkontrol MCU to Meter CAN Protocols
+V1.1 20230727
+Golden Motor Technology Co., Ltd.
+1 / 4
+1. Overview
+This standard specifies the communication protocol between the Motor Control Unit (MCU)
+and Meter.
+2. Communication Protocol Specifications
+I.
+Data Link Layer
+Bus communication rate: 250Kbps
+Please refer to CAN2.0B and SAE J1939 standards for data link layer specifications,
+please refer to the below allocation table for 29-bit identifier of the CAN extension
+frame：
+IDENTIFIER
+11BITS
+SRR
+IDE
+PRIORITY
+R
+DP
+PDU FORMAT(PF)
+SRR
+IDE
+3
+2
+1
+1
+1
+8
+7
+6
+5
+4
+3
+31
+30
+29
+28
+27
+26
+25
+24
+23
+22
+21
+20
+19
+18
+IDENTIFIER EXTENSION
+18BITS
+PF
+PDU SPECIFIC(PS)
+SOURCE ADDRESS(SA)
+2
+1
+8
+7
+6
+5
+4
+3
+2
+1
+8
+7
+6
+5
+4
+3
+2
+1
+17
+16
+15
+14
+13
+12
+11
+10
+9
+8
+7
+6
+5
+4
+3
+2
+1
+0
+PRIORITY is 3-bit and has up to 8 configurations.
+R is typically set at 0
+DP current value set is 0
+PF (8-bit) message
+PS (8-bit) target address or group extension
+SA (8-bit) source address from where the message was sent
+›Each node that is connected to the network has a name and address, which is used to
+identify the function of the node and arbitrate the address, and the address is used for
+the data communication of the node
+›Each node has at least one function. There may be more than one node with the same
+function, or one node may have more than one function
+›For multibyte data, use a small-end approach, such as 4660=0x1234, sending 0x34
+first, then 0x12
+
+[page has 2 embedded images]
+
+--- PAGE 2 (1545 chars text) ---
+EZkontrol MCU to Meter CAN Protocols
+V1.1 20230727
+Golden Motor Technology Co., Ltd.
+2 / 4
+II.
+Protocol Data Unit (PDU)
+PDU Specific (PS) protocol data unit details: PS is an 8-bit field description that is
+determined by the PDU FORMAT. It is up to the PF to decide whether the PS is a
+destination cell address or a group extension. If the value of the PF field is less than
+240, the PS field represents the destination cell address. If the value of the PF field is
+within the range of 240 to 255, then the PS field represents the group expansion value.
+PDU Format (PF) Field
+PDU Specified (PS) Field
+PDU1 Format
+0~239
+Destination Address (DA)
+PDU2 Format
+240~255
+Group Extension (GE)
+III.
+CAN Network Address Assignment Table
+If the CAN bus node address is already defined in J1939, try to use the address already
+defined in J1939. ECU with multiple functions can use multiple addresses or redefine
+new addresses; For newly defined addresses, 208~231, which are reserved addresses
+for road vehicles, should be used. The message number is the space allocated to each
+node for the purpose-addressing message number.
+NODE
+ADDRESS
+Display Instrument (METER)
+23(0x17)
+Vehicle Control Unit (VCU)
+208(0xD0)
+Motor Control Unit (MCU)1
+239(0xEF)
+Motor Control Unit (MCU)2
+240(0xF0)
+Motor Control Unit (MCU)3
+241(0xF1)
+Motor Control Unit (MCU)4
+242(0xF2)
+Battery Management System (BMS)1
+243(0xF3)
+Battery Management System (BMS)2
+244(0xF4)
+Battery Management System (BMS)3
+245(0xF5)
+Battery Management System (BMS)4
+246(0xF6)
+GLOBAL (ANY NODE)
+255(0xFF)
+
+[page has 3 embedded images]
+
+--- PAGE 3 (838 chars text) ---
+EZkontrol MCU to Meter CAN Protocols
+V1.1 20230727
+Golden Motor Technology Co., Ltd.
+3 / 4
+3. Messages
+I.
+Message I
+OUT
+IN
+ID(0x180117EF)
+Latency(ms)
+MCU
+METER
+P
+R
+DP
+PF
+PS
+SA
+100
+6
+0
+0
+1(0x01)
+23(0x11)
+239(0xEF)
+(N.B.1)
+DATA
+BYTE
+BIT
+DESCRIPTION
+RESOLUTION
+OFFSET
+RANGE
+0
+Bus Voltage
+0.1V/bit
+0
+0～300V
+1
+2
+Bus Current
+0.1A/bit
+-3200A
+-3200～3200A
+3
+4
+Phase Current
+0.1A/bit
+-3200A
+-3200～3200A
+5
+6
+Speed
+0.1rpm/bit
+-32000rpm
+-32000～32000rpm
+7
+II.
+Message II
+OUT
+IN
+ID (0x180217EF）
+Polling period (ms)
+MCU
+METER
+P
+R
+DP
+PF
+PS
+SA
+100
+6
+0
+0
+2(0x02)
+23(0x17)
+239(0xEF)
+(N.B.1)
+DATA
+BYTE
+BIT
+ITEM
+RESOLUTION
+OFFSET
+RANGE
+0
+Controller Temperature
+1℃/bit
+-40℃
+-40～210℃
+1
+Motor Temperature
+1℃/bit
+-40℃
+-40～210℃
+2
+Accelerator Opening
+1%/bit
+0
+0～100%
+3
+2-0
+STATUS
+Gear
+0
+0：NO
+1：R
+2：N
+3：D1
+4：D2
+5：D3
+6：S
+7：P
+3
+Brake
+0：No brake
+1：Brake
+0：Stope
+1：Drive
+
+[page has 2 embedded images]
+
+--- PAGE 4 (693 chars text) ---
+EZkontrol MCU to Meter CAN Protocols
+V1.1 20230727
+Golden Motor Technology Co., Ltd.
+4 / 4
+6-4
+Operation Mode
+2：Cruise
+3：EBS
+4：Hold
+7
+DC Contactor
+0：OFF
+1：ON
+4
+0
+ERROR
+Overcurrent
+0
+0：NORMAL
+1：ERROR
+1
+Overload
+2
+Overvoltage
+3
+Undervoltage
+4
+Controller Overheat
+5
+Motor Overheat
+6
+Motor Stalled
+7
+Motor Out of phase
+5
+0
+Motor Sensor
+1
+Motor AUX Sensor
+2
+Encoder Misaligned
+3
+Anti-Runaway Engaged
+4
+Main Accelerator
+5
+AUX Accelerator
+6
+Pre-charge
+7
+DC Contactor
+6
+0
+Power valve
+1
+Current Sensor
+2
+Auto-tune
+3
+RS485
+4
+CAN
+5
+Software
+6
+7
+7
+0
+1
+2
+3
+7-4
+Life signal
+0
+0～0xFF
+N.B. 1 SA values can be set by MCU host. Setting parameters: controller number, default SA = controller number = 239
+(0xEF)
+
+[page has 2 embedded images]
