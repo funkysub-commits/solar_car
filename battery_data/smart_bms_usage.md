@@ -118,10 +118,14 @@ Also supports `async with SmartBMS(mac) as bms:` context manager.
 | `refresh_settings2()` | 0xDF–0xEF | heating start/stop temperatures, balance cutoff voltage, balance-board enable flag |
 | `refresh_comm_info()` | 0xD1–0xD2 | `comm_mode`, `comm_protocol_type` |
 | `refresh_status()` | 0xD7–0xD8 | `force_start_on`, live `heating_on` |
-| `refresh_all()` | all of the above | every field populated by the methods above (~1 s of BLE traffic) |
+| `refresh_sn()` | 0x57–0x62 | `sn_code` (24-byte ASCII) |
+| `refresh_versions()` | 0xA9–0xC8 | `ble_version`, `mcu_version`, `machine_version` |
+| `refresh_product_date()` | 0xCC–0xCD | `production_date` (`"20YY-MM-DD"`) |
+| `refresh_identity()` | SN + versions + product date | the three identity blocks above in one call |
+| `refresh_all()` | all of the above | every field populated by the methods above (~1.5 s of BLE traffic) |
 | `info` | (no I/O) | last-read snapshot |
 
-For polling loops, the runtime block changes every cycle while the settings / heating / comm blocks rarely change — call `refresh()` at the loop rate and `refresh_all()` (or the slow blocks individually) every few seconds.
+For polling loops, the runtime block changes every cycle while settings / heating / comm rarely change and identity never changes once connected — call `refresh()` at the loop rate, the slow blocks every few seconds, and `refresh_identity()` once at startup.
 
 ### Runtime Getters
 
@@ -158,7 +162,6 @@ Each triggers a fresh BLE read and returns the parsed value.
 | `get_cell_uvp()` | `float` | Cell under-voltage protection threshold (V) |
 | `get_charge_ocp()` | `float` | Charge over-current protection (A) |
 | `get_discharge_ocp()` | `float` | Discharge over-current protection (A) |
-| `get_password()` | `str` | Current control password |
 
 ### Control Commands
 
@@ -395,10 +398,18 @@ All parsed data lives in a `BMSInfo` dataclass. Full field reference:
 - `ocp_delay` — OCP delay (ms)
 
 ### Identity
-- `sn_code` — serial number (ASCII from regs 0x57–0x62)
-- `password` — control password
-- `production_date` — manufacturing date
-- `mcu_version` / `ble_version` / `machine_version` — firmware versions
+- `sn_code` — serial number (ASCII from regs 0x57–0x62, read via `refresh_sn()`)
+- `production_date` — manufacturing date as `"20YY-MM-DD"` (regs 0xCC–0xCD, read via `refresh_product_date()`)
+- `ble_version` / `mcu_version` / `machine_version` — firmware version strings (regs 0xA9–0xC8, read via `refresh_versions()`; `mcu_version` is byte-reversed to match the app)
+
+### Heating & Force-Start
+- `heating_on` — heating element currently on (regs 0xE3 or 0xD8)
+- `heating_start_temp` / `heating_stop_temp` — configured heating thresholds (°C)
+- `force_start_on` — force-start flag (reg 0xD7)
+
+### Communication
+- `comm_mode` — communication mode register (reg 0xD1)
+- `comm_protocol_type` — protocol-type register (reg 0xD2)
 
 ### Raw Data
 - `raw_runtime_hex` — hex string of the full runtime register block

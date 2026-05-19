@@ -216,12 +216,10 @@ def _build_pack_tab() -> None:
                 _kv("Current",         "pack_current",   "0.00 A")
                 _kv("Power",           "pack_power",     "0.0 W",    "accent_theme")
                 _kv("State of charge", "pack_soc",       "0.0 %",    "nominal_theme")
-                _kv("State of health", "pack_soh",       "0 %",      "nominal_theme")
             with dpg.group():
                 _kv("Remaining capacity", "pack_remaining",  "0.00 Ah")
                 _kv("Nominal capacity",   "pack_nominal",    "0.00 Ah")
                 _kv("Cycle count",        "pack_cycles",     "0")
-                _kv("Cycle throughput",   "pack_cycle_cap",  "0.00 Ah")
 
 
 def _build_cells_tab(num_cells: int) -> None:
@@ -339,9 +337,7 @@ def _build_settings_tab() -> None:
             ("Charge OCP",          "set_charge_ocp"),
             ("Discharge OCP",       "set_discharge_ocp"),
             ("Charge OTP",          "set_charge_otp"),
-            ("Charge UTP",          "set_charge_utp"),
             ("Discharge OTP",       "set_discharge_otp"),
-            ("Discharge UTP",       "set_discharge_utp"),
             ("Balance start",       "set_balance_start"),
             ("Balance delta",       "set_balance_delta"),
             ("Short-circuit delay", "set_sc_delay"),
@@ -409,11 +405,9 @@ def _update_pack(info: BMSInfo) -> None:
     _set("pack_current",  f"{info.current:+.10g} A")
     _set("pack_power",    f"{info.power:.10g} W")
     _set("pack_soc",      f"{info.soc:.10g} %")
-    _set("pack_soh",      f"{info.soh} %")
     _set("pack_remaining",f"{info.remaining_capacity:.10g} Ah")
     _set("pack_nominal",  f"{info.nominal_capacity:.10g} Ah")
     _set("pack_cycles",   str(info.cycle_count))
-    _set("pack_cycle_cap",f"{info.cycle_capacity:.10g} Ah")
 
 
 def _update_cells(info: BMSInfo) -> None:
@@ -495,9 +489,7 @@ def _update_settings(info: BMSInfo) -> None:
     _set("set_charge_ocp",        f"{info.charge_ocp:.10g} A")
     _set("set_discharge_ocp",     f"{info.discharge_ocp:.10g} A")
     _set("set_charge_otp",        _temp_str(info.charge_otp))
-    _set("set_charge_utp",        _temp_str(info.charge_utp))
     _set("set_discharge_otp",     _temp_str(info.discharge_otp))
-    _set("set_discharge_utp",     _temp_str(info.discharge_utp))
     _set("set_balance_start",     f"{info.balance_start_voltage:.10g} V")
     _set("set_balance_delta",     f"{info.balance_delta * 1000:.10g} mV")
     _set("set_sc_delay",          f"{info.short_circuit_delay} µs")

@@ -132,6 +132,12 @@ REG_COMM_INFO_START = 0x00D1   # comm mode + protocol type (2 regs back-to-back)
 REG_COMM_INFO_LEN   = 0x0002
 REG_STATUS_START    = 0x00D7   # force-start state + heating state (2 regs)
 REG_STATUS_LEN      = 0x0002
+REG_VERSION_START   = 0x00A9   # BLE / MCU / machine version strings (ASCII)
+REG_VERSION_LEN     = 0x0020   # 32 registers = 64 bytes (16 + 16 + 32)
+REG_PRODUCT_DATE_START = 0x00CC   # production date (yy/mm/dd as 3 bytes)
+REG_PRODUCT_DATE_LEN   = 0x0002   # 2 registers = 4 bytes
+REG_SN_START        = 0x0057   # serial number (12 regs = 24 ASCII bytes)
+REG_SN_LEN          = 0x000C
 REG_LAST_BATT_START = 0x003E   # last battery info
 REG_LAST_BATT_LEN   = 0x0008   # 8 registers
 REG_HISTORY_START   = 0x0063   # history block
@@ -185,9 +191,7 @@ class BMSInfo:
     remaining_capacity: float = 0.0     # Ah
     nominal_capacity: float = 0.0       # Ah
     soc: float = 0.0                        # %  state of charge
-    soh: int = 0                        # %  state of health
     cycle_count: int = 0
-    cycle_capacity: float = 0.0         # Ah  cumulative charge throughput
 
     # ── Cells ──
     cell_count: int = 0
@@ -224,16 +228,13 @@ class BMSInfo:
     charge_ocp: float = 0.0            # A  charge over-current protect
     discharge_ocp: float = 0.0         # A  discharge over-current protect
     charge_otp: float = 0.0            # °C
-    charge_utp: float = 0.0            # °C
     discharge_otp: float = 0.0         # °C
-    discharge_utp: float = 0.0         # °C
     balance_start_voltage: float = 0.0 # V  start balancing above this
     balance_delta: float = 0.0         # V  balance when delta exceeds this
     short_circuit_delay: int = 0       # µs
     ocp_delay: int = 0                 # ms
 
     # ── Identity ──
-    password: str = "123456"
     production_date: str = ""
     sn_code: str = ""
     mcu_version: str = ""
@@ -574,11 +575,7 @@ class SmartBMS:
                 if raw != 0xFF and raw != 0xFFFF:
                     info.temperatures.append(raw - 40)
 
-        # ── SN code (regs 0x57–0x5D, ASCII) ──────────────────────────
-        sn_off = 0x57 * 2  # byte offset 174
-        if sn_off + 14 <= len(data):
-            raw_sn = data[sn_off:sn_off + 14]
-            info.sn_code = raw_sn.decode("ascii", errors="replace").rstrip("\x00")
+        # SN code is read separately via _parse_sn() — see refresh_identity().
 
     def _parse_settings(self, data: bytes):
         """Parse the 0x80 settings block into self._info.
@@ -674,6 +671,47 @@ class SmartBMS:
         info.force_start_on = _u16(data, 0) == 1
         info.heating_on     = _u16(data, 2) == 1
 
+    @staticmethod
+    def _ascii_strip(data: bytes) -> str:
+        """Decode ASCII, drop trailing NULs and stray '?' chars (matches the
+        app's ``delectZero`` + '?'-filter behaviour in ``analyVersionDataInfo``)."""
+        s = data.decode("ascii", errors="replace").rstrip("\x00")
+        return s.replace("?", "")
+
+    def _parse_versions(self, data: bytes):
+        """Parse the 64-byte version block (regs 0xA9–0xC8).
+
+        Layout from ``DeviceWorkInfo.analyVersionDataInfo``:
+          bytes  0–16 → BLE-side version (ASCII, '?' stripped)
+          bytes 16–32 → MCU version (ASCII, then byte-reversed)
+          bytes 32–64 → machine / product code (ASCII, '?' stripped)
+        """
+        if len(data) < 64:
+            return
+        info = self._info
+        info.ble_version     = self._ascii_strip(data[0:16])
+        info.mcu_version     = self._ascii_strip(data[16:32])[::-1]   # app reverses
+        info.machine_version = self._ascii_strip(data[32:64])
+
+    def _parse_product_date(self, data: bytes):
+        """Parse the 4-byte production-date block (regs 0xCC–0xCD).
+
+        Bytes 0/1/2 hold year-offset/month/day as plain 0–99 integers; the 4th
+        byte is unused/checksum. Matches ``DeviceWorkInfo.analyProductDate``.
+        Year offset > 99 is rejected (the app substitutes "00")."""
+        if len(data) < 3:
+            return
+        yy, mm, dd = data[0], data[1], data[2]
+        if yy > 99 or mm == 0 or mm > 12 or dd == 0 or dd > 31:
+            return
+        self._info.production_date = f"20{yy:02d}-{mm:02d}-{dd:02d}"
+
+    def _parse_sn(self, data: bytes):
+        """Parse the 24-byte SN block (regs 0x57–0x62) into ``info.sn_code``."""
+        if not data:
+            return
+        self._info.sn_code = self._ascii_strip(data[:24])
+
     # ── high-level data getters ──────────────────────────────────────────
 
     async def refresh(self) -> BMSInfo:
@@ -714,9 +752,42 @@ class SmartBMS:
             self._parse_status(data)
         return self._info
 
+    async def refresh_versions(self) -> BMSInfo:
+        """Read regs 0xA9–0xC8 (BLE / MCU / machine version strings)."""
+        data = await self._read_registers(REG_VERSION_START, REG_VERSION_LEN)
+        if data:
+            self._parse_versions(data)
+        return self._info
+
+    async def refresh_product_date(self) -> BMSInfo:
+        """Read regs 0xCC–0xCD (production date)."""
+        data = await self._read_registers(REG_PRODUCT_DATE_START, REG_PRODUCT_DATE_LEN)
+        if data:
+            self._parse_product_date(data)
+        return self._info
+
+    async def refresh_sn(self) -> BMSInfo:
+        """Read regs 0x57–0x62 (24-byte ASCII serial number)."""
+        data = await self._read_registers(REG_SN_START, REG_SN_LEN)
+        if data:
+            self._parse_sn(data)
+        return self._info
+
+    async def refresh_identity(self) -> BMSInfo:
+        """Read all identity blocks: SN, versions, production date.
+
+        These rarely change, so call once at startup rather than on every poll.
+        """
+        await self.refresh_sn()
+        await asyncio.sleep(0.2)
+        await self.refresh_versions()
+        await asyncio.sleep(0.2)
+        await self.refresh_product_date()
+        return self._info
+
     async def refresh_all(self) -> BMSInfo:
         """Read every block the app polls — runtime + settings + heating +
-        comm + live status — into :attr:`info`.
+        comm + live status + identity — into :attr:`info`.
 
         Between reads we sleep briefly to give the BMS time to swap response
         buffers; back-to-back BLE writes on this hardware sometimes drop frames.
@@ -730,6 +801,8 @@ class SmartBMS:
         await self.refresh_comm_info()
         await asyncio.sleep(0.2)
         await self.refresh_status()
+        await asyncio.sleep(0.2)
+        await self.refresh_identity()
         return self._info
 
     @property
@@ -859,11 +932,6 @@ class SmartBMS:
         """Discharge over-current protection in amps."""
         await self.refresh_settings()
         return self._info.discharge_ocp
-
-    async def get_password(self) -> str:
-        """Current control password."""
-        await self.refresh_settings()
-        return self._info.password
 
     # ── Write / control commands ─────────────────────────────────────────
     # All methods below are gated by enable_unsafe_commands(). They raise
