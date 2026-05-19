@@ -35,7 +35,10 @@ async def _bms_session():
     global _cell_count
     try:
         await bms.connect()
-        _cell_count = await bms.get_cell_count()
+        # Pull every block once so the GUI shows real data on the first frame
+        # instead of dataclass defaults.
+        await bms.refresh_all()
+        _cell_count = bms.info.cell_count or 16
     except Exception as e:
         global _connect_error
         _connect_error = e
@@ -44,10 +47,22 @@ async def _bms_session():
     _ready.set()
 
     print("Background data stream started.")
+    SLOW_EVERY = 50  # iterations between full slow-block re-reads (~5 s at 10 Hz)
+    counter = 0
     try:
         while not _shutdown:
-            await bms.refresh_all()
+            await bms.refresh()
+            if counter % SLOW_EVERY == 0 and counter != 0:
+                await asyncio.sleep(0.1)
+                await bms.refresh_settings()
+                await asyncio.sleep(0.1)
+                await bms.refresh_settings2()
+                await asyncio.sleep(0.1)
+                await bms.refresh_comm_info()
+                await asyncio.sleep(0.1)
+                await bms.refresh_status()
             bms_gui.update(bms.info)
+            counter += 1
             await asyncio.sleep(0.1)
     except Exception as e:
         print(f"Error in data stream: {e}")

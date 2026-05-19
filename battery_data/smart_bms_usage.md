@@ -111,12 +111,17 @@ Also supports `async with SmartBMS(mac) as bms:` context manager.
 
 ### Bulk Data Reads
 
-| Method | Returns | Description |
-|--------|---------|-------------|
-| `refresh()` | `BMSInfo` | Read all runtime data (cells, voltage, current, SOC, temps, protection, balance) |
-| `refresh_settings()` | `BMSInfo` | Read configuration block (OVP, UVP, OCP thresholds, capacity) |
-| `refresh_all()` | `BMSInfo` | Read both runtime + settings in one call |
-| `info` | `BMSInfo` | Property — last read data, no BLE traffic |
+| Method | Reads (regs) | Populates |
+|--------|------|-----------|
+| `refresh()` | runtime 0x00–0x7E | cells, total voltage, current, power, SOC, temps, MOS state, protection flags, alarms, balance status, cycle count, SN |
+| `refresh_settings()` | 0x80–0xA8 | OVP / UVP / OCP / OTP thresholds, balance start + delta, SC + OCP delays, nominal capacity |
+| `refresh_settings2()` | 0xDF–0xEF | heating start/stop temperatures, balance cutoff voltage, balance-board enable flag |
+| `refresh_comm_info()` | 0xD1–0xD2 | `comm_mode`, `comm_protocol_type` |
+| `refresh_status()` | 0xD7–0xD8 | `force_start_on`, live `heating_on` |
+| `refresh_all()` | all of the above | every field populated by the methods above (~1 s of BLE traffic) |
+| `info` | (no I/O) | last-read snapshot |
+
+For polling loops, the runtime block changes every cycle while the settings / heating / comm blocks rarely change — call `refresh()` at the loop rate and `refresh_all()` (or the slow blocks individually) every few seconds.
 
 ### Runtime Getters
 

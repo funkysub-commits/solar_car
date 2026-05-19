@@ -126,8 +126,12 @@ REG_RUNTIME_START   = 0x0000   # live data block
 REG_RUNTIME_LEN     = 0x007E   # 126 registers → 252 bytes
 REG_SETTINGS_START  = 0x0080   # settings / configuration block
 REG_SETTINGS_LEN    = 0x0029   # 41 registers (MainControlActivity timer)
-REG_SETTINGS2_START = 0x00DF   # extended settings
-REG_SETTINGS2_LEN   = 0x0010   # 16 registers
+REG_SETTINGS2_START = 0x00DF   # extended settings (heating + balance enable)
+REG_SETTINGS2_LEN   = 0x0011   # 17 registers (matches app `analystarDFTOEF`)
+REG_COMM_INFO_START = 0x00D1   # comm mode + protocol type (2 regs back-to-back)
+REG_COMM_INFO_LEN   = 0x0002
+REG_STATUS_START    = 0x00D7   # force-start state + heating state (2 regs)
+REG_STATUS_LEN      = 0x0002
 REG_LAST_BATT_START = 0x003E   # last battery info
 REG_LAST_BATT_LEN   = 0x0008   # 8 registers
 REG_HISTORY_START   = 0x0063   # history block
@@ -622,6 +626,54 @@ class SmartBMS:
             info.balance_start_voltage = _u16(data, 70) / 1000.0     # reg 0xA3
             info.balance_delta = _u16(data, 72) / 1000.0             # reg 0xA4
 
+    def _parse_settings2(self, data: bytes):
+        """Parse the 0xDF–0xEF extended-settings block.
+
+        Layout reverse-engineered from ``DeviceWorkInfo.analystarDFTOEF``:
+          Reg 0xDF (byte 0): unlock state control (u16)
+          Reg 0xE0 (byte 2): balance cutoff voltage (raw / 1000 → V)
+          Reg 0xE1 (byte 4): heating start temperature (raw − 40 → °C)
+          Reg 0xE2 (byte 6): key logic flag (u16, kept as-is)
+          Reg 0xE3 (byte 8): balance-board enable switch (1 = on)
+          Reg 0xE4 (byte 10): heating stop temperature (raw − 40 → °C)
+        """
+        if len(data) < 12:
+            return
+        info = self._info
+        info.balance_start_voltage = _u16(data, 2) / 1000.0     # reg 0xE0
+        info.heating_start_temp    = _u16(data, 4) - 40         # reg 0xE1
+        info.heating_on            = _u16(data, 8) == 1         # reg 0xE3
+        info.heating_stop_temp     = _u16(data, 10) - 40        # reg 0xE4
+
+    def _parse_comm_info(self, data: bytes):
+        """Parse the response to a read of regs 0xD1–0xD2 (4 bytes).
+
+        Layout from ``DeviceWorkInfo.analyCommunicationModeProtocolTypeInfo``:
+          Reg 0xD1 (byte 0): communication mode (u16, skipped if 0xFFFF)
+          Reg 0xD2 (byte 2): protocol type      (u16, skipped if 0xFFFF)
+        """
+        if len(data) < 4:
+            return
+        info = self._info
+        mode = _u16(data, 0)
+        proto = _u16(data, 2)
+        if mode != 0xFFFF:
+            info.comm_mode = mode
+        if proto != 0xFFFF:
+            info.comm_protocol_type = proto
+
+    def _parse_status(self, data: bytes):
+        """Parse the response to a read of regs 0xD7–0xD8 (4 bytes).
+
+        Reg 0xD7 → force_start state (1 = on). Reg 0xD8 → heating state (1 = on).
+        Matches the single-register branches in ``analysisPressValueByCan``.
+        """
+        if len(data) < 4:
+            return
+        info = self._info
+        info.force_start_on = _u16(data, 0) == 1
+        info.heating_on     = _u16(data, 2) == 1
+
     # ── high-level data getters ──────────────────────────────────────────
 
     async def refresh(self) -> BMSInfo:
@@ -641,11 +693,43 @@ class SmartBMS:
             self._parse_settings(data)
         return self._info
 
+    async def refresh_settings2(self) -> BMSInfo:
+        """Read the 0xDF–0xEF extended-settings block (heating + balance)."""
+        data = await self._read_registers(REG_SETTINGS2_START, REG_SETTINGS2_LEN)
+        if data:
+            self._parse_settings2(data)
+        return self._info
+
+    async def refresh_comm_info(self) -> BMSInfo:
+        """Read regs 0xD1–0xD2 (communication mode + protocol type)."""
+        data = await self._read_registers(REG_COMM_INFO_START, REG_COMM_INFO_LEN)
+        if data:
+            self._parse_comm_info(data)
+        return self._info
+
+    async def refresh_status(self) -> BMSInfo:
+        """Read regs 0xD7–0xD8 (force-start + heating live state)."""
+        data = await self._read_registers(REG_STATUS_START, REG_STATUS_LEN)
+        if data:
+            self._parse_status(data)
+        return self._info
+
     async def refresh_all(self) -> BMSInfo:
-        """Read both runtime data and settings in one call."""
+        """Read every block the app polls — runtime + settings + heating +
+        comm + live status — into :attr:`info`.
+
+        Between reads we sleep briefly to give the BMS time to swap response
+        buffers; back-to-back BLE writes on this hardware sometimes drop frames.
+        """
         await self.refresh()
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(0.2)
         await self.refresh_settings()
+        await asyncio.sleep(0.2)
+        await self.refresh_settings2()
+        await asyncio.sleep(0.2)
+        await self.refresh_comm_info()
+        await asyncio.sleep(0.2)
+        await self.refresh_status()
         return self._info
 
     @property
