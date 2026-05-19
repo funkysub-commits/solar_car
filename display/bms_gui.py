@@ -68,8 +68,8 @@ def update_screen() -> None:
 
 def _temp_str(celsius: float) -> str:
     if _is_fahrenheit:
-        return f"{celsius * 9 / 5 + 32:.1f} °F"
-    return f"{celsius:.1f} °C"
+        return f"{celsius * 9 / 5 + 32:.10g} °F"
+    return f"{celsius:.10g} °C"
 
 
 def _toggle_units(_sender, app_data):
@@ -388,32 +388,32 @@ def _build_heating_tab() -> None:
 # -------------------------------------------------------------------
 
 def _update_summary(info: BMSInfo) -> None:
-    _set("hdr_voltage", f"{info.total_voltage:.2f} V")
+    _set("hdr_voltage", f"{info.total_voltage:.10g} V")
     if dpg.does_item_exist("hdr_current"):
-        dpg.set_value("hdr_current", f"{info.current:+.2f} A")
+        dpg.set_value("hdr_current", f"{info.current:+.10g} A")
         dpg.bind_item_theme(
             "hdr_current",
             "nominal_theme" if info.current > 0 else
             "info_theme"    if info.current == 0 else
             "accent_theme",
         )
-    _set("hdr_power", f"{info.power:.0f} W")
+    _set("hdr_power", f"{info.power:.10g} W")
     if dpg.does_item_exist("hdr_soc"):
         soc01 = max(0.0, min(1.0, info.soc / 100.0))
         dpg.set_value("hdr_soc", soc01)
-        dpg.configure_item("hdr_soc", overlay=f"SoC  {info.soc:.1f}%")
+        dpg.configure_item("hdr_soc", overlay=f"SoC  {info.soc:.10g}%")
 
 
 def _update_pack(info: BMSInfo) -> None:
-    _set("pack_total_v",  f"{info.total_voltage:.2f} V")
-    _set("pack_current",  f"{info.current:+.2f} A")
-    _set("pack_power",    f"{info.power:.1f} W")
-    _set("pack_soc",      f"{info.soc:.1f} %")
+    _set("pack_total_v",  f"{info.total_voltage:.10g} V")
+    _set("pack_current",  f"{info.current:+.10g} A")
+    _set("pack_power",    f"{info.power:.10g} W")
+    _set("pack_soc",      f"{info.soc:.10g} %")
     _set("pack_soh",      f"{info.soh} %")
-    _set("pack_remaining",f"{info.remaining_capacity:.2f} Ah")
-    _set("pack_nominal",  f"{info.nominal_capacity:.2f} Ah")
+    _set("pack_remaining",f"{info.remaining_capacity:.10g} Ah")
+    _set("pack_nominal",  f"{info.nominal_capacity:.10g} Ah")
     _set("pack_cycles",   str(info.cycle_count))
-    _set("pack_cycle_cap",f"{info.cycle_capacity:.2f} Ah")
+    _set("pack_cycle_cap",f"{info.cycle_capacity:.10g} Ah")
 
 
 def _update_cells(info: BMSInfo) -> None:
@@ -432,7 +432,7 @@ def _update_cells(info: BMSInfo) -> None:
                 marker = "  ◄MIN"
             elif i == info.max_cell_number:
                 marker = "  ◄MAX"
-            dpg.set_value(v_tag, f"{volt:.3f} V{marker}")
+            dpg.set_value(v_tag, f"{volt:.10g} V{marker}")
             dpg.set_value(s_tag, _cell_label(volt))
             dpg.bind_item_theme(s_tag, _cell_theme(volt))
             balancing = bool(info.balance_status & (1 << idx))
@@ -445,12 +445,12 @@ def _update_cells(info: BMSInfo) -> None:
 
     if info.cell_voltages:
         _set("cells_summary_min",
-             f"Min:   {info.min_cell_voltage:.3f} V  (cell {info.min_cell_number})")
+             f"Min:   {info.min_cell_voltage:.10g} V  (cell {info.min_cell_number})")
         _set("cells_summary_max",
-             f"Max:   {info.max_cell_voltage:.3f} V  (cell {info.max_cell_number})")
-        _set("cells_summary_avg", f"Avg:   {info.avg_cell_voltage:.3f} V")
+             f"Max:   {info.max_cell_voltage:.10g} V  (cell {info.max_cell_number})")
+        _set("cells_summary_avg", f"Avg:   {info.avg_cell_voltage:.10g} V")
         _set("cells_summary_delta",
-             f"Δ:     {info.delta_cell_voltage * 1000:.0f} mV")
+             f"Δ:     {info.delta_cell_voltage * 1000:.10g} mV")
 
 
 def _update_temperatures(info: BMSInfo) -> None:
@@ -486,20 +486,20 @@ def _update_alarms(info: BMSInfo) -> None:
 
 
 def _update_settings(info: BMSInfo) -> None:
-    _set("set_cell_ovp",          f"{info.cell_ovp:.3f} V")
-    _set("set_cell_ovp_recovery", f"{info.cell_ovp_recovery:.3f} V")
-    _set("set_cell_uvp",          f"{info.cell_uvp:.3f} V")
-    _set("set_cell_uvp_recovery", f"{info.cell_uvp_recovery:.3f} V")
-    _set("set_pack_ovp",          f"{info.pack_ovp:.2f} V")
-    _set("set_pack_uvp",          f"{info.pack_uvp:.2f} V")
-    _set("set_charge_ocp",        f"{info.charge_ocp:.2f} A")
-    _set("set_discharge_ocp",     f"{info.discharge_ocp:.2f} A")
+    _set("set_cell_ovp",          f"{info.cell_ovp:.10g} V")
+    _set("set_cell_ovp_recovery", f"{info.cell_ovp_recovery:.10g} V")
+    _set("set_cell_uvp",          f"{info.cell_uvp:.10g} V")
+    _set("set_cell_uvp_recovery", f"{info.cell_uvp_recovery:.10g} V")
+    _set("set_pack_ovp",          f"{info.pack_ovp:.10g} V")
+    _set("set_pack_uvp",          f"{info.pack_uvp:.10g} V")
+    _set("set_charge_ocp",        f"{info.charge_ocp:.10g} A")
+    _set("set_discharge_ocp",     f"{info.discharge_ocp:.10g} A")
     _set("set_charge_otp",        _temp_str(info.charge_otp))
     _set("set_charge_utp",        _temp_str(info.charge_utp))
     _set("set_discharge_otp",     _temp_str(info.discharge_otp))
     _set("set_discharge_utp",     _temp_str(info.discharge_utp))
-    _set("set_balance_start",     f"{info.balance_start_voltage:.3f} V")
-    _set("set_balance_delta",     f"{info.balance_delta * 1000:.0f} mV")
+    _set("set_balance_start",     f"{info.balance_start_voltage:.10g} V")
+    _set("set_balance_delta",     f"{info.balance_delta * 1000:.10g} mV")
     _set("set_sc_delay",          f"{info.short_circuit_delay} µs")
     _set("set_ocp_delay",         f"{info.ocp_delay} ms")
 
