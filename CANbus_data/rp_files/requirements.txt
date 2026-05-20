@@ -1,0 +1,11 @@
+# Python dependencies for the Raspberry Pi CAN tools (rp_files/).
+#
+# Recreate the environment on the Pi:
+#   python3 -m venv ~/canbus-venv
+#   ~/canbus-venv/bin/pip install -r rp_files/requirements.txt
+#
+# Unlike the PC tools, the Pi versions need no USB/libusb packages: the
+# SH-C31G is handled by the kernel's gs_usb module and exposed as the
+# SocketCAN interface can0, which python-can talks to directly.
+
+python-can==4.6.1

@@ -1,25 +1,28 @@
 """Live dashboard + ASC logger for EZkontrol B48800 MCU CAN messages.
 
+Raspberry Pi / SocketCAN version. See pc_files/ezkontrol_decode.py for the
+Windows (gs_usb-direct) version.
+
 Usage:
-    python ezkontrol_decode.py [DURATION_SEC] [LOG_PATH]
-    python ezkontrol_decode.py -250                (force 250 kbps)
-    python ezkontrol_decode.py -ezkontrol_dummy
+    python3 ezkontrol_decode.py [DURATION_SEC] [LOG_PATH]
+    python3 ezkontrol_decode.py -ezkontrol_dummy
 
 DURATION_SEC = 0 means run until Ctrl+C. LOG_PATH defaults to
 logs/decode-<timestamp>.asc and is in Vector ASC format.
 
-The bus rate defaults to 500 kbps; pass -250 for 250 kbps (the rate in
-the EZkontrol MCU-to-Meter spec). Pass -ezkontrol_dummy to drive the
-dashboard from simulated MCU data when the controller (or the SH-C31G
-adapter) isn't connected -- no device is opened and no log is written.
+Pass -ezkontrol_dummy to drive the dashboard from simulated MCU data when
+the controller isn't connected. No bus is opened and no log is written.
 
-Talks to gs_usb directly because python-can 4.6.1's BitTiming.from_sample_point
-cannot find a valid (BRP, TSEG) at this adapter's reported 170 MHz CAN
-clock. We set the bit-timing registers explicitly:
+Reads the bus through SocketCAN: the SH-C31G is a gs_usb/candleLight
+adapter, which the Linux kernel exposes as a network interface (can0).
+Bring the interface up first -- can_up.sh sets the bitrate there (the lab
+bus is 500 kbps; the EZkontrol spec also lists 250 kbps), so unlike the
+Windows version this tool has no in-tool bitrate switch:
 
-    sync=1, prop=1, phase1=13, phase2=2, sjw=2  => 17 tq, 88.2% sample point
-    brp=20 => 170e6 / (20 * 17) = 500000 bps exactly
-    brp=40 => 170e6 / (40 * 17) = 250000 bps exactly
+    sudo ip link set can0 type can bitrate 500000   # or 250000
+    sudo ip link set can0 up
+
+Override the interface name with the CAN_CHANNEL environment variable.
 """
 import os
 import sys
@@ -30,26 +33,13 @@ import signal
 from collections import deque
 from datetime import datetime
 
-import usb.core
-import libusb_package
-
-_LIBUSB_BACKEND = libusb_package.get_libusb1_backend()
-_orig_find = usb.core.find
-def _find_with_libusb_package(*args, **kwargs):
-    kwargs.setdefault("backend", _LIBUSB_BACKEND)
-    return _orig_find(*args, **kwargs)
-usb.core.find = _find_with_libusb_package
-
-from gs_usb.gs_usb import GsUsb
-from gs_usb.gs_usb_frame import GsUsbFrame
 import can
 
+CAN_CHANNEL = os.environ.get("CAN_CHANNEL", "can0")
+
 DUMMY = "-ezkontrol_dummy" in sys.argv
-BITRATE = 250_000 if "-250" in sys.argv else 500_000
-BRP = 40 if BITRATE == 250_000 else 20
-RATE_LABEL = f"{BITRATE // 1000} kbps"
-sys.argv = [sys.argv[0]] + [a for a in sys.argv[1:]
-                            if a not in ("-ezkontrol_dummy", "-250", "-500")]
+if DUMMY:
+    sys.argv = [a for a in sys.argv if a != "-ezkontrol_dummy"]
 
 duration_sec = float(sys.argv[1]) if len(sys.argv) > 1 else 0.0
 if duration_sec == 0.0:
@@ -210,8 +200,8 @@ def empty_row():
 
 def render(fps, last_age):
     s = state
-    L = [title_bar(f"EZkontrol B48800   {RATE_LABEL}"
-                   + ("   [DUMMY]" if DUMMY else ""))]
+    L = [title_bar("EZkontrol B48800   "
+                   + ("[DUMMY]" if DUMMY else CAN_CHANNEL))]
 
     if "v" in s:
         L.append(row2(slot("Battery",  f"{s['v']:.1f} V",       "v"),
@@ -247,9 +237,6 @@ def render(fps, last_age):
     return "\n".join(L)
 
 
-# Enable VT (ANSI) on Windows consoles
-if os.name == "nt":
-    os.system("")
 ANSI_HOME = "\x1b[H"
 ANSI_CLEAR = "\x1b[2J"
 ANSI_CLEAR_DOWN = "\x1b[J"
@@ -257,18 +244,29 @@ ANSI_HIDE_CURSOR = "\x1b[?25l"
 ANSI_SHOW_CURSOR = "\x1b[?25h"
 
 
+def ensure_can(channel):
+    """Exit with a clear message if the SocketCAN interface isn't ready."""
+    sysdir = f"/sys/class/net/{channel}"
+    if not os.path.isdir(sysdir):
+        sys.exit(f"CAN interface '{channel}' not found. Plug in the SH-C31G "
+                 f"and bring the bus up (see can_up.sh), or use -ezkontrol_dummy.")
+    try:
+        with open(f"{sysdir}/operstate") as f:
+            if f.read().strip() == "down":
+                sys.exit(f"CAN interface '{channel}' is down. Run:  ./can_up.sh")
+    except OSError:
+        pass
+
+
 if DUMMY:
-    dev = None
+    bus = None
     asc_writer = None
 else:
-    devs = GsUsb.scan()
-    if not devs:
-        print("No gs_usb device found. "
-              "(Use -ezkontrol_dummy to run without hardware.)")
-        sys.exit(1)
-    dev = devs[0]
-    dev.set_timing(prop_seg=1, phase_seg1=13, phase_seg2=2, sjw=2, brp=BRP)
-    dev.start()
+    ensure_can(CAN_CHANNEL)
+    try:
+        bus = can.Bus(channel=CAN_CHANNEL, interface="socketcan")
+    except Exception as e:
+        sys.exit(f"Could not open CAN interface '{CAN_CHANNEL}': {e}")
     asc_writer = can.ASCWriter(log_path)
 
 stop = False
@@ -284,7 +282,6 @@ last_redraw = 0.0
 REDRAW_PERIOD = 0.1  # 10 Hz
 
 deadline = (time.monotonic() + duration_sec) if duration_sec else None
-fr = GsUsbFrame()
 
 # Initial paint
 sys.stdout.write(ANSI_CLEAR + ANSI_HOME + ANSI_HIDE_CURSOR)
@@ -302,21 +299,16 @@ try:
             if not got:
                 time.sleep(0.02)
         else:
-            got = dev.read(fr, 50)  # short timeout so we can redraw smoothly
+            msg = bus.recv(timeout=0.05)  # short timeout so we redraw smoothly
+            got = msg is not None
 
         if got:
             if DUMMY:
                 arb, data = frame
             else:
-                arb = fr.arbitration_id
-                data = bytes(fr.data[:fr.can_dlc])
-                asc_writer.on_message_received(can.Message(
-                    timestamp=time.time(),
-                    arbitration_id=arb,
-                    is_extended_id=fr.is_extended_id,
-                    dlc=fr.can_dlc,
-                    data=data,
-                ))
+                arb = msg.arbitration_id
+                data = bytes(msg.data)
+                asc_writer.on_message_received(msg)
             if arb == 0x180117EF:
                 update_state(parse_msg_i(data))
             elif arb == 0x180217EF:
@@ -347,7 +339,7 @@ finally:
     except Exception:
         pass
     try:
-        if dev is not None:
-            dev.stop()
+        if bus is not None:
+            bus.shutdown()
     except Exception:
         pass
