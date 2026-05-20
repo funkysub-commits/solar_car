@@ -1,0 +1,127 @@
+BESTGO Battery (Lithium Valley BMS) CAN Protocol
+================================================
+Reconstructed 2026-05-20 from a live capture + the public SMA/Pylontech BMS protocol.
+
+1. Identification
+-----------------
+The BESTGO pack's BMS does NOT use a vendor-specific protocol. It speaks the
+widely-used inverter<->battery CAN BMS protocol commonly called the
+"SMA / Pylontech-compatible CAN BMS protocol" (also seen as the Victron
+CAN-bus BMS protocol, the SMA Sunny Island BMS protocol, and the BYD
+Battery-Box protocol). The same frame IDs and layouts are implemented by
+dozens of low-voltage battery packs.
+
+The BMS reports its identity in the name frames (see 0x370/0x371 below) as
+"Lithium Valley" -- BESTGO is the pack/brand, Lithium Valley the BMS maker.
+
+2. Bus parameters
+-----------------
+  Bitrate        : 500 kbps        (confirmed by bestgo_probe.py sweep)
+  Frame format   : standard 11-bit identifiers (NOT extended/29-bit)
+  Byte order     : little-endian   (e.g. 0x1234 sent as 0x34 then 0x12)
+  DLC            : 8 bytes on every frame
+  Transmit cycle : ~1 s, battery -> inverter, all frames sent each cycle
+  Inverter reply : 0x305 = 00 00 00 00 00 00 00 00 once per second (keepalive)
+
+  NOTE: this is a different bus from the EZkontrol MCU (which is 250 kbps,
+  29-bit extended IDs). The two cannot share one CAN segment as-is.
+
+3. Frames (battery -> inverter)
+-------------------------------
+All multi-byte fields are little-endian. "u16"/"s16" = unsigned/signed
+16-bit. Values shown in [brackets] are the actual readings decoded from the
+capture logs/bestgo-probe-20260518-195228.txt, as a sanity check.
+
+--- 0x351  Charge / discharge limits ---------------------------------------
+  Byte 0-1  u16  0.1 V   Charge voltage limit       (CVL)   [57.6 V]
+  Byte 2-3  s16  0.1 A   Charge current limit       (CCL)   [150.0 A]
+  Byte 4-5  s16  0.1 A   Discharge current limit    (DCL)   [200.0 A]
+  Byte 6-7  u16  0.1 V   Discharge voltage limit    (DVL)   [44.8 V]
+  These four values tell the inverter the safe operating window. 57.6/44.8 V
+  is a 16S LiFePO4 pack (16 x 3.60 V / 16 x 2.80 V).
+
+--- 0x355  State of charge / health ----------------------------------------
+  Byte 0-1  u16  1 %     SOC  - state of charge             [56 %]
+  Byte 2-3  u16  1 %     SOH  - state of health             [100 %]
+  Byte 4-5  u16  0.01 %  SOC high-resolution                [56.00 %]
+  Byte 6-7  -            unused
+
+--- 0x356  Real-time measurements ------------------------------------------
+  Byte 0-1  s16  0.01 V  Pack voltage                       [52.80 V]
+  Byte 2-3  s16  0.1 A   Pack current (+ = charge)          [0.0 A]
+  Byte 4-5  s16  0.1 C   Pack temperature (average cell)    [22.0 C]
+  Byte 6-7  -            unused
+
+--- 0x35A  Alarms & warnings -----------------------------------------------
+  Byte 0-3       bitflags  Alarms   (a set bit = active fault)
+  Byte 4-7       bitflags  Warnings (a set bit = active warning)
+  All zero in the capture = no alarms, no warnings.
+  Typical bit meanings (per SMA/Pylontech protocol; verify on this pack):
+    general / high+low cell voltage / high+low temperature /
+    high charge+discharge current / BMS internal / contactor / etc.
+  Treat any non-zero value as a fault condition until each bit is mapped
+  against a live alarm on the bench.
+
+--- 0x35E  Manufacturer name (ASCII, 8 bytes) ------------------------------
+  Byte 0-7  ASCII  Manufacturer / brand short name
+  Capture:  4C 56 61 69 69 65 79 00  -> "LVaiiey" (LV = Lithium Valley;
+            trailing bytes look like an uninitialised model field).
+
+--- 0x35F  Battery info ----------------------------------------------------
+  Byte 0-1  u16  Battery / cell chemistry type code   [0x0000]
+  Byte 2-3  u16  BMS firmware version  (0x0101 = v1.1)
+  Byte 4-5  u16  1 Ah   Nominal capacity                  [56 Ah]
+  Byte 6-7  u16  Reserved / manufacturer code         [0x0000]
+
+--- 0x370 / 0x371  Battery name (ASCII, 16 bytes total) --------------------
+  0x370 Byte 0-7  ASCII  Battery name characters  0-7
+  0x371 Byte 0-7  ASCII  Battery name characters  8-15
+  Capture:  0x370 = "Lithium\0", 0x371 = "Valley\0\0"  -> "Lithium Valley"
+
+--- 0x372  Module count (optional - not seen in capture) -------------------
+  Byte 0-1  u16  Number of modules online
+  Byte 2-3  u16  Number of modules blocking charge
+  Byte 4-5  u16  Number of modules blocking discharge
+  Byte 6-7  u16  Number of modules offline
+  This pack did not transmit 0x372; single-module packs often omit it.
+
+--- 0x373  Cell voltage & temperature extremes -----------------------------
+  Byte 0-1  u16  1 mV   Minimum cell voltage              [3304 mV]
+  Byte 2-3  u16  1 mV   Maximum cell voltage              [3306 mV]
+  Byte 4-5  u16  1 K    Minimum cell temperature          [295 K = 22 C]
+  Byte 6-7  u16  1 K    Maximum cell temperature          [296 K = 23 C]
+  Cell temperatures are in KELVIN: degC = K - 273.15. The 22/23 C here
+  matches the 22.0 C pack average in 0x356, which confirms the unit.
+
+--- 0x374  ID of the minimum-voltage cell ----------------------------------
+--- 0x375  ID of the maximum-voltage cell ----------------------------------
+--- 0x376  ID of the minimum-temperature cell ------------------------------
+--- 0x377  ID of the maximum-temperature cell ------------------------------
+  The SMA/Pylontech spec defines 0x374-0x377 as ASCII text labels for the
+  cells flagged in 0x373. This BMS instead sends binary, with the cell
+  index in Byte 0-1 (u16). Capture samples (cell indices, 1-based):
+    0x374 = 01/10 ...   0x375 = 0D/0A ...   0x376 = 01 ...   0x377 = 02 ...
+  The indices change between cycles as the pack balances - expected.
+
+--- 0x379  Installed capacity ----------------------------------------------
+  Byte 0-1  u16  1 Ah   Installed (rated) pack capacity    [56 Ah]
+  Byte 2-7  -            unused
+
+4. Implementation notes
+-----------------------
+- Listen-only is safe for sniffing. To make the BMS keep transmitting in a
+  closed loop some inverters expect the 0x305 keepalive; in the capture the
+  BMS transmitted fine without it, so a passive reader needs nothing.
+- For a Home Assistant decoder, mirror ha_addons/ezkontrol-canbus: 0x351,
+  0x355, 0x356, 0x35A, 0x373 and 0x379 carry the useful telemetry; the name
+  frames (0x35E/0x35F/0x370/0x371) only need decoding once at startup.
+- Unverified items, to confirm on the bench: the 0x35A alarm/warning bit
+  map, the 0x35F chemistry/version encoding, and whether 0x374-0x377 are
+  truly raw cell indices on production firmware.
+
+5. Sources
+----------
+- Live capture: logs/bestgo-probe-20260518-195228.txt (NORMAL mode, 500 kbps)
+- PYLON CANBUS Protocol v1.2 (0x351/0x355/0x356/0x359/0x35C/0x35E)
+- SMA / Victron CAN-bus BMS protocol (0x35A/0x35E/0x35F/0x370-0x379)
+- dalathegreat/Battery-Emulator inverter protocol implementations
