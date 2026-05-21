@@ -86,7 +86,7 @@ From the HA web interface:
 5. Start the add-on
 > [!WARNING]
 > Disabling Protection Mode gives the SSH add-on full system access including Docker. Only do this if you trust your network environment.
-### 3.3 Install BLE Battery Management System
+### 3.3 Install BLE Battery Management System : NOTE not used in current version, but left for fallback
 1. Go to Settings > Devices & Services > Integrations
 2. Click + Add Integration
 3. Search for BLE Battery Management System
