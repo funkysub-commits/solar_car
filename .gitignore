@@ -1,4 +1,8 @@
+# Android App
 SmartBMS_App/
+
+# Claude Code data
+.claude/
 
 # Python virtual environment (recreate from CANbus_data/requirements.txt)
 venv/
@@ -6,3 +10,9 @@ venv/
 # Python bytecode caches
 __pycache__/
 *.pyc
+
+# Webcam capture scratch (e-paper display verification)
+.webcam/
+
+# large HAOS data for recovery
+haos_recovery_data/

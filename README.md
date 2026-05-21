@@ -1,4 +1,4 @@
-# Solar Storms Telemetry System
+# <img src="./readme_assets/solar_storms_logo.png" width="4%"> Solar Storms Telemetry System
 **Raspberry Pi + Home Assistant Setup Guide**  
 ---
 
@@ -19,9 +19,17 @@ Devices on solar car:
 
 ## Table of contents
 
-
-
-
+1. [System overview](#1-system-overview)
+2. [Prerequisites](#2-prerequisites)
+3. [Initial setup: Home Assistant OS](#3-initial-setup-home-assistant-os)
+4. [Waveshare 7.5" e-ink display setup](#4-waveshare-75-e-ink-display-setup)
+5. [E-ink display: Home Assistant integration](#5-e-ink-display-home-assistant-integration)
+6. [CAN bus: EZkontrol motor controller](#6-can-bus-ezkontrol-motor-controller)
+7. [Battery BMS: Bluetooth integration](#7-battery-bms-bluetooth-integration)
+8. [System maintenance & commands](#8-system-maintenance--commands)
+9. [Network setup discussion](#9-network-setup-discussion)
+10. [Andy left to do](#10-andy-left-to-do)
+11. [Student to do (with Andy help)](#11-student-to-do-with-andy-help)
 
 ## 1. System overview
 This guide documents the complete setup of a solar car monitoring system built on a Raspberry Pi 4 running Home Assistant OS. The system integrates three external hardware interfaces and presents data through both a web dashboard and a physical e-ink display.
@@ -203,7 +211,7 @@ docker run -d --name epaper-display \
   --restart=unless-stopped \
   --network=host \
   -v /dev:/dev \
-  -e HA_URL="http://http://100.100.79.71:8123" \
+  -e HA_URL="http://100.100.79.71:8123" \
   -e HA_TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyNDlhZWQ1NTFlZDk0MWVjOGM4NGI3MDU1MTk1Mzk3ZSIsImlhdCI6MTc3Mzg5OTEwMiwiZXhwIjoyMDg5MjU5MTAyfQ.CveoN77vg-21Eq3oJ1e_7FWMyCRhfKq0H0AS50mO7JE" \
   -e INTERVAL=300 \
   epaper-display
@@ -451,7 +459,7 @@ Complete:
 > [!IMPORTANT]
 > Changed network name to:SolarStormsHomeAssistant (document this)
 
-11. Student to do (with Andy help)
+## 11. Student to do (with Andy help)
 
 - Decide if you want to use wifi router for communication to the chase vehicle, or another idea?
 - In car power for the raspberry pi, wifi router
@@ -474,3 +482,6 @@ the Waveshare 7.5" V2 supports both fast refresh and partial refresh in the Pyth
 Can get pretty fancy with this, but simple might be a good idea.  
 
 
+
+
+![Evana](readme_assets/evana.png)
