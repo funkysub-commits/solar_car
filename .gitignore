@@ -1,4 +1,9 @@
+# Android App
 SmartBMS_App/
+
+# Claude Code data
+.epd_test/
+.claude/
 
 # Python virtual environment (recreate from CANbus_data/requirements.txt)
 venv/
