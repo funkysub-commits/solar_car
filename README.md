@@ -34,7 +34,7 @@ Devices on solar car:
 ## 1. System overview
 This guide documents the complete setup of a solar car monitoring system built on a Raspberry Pi 4 running Home Assistant OS. The system integrates three external hardware interfaces and presents data through both a web dashboard and a physical e-ink display.
 
-![System Diagram](readme_assets/image.png)
+![System Diagram](readme_assets/diagram1.png)
 
 
 
@@ -44,14 +44,14 @@ The system consists of three external devices connected to a Raspberry Pi 4:
 **Battery pack (B00016 BMS)** — Connected via Bluetooth using the BLE Battery Management System integration in Home Assistant. Provides stored energy, battery level, and other BMS data.  
 **Waveshare 7.5" V2 e-ink display** — Connected via the SPI bus and GPIO pins through the e-Paper Driver HAT. Displays configurable sensor data from Home Assistant, refreshing every 5 minutes with an on-demand refresh button.  
 ### Software architecture
-Two Docker containers run on the Pi alongside Home Assistant OS:
-| Container | Purpose | Key detail |
+Two services run on the Pi alongside Home Assistant OS:
+| Service | Purpose | Key detail |
 | --- | --- | --- |
-| can-reader | Reads CAN bus, pushes sensor data to HA | REST API, 10s interval |
+| solar-car-canbus | HA app — reads the CAN bus, pushes sensors to HA | both devices on one shared bus, REST API |
 | epaper-display | Reads HA sensors, draws to e-ink screen | Configurable via HA helpers |
 
 
-Both containers use `--restart=unless-stopped` so they survive reboots. The e-ink display container runs in privileged mode with access to /dev for SPI/GPIO. The CAN reader uses `--network=host` for HA API access.  
+The `solar-car-canbus` app is managed by Home Assistant — it brings up the CAN interface itself and restarts with HA. The e-ink display runs with access to /dev for SPI/GPIO.  
 
 ## 2. Prerequisites
 ### Hardware
@@ -230,8 +230,8 @@ Connect the EZkontrol's CN2 connector to the DSD TECH SH-C31G USB-CAN adapter:
 > [!NOTE]
 > Enable the 120 ohm termination resistor on the SH-C31G if it is the last device on the CAN bus. The EZkontrol has its own 120 ohm termination enabled by default (brown wire CN2-11).
 ### 6.2 CAN protocol: MCU-to-METER (read-only)
-The EZkontrol broadcasts two J1939 extended CAN frames every 100ms. This is a passive protocol — no handshake required. The bus rate is 250 Kbps (default, CAN protocol setting = 2).  
-Use the “EZ-Tune” Android app to set the CAN protocol to 2 (it was defaulted to 1).  It should stay on that setting through power cycles now.  Setting 102 is for 500 Kbps.  
+The EZkontrol broadcasts two J1939 extended CAN frames every 100ms. This is a passive protocol — no handshake required.  
+The solar car runs the EZkontrol motor controller and the BESTGO battery on **one shared CAN bus at 500 Kbps**, so the EZkontrol must use 500 Kbps too. Use the “EZ-Tune” Android app to set its CAN protocol to **102** (the 500 Kbps variant; protocol 2 is the 250 Kbps variant, and the controller shipped defaulted to 1). The setting persists across power cycles.  
 ##### Message I — CAN ID 0x180117EF
 | Bytes | Data | Resolution | Offset | Range |
 | --- | --- | --- | --- | --- |
@@ -253,66 +253,43 @@ All values are little-endian unsigned 16-bit. Formula: physical = raw * resoluti
 | 7 | Life signal (bits 7-4) | Counter | 0 |
 
 
-### 6.3 CAN reader Docker container
-The can-reader container decodes both CAN messages and pushes 12 sensors to Home Assistant:  
-| Sensor entity | Source | Unit |
+### 6.3 The solar-car-canbus app
+One Home Assistant **app** (HA's current term for what used to be called an
+"add-on"), `solar-car-canbus`, decodes the CAN bus. It reads **both** the
+EZkontrol motor controller and the BESTGO battery from the single shared
+bus, decodes them, and pushes named sensors to Home Assistant over the REST
+API. The two devices coexist on one bus because their IDs don't overlap —
+the EZkontrol uses 29-bit extended IDs (`0x1801xxxx`), the BESTGO BMS uses
+11-bit standard IDs (`0x351`–`0x379`).
+
+The app source is in `ha_addons/solar-car-canbus/` in this repo; on the Pi
+it is placed in `/addons/solar-car-canbus/` and installed from **Settings >
+Apps > App Store > Local apps**.
+
+It publishes 34 sensors:
+- 13 `sensor.ezkontrol_*` — bus voltage/current, phase current, motor speed,
+  controller/motor temperature, throttle, gear, brake, contactor, errors.
+- 21 `sensor.bestgo_*` — SOC/SOH, pack voltage/current/temperature, cell
+  min/max voltage and temperature, charge/discharge limits, alarms, capacity.
+
+`run.sh` brings up the `can0` interface at the configured bitrate before
+starting. If the USB-CAN adapter came up in STM32 DFU mode (so there is no
+`can0`), it first attempts a `uhubctl` USB port power-cycle to recover it.
+
+### 6.4 App configuration
+Set these in the app's **Configuration** tab:
+| Option | Default | Purpose |
 | --- | --- | --- |
-| sensor.ezkontrol_bus_voltage | Msg I, bytes 0-1 | V |
-| sensor.ezkontrol_bus_current | Msg I, bytes 2-3 | A |
-| sensor.ezkontrol_phase_current | Msg I, bytes 4-5 | A |
-| sensor.ezkontrol_motor_speed | Msg I, bytes 6-7 | rpm |
-| sensor.ezkontrol_controller_temp | Msg II, byte 0 | C |
-| sensor.ezkontrol_motor_temp | Msg II, byte 1 | C |
-| sensor.ezkontrol_throttle | Msg II, byte 2 | % |
-| sensor.ezkontrol_gear | Msg II, byte 3 | — |
-| sensor.ezkontrol_brake | Msg II, byte 3 | — |
-| sensor.ezkontrol_dc_contactor | Msg II, byte 3 | — |
-| sensor.ezkontrol_errors | Msg II, bytes 4-6 | — |
-| sensor.ezkontrol_error_count | Msg II, bytes 4-6 | — |
+| can_interface | can0 | SocketCAN interface name |
+| can_bitrate | 500000 | shared-bus bitrate for both devices |
+| ezkontrol_dummy | false | simulate the motor controller instead of decoding it |
+| ezkontrol_push_interval | 2 | seconds between EZkontrol sensor pushes |
+| bestgo_dummy | false | simulate the battery instead of decoding it |
+| bestgo_push_interval | 5 | seconds between BESTGO sensor pushes |
 
-
-##### Dockerfile
-```dockerfile
-FROM python:3.12-alpine
-RUN apk add --no-cache iproute2 can-utils
-RUN pip install --no-cache-dir requests python-can
-COPY can_reader.py /can_reader.py
-CMD ["python3", "/can_reader.py"]
-```
-##### Build
-```zsh
-mkdir -p /config/can-reader
-cd /config/can-reader
-# (create can_reader.py and Dockerfile)
-docker build -t can-reader /config/can-reader
-```
-### 6.4 Running: dummy mode vs live CAN
-##### Dummy mode (testing without hardware)
-```zsh
-docker run -d --name can-reader \
-  --restart=unless-stopped \
-  --network=host \
-  -e HA_URL="http://192.168.1.139:8123" \
-  -e HA_TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyNDlhZWQ1NTFlZDk0MWVjOGM4NGI3MDU1MTk1Mzk3ZSIsImlhdCI6MTc3Mzg5OTEwMiwiZXhwIjoyMDg5MjU5MTAyfQ.CveoN77vg-21Eq3oJ1e_7FWMyCRhfKq0H0AS50mO7JE" \
-  -e DUMMY_MODE=true \
-  -e PUSH_INTERVAL=10 \
-  can-reader
-```
-##### Live CAN mode (hardware connected)
-```zsh
-docker stop can-reader && docker rm can-reader
-docker run -d --name can-reader \
-  --privileged \
-  --restart=unless-stopped \
-  --network=host \
-  -v /dev:/dev \
-  -e HA_URL="http://192.168.1.139:8123" \
-  -e HA_TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyNDlhZWQ1NTFlZDk0MWVjOGM4NGI3MDU1MTk1Mzk3ZSIsImlhdCI6MTc3Mzg5OTEwMiwiZXhwIjoyMDg5MjU5MTAyfQ.CveoN77vg-21Eq3oJ1e_7FWMyCRhfKq0H0AS50mO7JE" \
-  -e DUMMY_MODE=false \
-  -e PUSH_INTERVAL=10 \
-  -e CAN_BITRATE=250000 \
-  can-reader
-```
+Each device has its own dummy flag and push interval, so one can run live
+while the other is simulated. With both `*_dummy` set to `true` the app
+skips the CAN interface entirely — handy for testing with no hardware.
 
 ## 7. Battery BMS: Bluetooth integration
 The battery pack connects to Home Assistant over Bluetooth using the BLE Battery Management System integration. This was set up during initial configuration (Section 3.3).  
@@ -329,13 +306,13 @@ Key sensors created by this integration include:
 | --- | --- |
 | View running containers | `docker ps` |
 | View e-ink logs | `docker logs -f epaper-display` |
-| View CAN reader logs | `docker logs -f can-reader` |
+| View solar-car-canbus logs | `ha apps logs local_solarcar_canbus` |
 | Restart e-ink display | `docker restart epaper-display` |
-| Restart CAN reader | `docker restart can-reader` |
+| Restart solar-car-canbus | `ha apps restart local_solarcar_canbus` |
 | Stop e-ink before shutdown | `docker stop epaper-display` |
 | Remove a container | `docker rm -f <container_name>` |
 | Rebuild e-ink image | `docker build -t epaper-display /config/epaper-display` |
-| Rebuild CAN image | `docker build -t can-reader /config/can-reader` |
+| Rebuild solar-car-canbus | `ha apps rebuild local_solarcar_canbus` |
 
 
 ### CAN bus diagnostics
@@ -389,7 +366,7 @@ ha host reboot
 All project files are stored in /config/epaper-display/ and /config/can-reader/ on the Raspberry Pi. These directories persist across reboots.  
 ## 9. Network setup discussion
 
-![Diagram](readme_assets/image1.png)
+![Diagram](readme_assets/diagram2.png)
 
 The solar car needs a connection to the chase vehicle to provide a way to view telemetry data.  
 
@@ -405,6 +382,7 @@ Instructions to setup a different cell phone hotspot and password: Through the h
 - [https://goldenmotor.bike/products/ezkontrol-48-volt-universal-bldc-controller?variant=45701095358709](https://goldenmotor.bike/products/ezkontrol-48-volt-universal-bldc-controller?variant=45701095358709)
 
 
+- **Security (deferred):** this README has a Home Assistant long-lived token in plaintext (sections 3.4 and 5.4) and HA login creds (`sct/letsgo`, in the Tailscale notes below) — committed and pushed to GitHub. Rotate the token, change the password, and replace both with placeholders + env vars. They are already in git history, so treat them as compromised.
 - Debug can bus!!  Check wire connections!
     - Wire up CAN bus properly and switch to live mode
     - Debug CAN connection (termination switch, candump test)
