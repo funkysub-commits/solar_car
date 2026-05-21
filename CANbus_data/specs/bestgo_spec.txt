@@ -23,8 +23,13 @@ The BMS reports its identity in the name frames (see 0x370/0x371 below) as
   Transmit cycle : ~1 s, battery -> inverter, all frames sent each cycle
   Inverter reply : 0x305 = 00 00 00 00 00 00 00 00 once per second (keepalive)
 
-  NOTE: this is a different bus from the EZkontrol MCU (which is 250 kbps,
-  29-bit extended IDs). The two cannot share one CAN segment as-is.
+  SHARED BUS: the solar car runs the BESTGO battery and the EZkontrol MCU on
+  ONE CAN segment at 500 kbps, read through a single USB-CAN adapter. The
+  EZkontrol's factory default is 250 kbps (see ezkontrol_spec.txt); it is
+  reconfigured to 500 kbps for the car. The two devices coexist without ID
+  collision: BESTGO uses 11-bit standard IDs (0x351..0x379), the EZkontrol
+  MCU uses 29-bit extended IDs (0x1801xxxx).
+  (EZkontrol running at 500 kbps still to be bench-verified in the shop.)
 
 3. Frames (battery -> inverter)
 -------------------------------

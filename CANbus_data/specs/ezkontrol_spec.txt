@@ -1,6 +1,12 @@
 pages: 4
 metadata: {'format': 'PDF 1.7', 'title': '', 'author': '', 'subject': '', 'keywords': '', 'creator': '', 'producer': '', 'creationDate': '', 'modDate': '', 'trapped': '', 'encryption': None}
 ============================================================
+PROJECT NOTE (not part of the original PDF):
+The factory bitrate documented below is 250 kbps. For the solar car the
+EZkontrol MCU is reconfigured to 500 kbps so it shares ONE CAN bus with the
+BESTGO battery (single bus, single USB-CAN adapter). See bestgo_spec.txt
+section 2. EZkontrol-at-500kbps is still to be bench-verified in the shop.
+============================================================
 
 --- PAGE 1 (1412 chars text) ---
 EZkontrol MCU to Meter CAN Protocols

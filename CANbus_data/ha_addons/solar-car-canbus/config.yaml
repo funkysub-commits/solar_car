@@ -1,0 +1,28 @@
+name: Solar Car CANbus Reader
+version: "0.3.0"
+slug: solarcar_canbus
+description: Reads the EZkontrol motor controller and BESTGO battery from one shared CAN bus and pushes sensors to Home Assistant
+arch:
+  - aarch64
+startup: services
+boot: auto
+init: false
+host_network: true
+usb: true
+privileged:
+  - NET_ADMIN
+homeassistant_api: true
+options:
+  can_interface: can0
+  can_bitrate: 500000
+  ezkontrol_dummy: false
+  ezkontrol_push_interval: 2
+  bestgo_dummy: false
+  bestgo_push_interval: 5
+schema:
+  can_interface: str
+  can_bitrate: int(1000,1000000)
+  ezkontrol_dummy: bool
+  ezkontrol_push_interval: int(1,60)
+  bestgo_dummy: bool
+  bestgo_push_interval: int(1,60)

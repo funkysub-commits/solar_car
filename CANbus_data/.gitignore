@@ -1,0 +1,2 @@
+# Per-user local Claude Code settings (may contain command strings with secrets)
+.claude/settings.local.json
