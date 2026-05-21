@@ -1,4 +1,4 @@
-# Solar Storms Telemetry System
+# <img src="./readme_assets/solar_storms_logo.png" width="4%"> Solar Storms Telemetry System
 **Raspberry Pi + Home Assistant Setup Guide**  
 ---
 
