@@ -1,19 +1,19 @@
 # Solar Storms Telemetry System
+**Raspberry Pi + Home Assistant Setup Guide**  
 ---
-**Raspberry Pi + Home Assistant Setup Guide**
 
 
 
-**Hardware**: Raspberry Pi 4, Waveshare 7.5" e-ink display, DSD TECH SH-C31G USB-CAN adapter
-**Network**: ASUS router and cabling, optional cell phone with hotspot enabled
-**Software**: Home Assistant OS, Docker containers, Python + gpiod + SocketCAN
-**Interfaces**: SPI (display), CAN bus (motor controller), Bluetooth (battery BMS), Ethernet and Wifi
-**Features**: Live dashboard, configurable e-ink display, CAN bus decoder, bluetooth battery connection
+**Hardware**: Raspberry Pi 4, Waveshare 7.5" e-ink display, DSD TECH SH-C31G USB-CAN adapter  
+**Network**: ASUS router and cabling, optional cell phone with hotspot enabled  
+**Software**: Home Assistant OS, Docker containers, Python + gpiod + SocketCAN  
+**Interfaces**: SPI (display), CAN bus (motor controller), Bluetooth (battery BMS), Ethernet and Wifi  
+**Features**: Live dashboard, configurable e-ink display, CAN bus decoder, bluetooth battery connection  
 
-Devices on solar car
-Battery: bestgo
-BWPFE51100ATIPF (Os as zeros) — 51V 100Ah PFE-series LiFePO4 pack
-Motor control : ezkontrol
+Devices on solar car:
+- Battery: bestgo
+- BWPFE51100ATIPF (Os as zeros) — 51V 100Ah PFE-series LiFePO4 pack
+- Motor control : ezkontrol
 
 
 
@@ -31,10 +31,10 @@ This guide documents the complete setup of a solar car monitoring system built o
 
 
 ### Architecture
-The system consists of three external devices connected to a Raspberry Pi 4:
-**EZkontrol B48800** — 48V BLDC motor controller connected via CAN bus through a DSD TECH SH-C31G USB-to-CAN adapter. Broadcasts voltage, current, speed, temperatures, and error status every 100ms.
-**Battery pack (B00016 BMS)** — Connected via Bluetooth using the BLE Battery Management System integration in Home Assistant. Provides stored energy, battery level, and other BMS data.
-**Waveshare 7.5" V2 e-ink display** — Connected via the SPI bus and GPIO pins through the e-Paper Driver HAT. Displays configurable sensor data from Home Assistant, refreshing every 5 minutes with an on-demand refresh button.
+The system consists of three external devices connected to a Raspberry Pi 4:  
+**EZkontrol B48800** — 48V BLDC motor controller connected via CAN bus through a DSD TECH SH-C31G USB-to-CAN adapter. Broadcasts voltage, current, speed, temperatures, and error status every 100ms.  
+**Battery pack (B00016 BMS)** — Connected via Bluetooth using the BLE Battery Management System integration in Home Assistant. Provides stored energy, battery level, and other BMS data.  
+**Waveshare 7.5" V2 e-ink display** — Connected via the SPI bus and GPIO pins through the e-Paper Driver HAT. Displays configurable sensor data from Home Assistant, refreshing every 5 minutes with an on-demand refresh button.  
 ### Software architecture
 Two Docker containers run on the Pi alongside Home Assistant OS:
 | Container | Purpose | Key detail |
@@ -43,7 +43,7 @@ Two Docker containers run on the Pi alongside Home Assistant OS:
 | epaper-display | Reads HA sensors, draws to e-ink screen | Configurable via HA helpers |
 
 
-Both containers use `--restart=unless-stopped` so they survive reboots. The e-ink display container runs in privileged mode with access to /dev for SPI/GPIO. The CAN reader uses `--network=host` for HA API access.
+Both containers use `--restart=unless-stopped` so they survive reboots. The e-ink display container runs in privileged mode with access to /dev for SPI/GPIO. The CAN reader uses `--network=host` for HA API access.  
 
 ## 2. Prerequisites
 ### Hardware
@@ -59,18 +59,18 @@ Both containers use `--restart=unless-stopped` so they survive reboots. The e-in
 
 
 ### Software
-Built with Claude in this [context](https://claude.ai/share/ac0488df-1b63-45a8-bcfc-a0aab504916a)
+Built with Claude in this [context](https://claude.ai/share/ac0488df-1b63-45a8-bcfc-a0aab504916a)  
 
-Home Assistant OS (HAOS) installed on the Pi via Raspberry Pi Imager. The Advanced SSH & Web Terminal add-on must be installed with Protection Mode disabled to allow Docker access and GPIO/SPI operations.
-A Long-Lived Access Token from Home Assistant is required for the containers to communicate with the HA REST API. Generate this from your HA profile page.
+Home Assistant OS (HAOS) installed on the Pi via Raspberry Pi Imager. The Advanced SSH & Web Terminal add-on must be installed with Protection Mode disabled to allow Docker access and GPIO/SPI operations.  
+A Long-Lived Access Token from Home Assistant is required for the containers to communicate with the HA REST API. Generate this from your HA profile page.  
 
 ## 3. Initial setup: Home Assistant OS
 ### 3.1 Flash HAOS to SD card
-Use Raspberry Pi Imager to flash Home Assistant OS onto a microSD card. Select your Pi 4 as the device, choose 'Other specific-purpose OS > Home assistants and home automation > Home Assistant > Home Assistant OS'. Configure WiFi and SSH in the imager settings if desired.
-Insert the SD card into the Pi and power on. Wait several minutes for the first boot. Access the web interface at [http://homeassistant.local:8123](http://homeassistant.local:8123).
+Use Raspberry Pi Imager to flash Home Assistant OS onto a microSD card. Select your Pi 4 as the device, choose 'Other specific-purpose OS > Home assistants and home automation > Home Assistant > Home Assistant OS'. Configure WiFi and SSH in the imager settings if desired.  
+Insert the SD card into the Pi and power on. Wait several minutes for the first boot. Access the web interface at [http://homeassistant.local:8123](http://homeassistant.local:8123).  
 
 ### 3.2 Install SSH add-on
-From the HA web interface:
+From the HA web interface:  
 1. Go to Settings > Add-ons > Add-on Store
 2. Search for Advanced SSH & Web Terminal
 3. Install it and configure a password or SSH key
@@ -120,8 +120,8 @@ python3 --version
 pip3 install RPi.GPIO spidev Pillow numpy gpiozero gpiod
 ```
 ### 4.3 Key challenge: HAOS container restrictions
-Home Assistant OS runs add-ons in sandboxed Docker containers. Even with Protection Mode disabled, the SSH add-on cannot directly open SPI devices. The solution is to run the display code in a separate privileged Docker container with /dev mounted.
-Additionally, the Waveshare Python library uses gpiozero which doesn't work in this environment. The library must be patched to use gpiod (the modern Linux GPIO character device interface) instead. The CS pin (GPIO 8) must also be excluded since SPI hardware manages it automatically.
+Home Assistant OS runs add-ons in sandboxed Docker containers. Even with Protection Mode disabled, the SSH add-on cannot directly open SPI devices. The solution is to run the display code in a separate privileged Docker container with /dev mounted.  
+Additionally, the Waveshare Python library uses gpiozero which doesn't work in this environment. The library must be patched to use gpiod (the modern Linux GPIO character device interface) instead. The CS pin (GPIO 8) must also be excluded since SPI hardware manages it automatically.  
 ### 4.4 Building the patched Docker image
 Create the project directory:
 ```zsh
@@ -151,7 +151,7 @@ COPY display.py /display.py
 CMD ["python3", "/display.py"]
 ```
 ##### Build and test
-docker build -t epaper-display /config/epaper-display
+docker build -t epaper-display /config/epaper-display  
 
 # Quick test - run the Waveshare demo
 ```zsh
@@ -162,10 +162,10 @@ python3 epd_7in5_V2_test.py
 
 ## 5. E-ink display: Home Assistant integration
 ### 5.1 Display script
-The display script (display.py) reads configuration from Home Assistant helpers to determine what data to show. It supports a configurable title and 4 sensor slots. Every 5 minutes (or on button press), it fetches the slot entity IDs from HA helpers, resolves each to its current sensor state, and renders everything to the e-ink display.
-Key features: reads input_text helpers for title and slot entity IDs, fetches each sensor's friendly_name/state/unit, renders a clean layout, and polls for the refresh button every 5 seconds during sleep.
+The display script (display.py) reads configuration from Home Assistant helpers to determine what data to show. It supports a configurable title and 4 sensor slots. Every 5 minutes (or on button press), it fetches the slot entity IDs from HA helpers, resolves each to its current sensor state, and renders everything to the e-ink display.  
+Key features: reads input_text helpers for title and slot entity IDs, fetches each sensor's friendly_name/state/unit, renders a clean layout, and polls for the refresh button every 5 seconds during sleep.  
 ### 5.2 Create HA helpers
-In Home Assistant, go to Settings > Devices & Services > Helpers and create:
+In Home Assistant, go to Settings > Devices & Services > Helpers and create:  
 | Helper type | Name | Default value |
 | --- | --- | --- |
 | Text | EInk Display Title | Solar Car Monitor |
@@ -176,9 +176,9 @@ In Home Assistant, go to Settings > Devices & Services > Helpers and create:
 | Button | EInk Refresh | (no default needed) |
 
 
-Set the values via Developer Tools > Services > input_text.set_value after creation.
+Set the values via Developer Tools > Services > input_text.set_value after creation.  
 ### 5.3 Dashboard control card
-Add an Entities card to your dashboard with this YAML:
+Add an Entities card to your dashboard with this YAML:  
 ```yaml
 type: entities
 title: E-Ink Display Control
@@ -222,8 +222,8 @@ Connect the EZkontrol's CN2 connector to the DSD TECH SH-C31G USB-CAN adapter:
 > [!NOTE]
 > Enable the 120 ohm termination resistor on the SH-C31G if it is the last device on the CAN bus. The EZkontrol has its own 120 ohm termination enabled by default (brown wire CN2-11).
 ### 6.2 CAN protocol: MCU-to-METER (read-only)
-The EZkontrol broadcasts two J1939 extended CAN frames every 100ms. This is a passive protocol — no handshake required. The bus rate is 250 Kbps (default, CAN protocol setting = 2).
-Use the “EZ-Tune” Android app to set the CAN protocol to 2 (it was defaulted to 1).  It should stay on that setting through power cycles now.  Setting 102 is for 500 Kbps.
+The EZkontrol broadcasts two J1939 extended CAN frames every 100ms. This is a passive protocol — no handshake required. The bus rate is 250 Kbps (default, CAN protocol setting = 2).  
+Use the “EZ-Tune” Android app to set the CAN protocol to 2 (it was defaulted to 1).  It should stay on that setting through power cycles now.  Setting 102 is for 500 Kbps.  
 ##### Message I — CAN ID 0x180117EF
 | Bytes | Data | Resolution | Offset | Range |
 | --- | --- | --- | --- | --- |
@@ -233,7 +233,7 @@ Use the “EZ-Tune” Android app to set the CAN protocol to 2 (it was defaulted
 | 6-7 | Speed | 0.1 rpm/bit | -32000 rpm | -32000 - 32000 rpm |
 
 
-All values are little-endian unsigned 16-bit. Formula: physical = raw * resolution + offset
+All values are little-endian unsigned 16-bit. Formula: physical = raw * resolution + offset  
 #### Message II — CAN ID 0x180217EF
 | Byte | Data | Resolution | Offset |
 | --- | --- | --- | --- |
@@ -246,7 +246,7 @@ All values are little-endian unsigned 16-bit. Formula: physical = raw * resoluti
 
 
 ### 6.3 CAN reader Docker container
-The can-reader container decodes both CAN messages and pushes 12 sensors to Home Assistant:
+The can-reader container decodes both CAN messages and pushes 12 sensors to Home Assistant:  
 | Sensor entity | Source | Unit |
 | --- | --- | --- |
 | sensor.ezkontrol_bus_voltage | Msg I, bytes 0-1 | V |
@@ -307,10 +307,10 @@ docker run -d --name can-reader \
 ```
 
 ## 7. Battery BMS: Bluetooth integration
-The battery pack connects to Home Assistant over Bluetooth using the BLE Battery Management System integration. This was set up during initial configuration (Section 3.3).
-Key sensors created by this integration include:
-`sensor.p_24050bnna70_b00016_stored_energy` — total energy stored in the battery
-`sensor.p_24050bnna70_b00016_battery` — battery percentage / state of charge
+The battery pack connects to Home Assistant over Bluetooth using the BLE Battery Management System integration. This was set up during initial configuration (Section 3.3).  
+Key sensors created by this integration include:  
+`sensor.p_24050bnna70_b00016_stored_energy` — total energy stored in the battery  
+`sensor.p_24050bnna70_b00016_battery` — battery percentage / state of charge  
 
 > [!NOTE]
 > You can rename sensor friendly names for shorter display labels: go to Settings > Devices & Services > Entities, click the sensor, gear icon, and change the Name field.
@@ -378,18 +378,18 @@ ha host reboot
 
 
 
-All project files are stored in /config/epaper-display/ and /config/can-reader/ on the Raspberry Pi. These directories persist across reboots.
+All project files are stored in /config/epaper-display/ and /config/can-reader/ on the Raspberry Pi. These directories persist across reboots.  
 ## 9. Network setup discussion
 
 ![Diagram](readme_assets/image1.png)
 
-The solar car needs a connection to the chase vehicle to provide a way to view telemetry data.
+The solar car needs a connection to the chase vehicle to provide a way to view telemetry data.  
 
 Raspberry pi is connected to an old Asus router.  The Asus router helped when setting up and debugging the system.  The raspberry pi has a wifi interface and can provide a wifi access point, but range is not tested. The asus router will provide a strong wifi connection to the home assistant on the road, but does take a small amount of extra power from the battery.  We may want to remove the Asus router and just have a laptop direct connect to the raspberry pi wifi access point.  However, with the router, we should have longer range, and also the ability for the raspberry pi to connect to a cell phone hot spot at the same time for remote monitoring/debug over the internet when a cell phone data connection is available.  
 
-It might be annoying for the PC in the chase vehicle to have telemetry data but not have an internet connection for debug!
+It might be annoying for the PC in the chase vehicle to have telemetry data but not have an internet connection for debug!  
 
-Instructions to setup a different cell phone hotspot and password: Through the home assistant GUI (to be described later)
+Instructions to setup a different cell phone hotspot and password: Through the home assistant GUI (to be described later)  
 
 ## 10. Andy left to do
 - [https://goldenmotor.bike/products/ezkontrol-48-volt-universal-bldc-controller](https://goldenmotor.bike/products/ezkontrol-48-volt-universal-bldc-controller)
@@ -411,8 +411,8 @@ Instructions to setup a different cell phone hotspot and password: Through the h
     - Move that to basic home assistant docker container, test dashboard
     - Create addon for home assistant “CAN bus reader”
     - Test in the lab!!
-    - Update e-ink display to make prettier
-After a reboot:
+    - Update e-ink display to make prettier  
+After a reboot:  
 ```zsh
 docker stop can-reader && docker rm can-reader
 docker ps | grep can
@@ -424,7 +424,7 @@ ip link set can0 up
 candump can0
 ```
 
-If still nothing after the power cycle and swap, let's try the handshake. The VCU protocol requires the controller to receive a 0xAA response before it starts broadcasting. Try sending it:
+If still nothing after the power cycle and swap, let's try the handshake. The VCU protocol requires the controller to receive a 0xAA response before it starts broadcasting. Try sending it:  
 ```zsh
 cansend can0 18EF00D0#AA00000000000000
 ```
@@ -467,10 +467,10 @@ Complete:
     - Minimize screen flashes on update?
     - Esp32 board alternative?
 ###### Ideas for improvement:
-the Waveshare 7.5" V2 supports both fast refresh and partial refresh in the Python library. We just need to update the display script. Here's what we can improve:
-**Fast refresh** — uses `init_fast()` instead of `init()`, cuts the full refresh from ~6 seconds to ~2 seconds with less flashing.
-**Partial refresh** — only redraws the pixels that changed. No flash at all. Perfect for updating just the sensor values while keeping the layout static.
+the Waveshare 7.5" V2 supports both fast refresh and partial refresh in the Python library. We just need to update the display script. Here's what we can improve:  
+**Fast refresh** — uses `init_fast()` instead of `init()`, cuts the full refresh from ~6 seconds to ~2 seconds with less flashing.  
+**Partial refresh** — only redraws the pixels that changed. No flash at all. Perfect for updating just the sensor values while keeping the layout static.  
 **Better approach**: Do a full refresh once on startup to set a clean base image, then use partial refresh for subsequent updates. Do a full refresh every ~30 cycles to prevent ghosting.
-Can get pretty fancy with this, but simple might be a good idea.
+Can get pretty fancy with this, but simple might be a good idea.  
 
 
