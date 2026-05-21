@@ -482,3 +482,6 @@ the Waveshare 7.5" V2 supports both fast refresh and partial refresh in the Pyth
 Can get pretty fancy with this, but simple might be a good idea.  
 
 
+
+
+![Evana](readme_assets/evana.png)
