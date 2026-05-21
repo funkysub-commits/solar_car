@@ -1,22 +1,31 @@
 """Live dashboard + ASC logger for EZkontrol B48800 MCU CAN messages.
 
 Usage:
-    python decode.py [DURATION_SEC] [LOG_PATH]
+    python ezkontrol_decode.py [DURATION_SEC] [LOG_PATH]
+    python ezkontrol_decode.py -250                (force 250 kbps)
+    python ezkontrol_decode.py -ezkontrol_dummy
 
 DURATION_SEC = 0 means run until Ctrl+C. LOG_PATH defaults to
 logs/decode-<timestamp>.asc and is in Vector ASC format.
 
-Talks to gs_usb directly because python-can 4.6.1's BitTiming.from_sample_point
-cannot find a valid (BRP, TSEG) for 250 kbps at this adapter's reported 170 MHz
-CAN clock. We set the bit-timing registers explicitly:
+The bus rate defaults to 500 kbps; pass -250 for 250 kbps (the rate in
+the EZkontrol MCU-to-Meter spec). Pass -ezkontrol_dummy to drive the
+dashboard from simulated MCU data when the controller (or the SH-C31G
+adapter) isn't connected -- no device is opened and no log is written.
 
-    sync=1, prop=1, phase1=13, phase2=2, sjw=2, brp=40
-    => tq=17, sample point = (1+1+13)/17 = 88.2%
-    => bitrate = 170e6 / (40 * 17) = 250000 bps exactly
+Talks to gs_usb directly because python-can 4.6.1's BitTiming.from_sample_point
+cannot find a valid (BRP, TSEG) at this adapter's reported 170 MHz CAN
+clock. We set the bit-timing registers explicitly:
+
+    sync=1, prop=1, phase1=13, phase2=2, sjw=2  => 17 tq, 88.2% sample point
+    brp=20 => 170e6 / (20 * 17) = 500000 bps exactly
+    brp=40 => 170e6 / (40 * 17) = 250000 bps exactly
 """
 import os
 import sys
 import time
+import math
+import random
 import signal
 from collections import deque
 from datetime import datetime
@@ -35,11 +44,20 @@ from gs_usb.gs_usb import GsUsb
 from gs_usb.gs_usb_frame import GsUsbFrame
 import can
 
+DUMMY = "-ezkontrol_dummy" in sys.argv
+BITRATE = 250_000 if "-250" in sys.argv else 500_000
+BRP = 40 if BITRATE == 250_000 else 20
+RATE_LABEL = f"{BITRATE // 1000} kbps"
+sys.argv = [sys.argv[0]] + [a for a in sys.argv[1:]
+                            if a not in ("-ezkontrol_dummy", "-250", "-500")]
+
 duration_sec = float(sys.argv[1]) if len(sys.argv) > 1 else 0.0
 if duration_sec == 0.0:
     duration_sec = None
 
-if len(sys.argv) > 2:
+if DUMMY:
+    log_path = "(dummy mode - logging disabled)"
+elif len(sys.argv) > 2:
     log_path = sys.argv[2]
 else:
     os.makedirs("logs", exist_ok=True)
@@ -83,6 +101,54 @@ def parse_msg_ii(data):
         "errors":    ",".join(errs) if errs else "OK",
         "life":      data[7] >> 4,
     }
+
+
+# --- Dummy-data generator (for -ezkontrol_dummy, no hardware needed) --------
+_dummy_t0 = time.monotonic()
+_dummy_queue = deque()
+_dummy_next = 0.0
+DUMMY_PERIOD = 0.1   # one simulated MCU broadcast cycle every 100 ms (as real)
+
+
+def dummy_frames():
+    """Build one simulated MCU broadcast cycle: (0x180117EF, 0x180217EF)."""
+    t = time.monotonic() - _dummy_t0
+    rpm = max(0, int(1500 + 1350 * math.sin(t / 7.0)))
+    throttle = min(100, max(0, int(rpm / 30)))
+    ibus = round(2.0 + throttle * 0.85 + random.uniform(-1.5, 1.5), 1)
+    iphase = round(ibus * 1.6, 1)
+    v = round(72.0 - ibus * 0.03, 1)
+    tctrl = int(32 + throttle * 0.12)
+    tmot = int(38 + throttle * 0.18)
+    brake = 1 if math.sin(t / 4.0) > 0.8 else 0
+    gear = 4                       # D2
+    contactor = 1
+    sb = (gear & 7) | (brake << 3) | (contactor << 7)
+    life = int(t * 10) & 0x0F
+
+    m1 = bytearray(8)
+    m1[0:2] = int(round(v / 0.1)).to_bytes(2, "little")
+    m1[2:4] = int(round((ibus + 3200) / 0.1)).to_bytes(2, "little")
+    m1[4:6] = int(round((iphase + 3200) / 0.1)).to_bytes(2, "little")
+    m1[6:8] = (rpm + 32000).to_bytes(2, "little")
+
+    m2 = bytearray(8)
+    m2[0] = tctrl + 40
+    m2[1] = tmot + 40
+    m2[2] = throttle
+    m2[3] = sb
+    m2[7] = (life & 0x0F) << 4
+    return [(0x180117EF, bytes(m1)), (0x180217EF, bytes(m2))]
+
+
+def dummy_read():
+    """Return the next simulated frame (arb, data), paced to real timing."""
+    global _dummy_next
+    now = time.monotonic()
+    if not _dummy_queue and now >= _dummy_next:
+        _dummy_queue.extend(dummy_frames())
+        _dummy_next = now + DUMMY_PERIOD
+    return _dummy_queue.popleft() if _dummy_queue else None
 
 
 # State + change tracking
@@ -144,7 +210,8 @@ def empty_row():
 
 def render(fps, last_age):
     s = state
-    L = [title_bar("EZkontrol B48800   250 kbps")]
+    L = [title_bar(f"EZkontrol B48800   {RATE_LABEL}"
+                   + ("   [DUMMY]" if DUMMY else ""))]
 
     if "v" in s:
         L.append(row2(slot("Battery",  f"{s['v']:.1f} V",       "v"),
@@ -190,15 +257,19 @@ ANSI_HIDE_CURSOR = "\x1b[?25l"
 ANSI_SHOW_CURSOR = "\x1b[?25h"
 
 
-devs = GsUsb.scan()
-if not devs:
-    print("No gs_usb device found.")
-    sys.exit(1)
-dev = devs[0]
-
-dev.set_timing(prop_seg=1, phase_seg1=13, phase_seg2=2, sjw=2, brp=40)
-dev.start()
-asc_writer = can.ASCWriter(log_path)
+if DUMMY:
+    dev = None
+    asc_writer = None
+else:
+    devs = GsUsb.scan()
+    if not devs:
+        print("No gs_usb device found. "
+              "(Use -ezkontrol_dummy to run without hardware.)")
+        sys.exit(1)
+    dev = devs[0]
+    dev.set_timing(prop_seg=1, phase_seg1=13, phase_seg2=2, sjw=2, brp=BRP)
+    dev.start()
+    asc_writer = can.ASCWriter(log_path)
 
 stop = False
 def _handle_sigint(signum, frame):
@@ -225,18 +296,27 @@ try:
         if deadline and now_mono >= deadline:
             break
 
-        got = dev.read(fr, 50)  # short timeout so we can redraw smoothly
+        if DUMMY:
+            frame = dummy_read()
+            got = frame is not None
+            if not got:
+                time.sleep(0.02)
+        else:
+            got = dev.read(fr, 50)  # short timeout so we can redraw smoothly
+
         if got:
-            arb = fr.arbitration_id
-            data = bytes(fr.data[:fr.can_dlc])
-            wall = time.time()
-            asc_writer.on_message_received(can.Message(
-                timestamp=wall,
-                arbitration_id=arb,
-                is_extended_id=fr.is_extended_id,
-                dlc=fr.can_dlc,
-                data=data,
-            ))
+            if DUMMY:
+                arb, data = frame
+            else:
+                arb = fr.arbitration_id
+                data = bytes(fr.data[:fr.can_dlc])
+                asc_writer.on_message_received(can.Message(
+                    timestamp=time.time(),
+                    arbitration_id=arb,
+                    is_extended_id=fr.is_extended_id,
+                    dlc=fr.can_dlc,
+                    data=data,
+                ))
             if arb == 0x180117EF:
                 update_state(parse_msg_i(data))
             elif arb == 0x180217EF:
@@ -261,11 +341,13 @@ finally:
     sys.stdout.flush()
     print("\nshutting down...")
     try:
-        asc_writer.stop()
-        print(f"log saved: {log_path}")
+        if asc_writer is not None:
+            asc_writer.stop()
+            print(f"log saved: {log_path}")
     except Exception:
         pass
     try:
-        dev.stop()
+        if dev is not None:
+            dev.stop()
     except Exception:
         pass

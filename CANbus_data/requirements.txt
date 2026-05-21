@@ -1,0 +1,33 @@
+# Python dependencies for the CANbus_data PC-side tools (pc_files/).
+# Recreate the environment on a new PC:
+#
+#   py -3.12 -m venv C:\projects\solar_car\venv
+#   C:\projects\solar_car\venv\Scripts\python.exe -m pip install -r CANbus_data\requirements.txt
+#
+# Built and tested against Python 3.12.10 on Windows.
+#
+# Top-level packages this project actually imports:
+#   python-can      - CAN bus library / ASC logging
+#   gs-usb          - direct gs_usb adapter access (SH-C31G)
+#   pyusb           - USB backend for gs_usb
+#   libusb-package  - bundled libusb backend (no system install needed)
+#   PyMuPDF         - PDF text extraction (spec tooling)
+#   paramiko        - SSH to the Home Assistant host (ha_push.py / ha_run.py)
+# The rest are pinned transitive dependencies.
+
+bcrypt==5.0.0
+cffi==2.0.0
+cryptography==48.0.0
+gs-usb==0.3.1
+importlib_resources==7.1.0
+invoke==3.0.3
+libusb-package==1.0.26.3
+packaging==26.2
+paramiko==5.0.0
+pycparser==3.0
+PyMuPDF==1.27.2.3
+PyNaCl==1.6.2
+python-can==4.6.1
+pyusb==1.3.1
+typing_extensions==4.15.0
+wrapt==1.17.3

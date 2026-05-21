@@ -1,1 +1,8 @@
 SmartBMS_App/
+
+# Python virtual environment (recreate from CANbus_data/requirements.txt)
+venv/
+
+# Python bytecode caches
+__pycache__/
+*.pyc
