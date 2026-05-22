@@ -29,6 +29,7 @@ options:
   ent_soc: sensor.bestgo_soc
   ent_voltage: sensor.bestgo_pack_voltage
   ent_message: input_text.eink_message
+  ent_power: input_boolean.eink_display
 schema:
   title: str
   speed_unit: list(mph|kmh|rpm)
@@ -49,3 +50,4 @@ schema:
   ent_soc: str
   ent_voltage: str
   ent_message: str
+  ent_power: str

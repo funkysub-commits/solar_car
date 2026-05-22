@@ -86,6 +86,7 @@ ENTITIES = {
     "message": os.environ.get("ENT_MESSAGE", "input_text.eink_message"),
 }
 REFRESH_BUTTON = "input_button.eink_refresh"
+POWER_TOGGLE = os.environ.get("ENT_POWER", "input_boolean.eink_display")
 
 HEADERS = {"Authorization": f"Bearer {HA_TOKEN}"}
 
@@ -467,20 +468,38 @@ def main():
 
     disp = rpm_to_speed(speed)
     clock = datetime.now().strftime("%H:%M")
-    img = render(disp, temps, soc, voltage, voltage_unit, ha_msg, clock)
-    full_refresh(epd, img)                # clean base frame, then partial mode
-    logging.info("initial frame drawn")
+    powered = ha_get(POWER_TOGGLE)[0] != "off"   # default ON if the toggle is absent
+    if powered:
+        img = render(disp, temps, soc, voltage, voltage_unit, ha_msg, clock)
+        full_refresh(epd, img)            # clean base frame, then partial mode
+        logging.info("initial frame drawn")
+    else:
+        epd.sleep()                       # already cleared above; just sleep the panel
+        logging.info("display starts OFF (HA toggle)")
 
     last_snaps = region_snaps(disp, temps, soc, voltage, ha_msg, clock)
     refresh_count = 0
     last_slow = time.time()
     last_button, _ = ha_get(REFRESH_BUTTON)
-    awake = True
+    awake = powered
     idle_since = time.time()
 
     try:
         while not stop["flag"]:
             t0 = time.time()
+
+            # HA on/off toggle - clears the panel when switched off
+            if ha_get(POWER_TOGGLE)[0] == "off":
+                if powered:
+                    epd.init()
+                    epd.Clear()
+                    epd.sleep()
+                    powered, awake = False, False
+                    logging.info("display turned OFF via HA - screen cleared")
+                time.sleep(SPEED_POLL)
+                continue
+            turning_on = not powered
+            powered = True
 
             # fast value - speed, every loop
             s, _ = read_number(ENTITIES["speed"])
@@ -514,17 +533,14 @@ def main():
             changed = [r for r in REGIONS if snaps[r] != last_snaps[r]]
             data_changed = any(r in DATA_REGIONS for r in changed)
 
-            if data_changed or force:
+            if data_changed or force or turning_on:
                 img = render(disp, temps, soc, voltage, voltage_unit, ha_msg, clock)
-                if not awake:
-                    full_refresh(epd, img)            # wake from deep sleep
+                if turning_on or not awake or force or refresh_count >= FULL_REFRESH_EVERY:
+                    full_refresh(epd, img)            # power-on / wake / de-ghost
                     awake = True
                     refresh_count = 0
-                    logging.info(f"woke panel - speed={disp:.0f}{SPEED_LABEL}")
-                elif force or refresh_count >= FULL_REFRESH_EVERY:
-                    full_refresh(epd, img)            # periodic de-ghost
-                    refresh_count = 0
-                    logging.info(f"full refresh - speed={disp:.0f}{SPEED_LABEL} "
+                    logging.info(f"{'display ON' if turning_on else 'full refresh'} - "
+                                 f"speed={disp:.0f}{SPEED_LABEL} "
                                  f"temps={fmt_temps(temps)} soc={soc}")
                 else:
                     for r in changed:                 # gentle per-region update

@@ -25,6 +25,7 @@ export ENT_T_PI="$(bashio::config 'ent_t_pi')"
 export ENT_SOC="$(bashio::config 'ent_soc')"
 export ENT_VOLTAGE="$(bashio::config 'ent_voltage')"
 export ENT_MESSAGE="$(bashio::config 'ent_message')"
+export ENT_POWER="$(bashio::config 'ent_power')"
 
 bashio::log.info "speed=${ENT_SPEED} unit=${SPEED_UNIT} poll=${SPEED_POLL}s"
 
