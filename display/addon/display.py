@@ -43,7 +43,7 @@ import requests
 
 sys.path.append('/e-Paper/RaspberryPi_JetsonNano/python/lib')
 from waveshare_epd import epd7in5_V2
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageFont
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 
@@ -136,13 +136,17 @@ LOGO_H = 40
 
 
 def _load_logo():
-    """Load the team logo and convert it to clean 1-bit line art for the header."""
+    """Load the team logo as a bold 1-bit silhouette for the header - anything
+    that is not near-white background becomes solid black, so it stays visible
+    on the e-ink panel (a plain threshold would drop the light-coloured sun)."""
     try:
-        lg = Image.open(LOGO_PATH).convert("L")
-        lg = ImageOps.autocontrast(lg)
-        w = max(1, round(lg.width * LOGO_H / lg.height))
-        lg = lg.resize((w, LOGO_H), Image.LANCZOS)
-        return lg.convert("1", dither=Image.Dither.NONE)
+        src = Image.open(LOGO_PATH).convert("RGBA")
+        bg = Image.new("RGBA", src.size, (255, 255, 255, 255))
+        bg.alpha_composite(src)
+        gray = bg.convert("L")
+        w = max(1, round(gray.width * LOGO_H / gray.height))
+        gray = gray.resize((w, LOGO_H), Image.LANCZOS)
+        return gray.point(lambda p: 0 if p < 242 else 255).convert("1", dither=Image.Dither.NONE)
     except Exception as e:
         logging.warning(f"logo load failed: {e}")
         return None
