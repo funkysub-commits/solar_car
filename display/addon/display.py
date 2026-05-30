@@ -37,7 +37,7 @@ import math
 import time
 import signal
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 import requests
 
@@ -65,8 +65,19 @@ SPEED_UNIT = os.environ.get("SPEED_UNIT", "mph").strip().lower()
 WHEEL_DIAMETER_IN = float(os.environ.get("WHEEL_DIAMETER_IN", "20"))   # drive wheel diameter, inches
 GEAR_RATIO = float(os.environ.get("GEAR_RATIO", "1") or "1")           # motor revs per wheel rev
 SPEED_MAX = float(os.environ.get("SPEED_MAX", "40"))         # speedometer full-scale, in SPEED_UNIT
-TEMP_MAX = float(os.environ.get("TEMP_MAX", "80"))           # temperature bar full-scale, degrees C
-TEMP_WARN = float(os.environ.get("TEMP_WARN", "65"))         # temperature warning threshold, degrees C
+
+# Temperatures: read internally as degrees Celsius, displayed in TEMP_UNIT.
+# TEMP_MAX and TEMP_WARN are interpreted in the *display* unit (so for "F" the
+# user sets them in F as well).
+TEMP_UNIT = os.environ.get("TEMP_UNIT", "C").strip().upper()
+if TEMP_UNIT not in ("C", "F"):
+    TEMP_UNIT = "C"
+TEMP_MAX = float(os.environ.get("TEMP_MAX", "80"))           # temperature bar full-scale, in TEMP_UNIT
+TEMP_WARN = float(os.environ.get("TEMP_WARN", "65"))         # temperature warning threshold, in TEMP_UNIT
+
+# Source-data freshness: if every CAN-fed entity has not updated within
+# STALE_AGE seconds, the display switches to the "CAN bus not connected" view.
+STALE_AGE = float(os.environ.get("STALE_AGE", "60"))
 
 SPEED_LABEL = {"rpm": "rpm", "mph": "mph", "kmh": "km/h", "km/h": "km/h"}.get(SPEED_UNIT, SPEED_UNIT)
 
@@ -192,57 +203,85 @@ def wrap_text(text, width):
 # Home Assistant access
 # --------------------------------------------------------------------------
 def ha_get(entity):
-    """Return (state, attributes) for an entity, or (None, {}) on any failure."""
+    """Return (state, attributes, last_reported_iso) for an entity. last_reported
+    is preferred over last_updated because it advances on every push, even when
+    the state value hasn't changed - which is what we want for staleness."""
     try:
         r = requests.get(f"{HA_URL}/api/states/{entity}", headers=HEADERS, timeout=5)
         r.raise_for_status()
         j = r.json()
-        return j.get("state"), j.get("attributes", {})
+        return (j.get("state"), j.get("attributes", {}),
+                j.get("last_reported") or j.get("last_updated"))
     except Exception as e:
         logging.debug(f"fetch {entity} failed: {e}")
-        return None, {}
+        return None, {}, None
+
+
+def entity_age_seconds(last_iso):
+    """How long since this HA timestamp, in seconds. inf if missing/bad."""
+    if not last_iso:
+        return float("inf")
+    try:
+        ts = datetime.fromisoformat(last_iso.replace("Z", "+00:00"))
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - ts).total_seconds()
+    except Exception:
+        return float("inf")
 
 
 def read_number(entity):
-    """Return (float value, unit) for a numeric entity, or (None, unit)."""
-    state, attrs = ha_get(entity)
+    """Return (float value, unit, last_iso) for a numeric entity."""
+    state, attrs, lu = ha_get(entity)
     unit = attrs.get("unit_of_measurement", "")
     if state in (None, "", "unknown", "unavailable"):
-        return None, unit
+        return None, unit, lu
     try:
-        return float(state), unit
+        return float(state), unit, lu
     except (TypeError, ValueError):
-        return None, unit
+        return None, unit, lu
 
 
 def read_temp_c(entity):
-    """Read a temperature entity and normalise to degrees Celsius."""
-    val, unit = read_number(entity)
+    """Read a temperature entity and normalise to degrees Celsius.
+    Returns (value_c or None, last_iso)."""
+    val, unit, lu = read_number(entity)
     if val is None:
-        return None
+        return None, lu
     if unit and "F" in unit.upper():       # Pi sensor reports Fahrenheit
         val = (val - 32.0) * 5.0 / 9.0
-    return val
+    return val, lu
 
 
 def read_message(entity):
     """Read the free-text message entity (input_text), or '' if unset."""
-    state, _ = ha_get(entity)
+    state, _, _ = ha_get(entity)
     if state in (None, "", "unknown", "unavailable"):
         return ""
     return str(state).strip()
+
+
+def to_display_temp(t_c):
+    """Convert a temperature in degrees Celsius to the configured display unit."""
+    if t_c is None:
+        return None
+    return t_c if TEMP_UNIT == "C" else (t_c * 9.0 / 5.0 + 32.0)
 
 
 # --------------------------------------------------------------------------
 # Messages
 # --------------------------------------------------------------------------
 def hot_temps(temps):
-    """Return the list of (label, value) temps at or above the warning threshold."""
+    """Return (label, display-unit-value) for temps at or above TEMP_WARN.
+    temps come in as degrees C; TEMP_WARN is in the display unit."""
     out = []
     for lbl, key in (("MOTOR", "t_motor"), ("EZK", "t_ezk"),
                       ("BATT", "t_batt"), ("PI", "t_pi")):
-        v = temps.get(key)
-        if v is not None and v >= TEMP_WARN:
+        v_c = temps.get(key)
+        if v_c is None:
+            continue
+        v = to_display_temp(v_c)
+        if v >= TEMP_WARN:
             out.append((lbl, v))
     return out
 
@@ -252,7 +291,8 @@ def build_messages(temps, ha_msg):
     lines = []
     hot = hot_temps(temps)
     if hot:
-        lines.append(("! HIGH TEMP  " + "  ".join(f"{l} {v:.0f}°" for l, v in hot), True))
+        parts = "  ".join(f"{l} {v:.0f}°{TEMP_UNIT}" for l, v in hot)
+        lines.append(("! HIGH TEMP  " + parts, True))
     if ha_msg:
         for chunk in wrap_text(ha_msg, 36):
             lines.append((chunk, False))
@@ -346,14 +386,15 @@ def draw_temps(d, temps):
     base_y, top_y = 446, 330
     bar_h = base_y - top_y
 
-    for i, (lbl, val) in enumerate(items):
+    for i, (lbl, val_c) in enumerate(items):
+        val = to_display_temp(val_c)              # convert C -> display unit
         cx = area_x0 + slot * i + slot / 2
         d.rectangle((cx - half, top_y, cx + half, base_y), outline=0, width=2)
         if val is not None:
             fh = bar_h * clamp(val, 0, TEMP_MAX) / TEMP_MAX
             if fh > 0:
                 d.rectangle((cx - half, base_y - fh, cx + half, base_y), fill=0)
-        vtxt = "--" if val is None else f"{val:.0f}°"
+        vtxt = "--" if val is None else f"{val:.0f}°{TEMP_UNIT}"
         d.text((cx, top_y - 6), vtxt, font=F_TEMP, fill=0, anchor="md")
         d.text((cx, base_y + 7), lbl, font=F_SMALL, fill=0, anchor="ma")
 
@@ -381,6 +422,30 @@ def render(speed, temps, soc, voltage, voltage_unit, ha_msg, clock_str):
     draw_messages(d, build_messages(temps, ha_msg))
     draw_battery(d, soc, voltage, voltage_unit)
     draw_temps(d, temps)
+    return img
+
+
+def render_no_data(clock_str):
+    """Frame shown when no CAN-bus data is reaching HA - the speedometer,
+    battery, and temperature panels would only show stale readings, so we
+    replace the whole layout with a clear status message instead."""
+    img = Image.new('1', (W, H), 255)
+    d = ImageDraw.Draw(img)
+
+    d.rectangle((1, 1, W - 2, H - 2), outline=0, width=2)
+    d.line((2, HEAD_H, W - 3, HEAD_H), fill=0, width=2)
+
+    tx = 16
+    if LOGO is not None:
+        img.paste(LOGO, (14, 5))
+        tx = 14 + LOGO.width + 12
+    d.text((tx, 9), TITLE, font=F_TITLE, fill=0, anchor="la")
+    d.text((W - 18, 9), clock_str, font=F_TITLE, fill=0, anchor="ra")
+
+    d.text((W // 2, H // 2 - 18), "CAN bus not connected",
+           font=F_SOC, fill=0, anchor="mm")
+    d.text((W // 2, H // 2 + 38), "no telemetry from the CAN bus reader",
+           font=F_MSG, fill=0, anchor="mm")
     return img
 
 
@@ -452,35 +517,55 @@ def main():
     signal.signal(signal.SIGTERM, on_term)
     signal.signal(signal.SIGINT, on_term)
 
-    logging.info(f"init + clear  (speed unit: {SPEED_LABEL})")
+    logging.info(f"init + clear  (speed unit: {SPEED_LABEL}, temp unit: {TEMP_UNIT})")
     epd.init()
     epd.Clear()
 
-    speed, _ = read_number(ENTITIES["speed"])         # raw motor rpm
+    # Per-CAN-entity timestamps for the staleness check
+    CAN_KEYS = ("speed", "t_motor", "t_ezk", "t_batt", "soc", "voltage")
+    last_iso = {k: None for k in CAN_KEYS}
+
+    speed, _, last_iso["speed"] = read_number(ENTITIES["speed"])
     temps = {k: None for k in ("t_motor", "t_ezk", "t_batt", "t_pi")}
     for k in temps:
-        temps[k] = read_temp_c(ENTITIES[k])
-    soc, _ = read_number(ENTITIES["soc"])
-    voltage, voltage_unit = read_number(ENTITIES["voltage"])
+        v_c, lu = read_temp_c(ENTITIES[k])
+        temps[k] = v_c
+        if k in last_iso:
+            last_iso[k] = lu
+    soc, _, last_iso["soc"] = read_number(ENTITIES["soc"])
+    voltage, voltage_unit, last_iso["voltage"] = read_number(ENTITIES["voltage"])
     if not voltage_unit:
         voltage_unit = "V"
     ha_msg = read_message(ENTITIES["message"])
 
+    def can_no_data():
+        return all(last_iso[k] is None
+                   or entity_age_seconds(last_iso[k]) > STALE_AGE
+                   for k in CAN_KEYS)
+
     disp = rpm_to_speed(speed)
     clock = datetime.now().strftime("%H:%M")
     powered = ha_get(POWER_TOGGLE)[0] != "off"   # default ON if the toggle is absent
+    no_data = can_no_data()
+    mode = "no_data" if no_data else "data"
     if powered:
-        img = render(disp, temps, soc, voltage, voltage_unit, ha_msg, clock)
+        if mode == "no_data":
+            img = render_no_data(clock)
+            logging.info("initial frame: CAN bus not connected")
+        else:
+            img = render(disp, temps, soc, voltage, voltage_unit, ha_msg, clock)
+            logging.info("initial frame drawn")
         full_refresh(epd, img)            # clean base frame, then partial mode
-        logging.info("initial frame drawn")
     else:
         epd.sleep()                       # already cleared above; just sleep the panel
         logging.info("display starts OFF (HA toggle)")
 
     last_snaps = region_snaps(disp, temps, soc, voltage, ha_msg, clock)
+    last_mode = mode
+    last_no_data_clock = clock
     refresh_count = 0
     last_slow = time.time()
-    last_button, _ = ha_get(REFRESH_BUTTON)
+    last_button, _, _ = ha_get(REFRESH_BUTTON)
     awake = powered
     idle_since = time.time()
 
@@ -502,62 +587,86 @@ def main():
             powered = True
 
             # fast value - speed, every loop
-            s, _ = read_number(ENTITIES["speed"])
+            s, _, last_iso["speed"] = read_number(ENTITIES["speed"])
             if s is not None:
                 speed = s
 
             # slow values - temps / SoC / voltage / message, every SLOW_POLL seconds
             if t0 - last_slow >= SLOW_POLL:
                 for k in temps:
-                    tv = read_temp_c(ENTITIES[k])
+                    tv, lu = read_temp_c(ENTITIES[k])
                     if tv is not None:
                         temps[k] = tv
-                sv, _ = read_number(ENTITIES["soc"])
+                    if k in last_iso:
+                        last_iso[k] = lu
+                sv, _, last_iso["soc"] = read_number(ENTITIES["soc"])
                 if sv is not None:
                     soc = sv
-                vv, vu = read_number(ENTITIES["voltage"])
+                vv, vu, last_iso["voltage"] = read_number(ENTITIES["voltage"])
                 if vv is not None:
                     voltage, voltage_unit = vv, (vu or voltage_unit)
                 ha_msg = read_message(ENTITIES["message"])
                 last_slow = t0
 
             # manual refresh button forces a full (de-ghosting) refresh
-            btn, _ = ha_get(REFRESH_BUTTON)
+            btn, _, _ = ha_get(REFRESH_BUTTON)
             force = btn is not None and btn != last_button
             if btn is not None:
                 last_button = btn
 
             disp = rpm_to_speed(speed)
             clock = datetime.now().strftime("%H:%M")
-            snaps = region_snaps(disp, temps, soc, voltage, ha_msg, clock)
-            changed = [r for r in REGIONS if snaps[r] != last_snaps[r]]
-            data_changed = any(r in DATA_REGIONS for r in changed)
+            mode = "no_data" if can_no_data() else "data"
 
-            if data_changed or force or turning_on:
-                img = render(disp, temps, soc, voltage, voltage_unit, ha_msg, clock)
-                if turning_on or not awake or force or refresh_count >= FULL_REFRESH_EVERY:
-                    full_refresh(epd, img)            # power-on / wake / de-ghost
+            if mode == "no_data":
+                # CAN bus reader isn't providing telemetry (and no dummy data
+                # source) - show the "not connected" frame instead of stale
+                # readings. Refresh on entry to the mode and when the clock ticks.
+                if last_mode != "no_data" or clock != last_no_data_clock or force or turning_on:
+                    img = render_no_data(clock)
+                    full_refresh(epd, img)
+                    last_mode = "no_data"
+                    last_no_data_clock = clock
+                    last_snaps = {}             # invalidate region snapshots
                     awake = True
                     refresh_count = 0
-                    logging.info(f"{'display ON' if turning_on else 'full refresh'} - "
-                                 f"speed={disp:.0f}{SPEED_LABEL} "
-                                 f"temps={fmt_temps(temps)} soc={soc}")
-                else:
-                    for r in changed:                 # gentle per-region update
-                        push_region(epd, img, r)
-                        refresh_count += 1
-                    logging.info(f"partial {changed} - speed={disp:.0f}{SPEED_LABEL} "
-                                 f"(count {refresh_count}/{FULL_REFRESH_EVERY})")
-                last_snaps = snaps
-                idle_since = t0
-            elif awake and (t0 - idle_since) >= IDLE_SLEEP:
-                # no telemetry change for a while - settle the image and sleep
-                # the panel (e-paper must not be left powered/active when idle)
-                img = render(disp, temps, soc, voltage, voltage_unit, ha_msg, clock)
-                settle_and_sleep(epd, img)
-                awake = False
-                last_snaps = snaps
-                logging.info("idle - panel asleep")
+                    idle_since = t0
+                    logging.info(f"CAN bus not connected ({clock})")
+            else:
+                # transition no_data -> data: force a fresh full frame
+                if last_mode == "no_data":
+                    turning_on = True
+                    last_mode = "data"
+
+                snaps = region_snaps(disp, temps, soc, voltage, ha_msg, clock)
+                changed = [r for r in REGIONS if snaps[r] != last_snaps.get(r)]
+                data_changed = any(r in DATA_REGIONS for r in changed)
+
+                if data_changed or force or turning_on:
+                    img = render(disp, temps, soc, voltage, voltage_unit, ha_msg, clock)
+                    if turning_on or not awake or force or refresh_count >= FULL_REFRESH_EVERY:
+                        full_refresh(epd, img)        # power-on / wake / de-ghost
+                        awake = True
+                        refresh_count = 0
+                        logging.info(f"{'display ON' if turning_on else 'full refresh'} - "
+                                     f"speed={disp:.0f}{SPEED_LABEL} "
+                                     f"temps={fmt_temps(temps)} soc={soc}")
+                    else:
+                        for r in changed:             # gentle per-region update
+                            push_region(epd, img, r)
+                            refresh_count += 1
+                        logging.info(f"partial {changed} - speed={disp:.0f}{SPEED_LABEL} "
+                                     f"(count {refresh_count}/{FULL_REFRESH_EVERY})")
+                    last_snaps = snaps
+                    idle_since = t0
+                elif awake and (t0 - idle_since) >= IDLE_SLEEP:
+                    # no telemetry change for a while - settle the image and sleep
+                    # the panel (e-paper must not be left powered/active when idle)
+                    img = render(disp, temps, soc, voltage, voltage_unit, ha_msg, clock)
+                    settle_and_sleep(epd, img)
+                    awake = False
+                    last_snaps = snaps
+                    logging.info("idle - panel asleep")
 
             dt = time.time() - t0
             if dt < SPEED_POLL:

@@ -15,6 +15,7 @@ options:
   wheel_diameter_in: 20
   gear_ratio: 1
   speed_max: 40
+  temp_unit: C
   temp_max: 80
   temp_warn: 65
   speed_poll: 2.5
@@ -36,6 +37,7 @@ schema:
   wheel_diameter_in: float
   gear_ratio: float
   speed_max: float
+  temp_unit: list(C|F)
   temp_max: float
   temp_warn: float
   speed_poll: float
