@@ -50,6 +50,26 @@ from gs_usb.gs_usb import GsUsb
 from gs_usb.gs_usb_frame import GsUsbFrame
 import can
 
+
+def safe_read(dev, frame, timeout_ms):
+    """Workaround for gs_usb 0.3.1: dev.read() passes the exact expected frame
+    size to the USB transfer, so a short packet from the adapter raises
+    struct.error in unpack_into. Request a buffer larger than any single frame
+    and dispatch on the actual length returned."""
+    try:
+        data = dev.gs_usb.read(0x81, 64, timeout_ms)
+    except usb.core.USBError:
+        return False
+    n = len(data)
+    if n == frame.__sizeof__(False):
+        GsUsbFrame.unpack_into(frame, bytes(data), False)
+        return True
+    if n == frame.__sizeof__(True):
+        GsUsbFrame.unpack_into(frame, bytes(data), True)
+        return True
+    return False
+
+
 DUMMY = "-bestgo_dummy" in sys.argv
 if DUMMY:
     sys.argv = [a for a in sys.argv if a != "-bestgo_dummy"]
@@ -391,7 +411,7 @@ try:
             if not got:
                 time.sleep(0.02)
         else:
-            got = dev.read(fr, 50)  # short timeout so we can redraw smoothly
+            got = safe_read(dev, fr, 50)  # short timeout so we can redraw smoothly
 
         if got:
             if DUMMY:

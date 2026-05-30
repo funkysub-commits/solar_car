@@ -43,6 +43,25 @@ from gs_usb.gs_usb import GsUsb
 from gs_usb.gs_usb_frame import GsUsbFrame
 from gs_usb.constants import GS_CAN_MODE_LISTEN_ONLY, GS_CAN_MODE_NORMAL
 
+
+def safe_read(dev, frame, timeout_ms):
+    """Workaround for gs_usb 0.3.1: dev.read() passes the exact expected frame
+    size to the USB transfer, so a short packet from the adapter raises
+    struct.error in unpack_into. Request a buffer larger than any single frame
+    and dispatch on the actual length returned."""
+    try:
+        data = dev.gs_usb.read(0x81, 64, timeout_ms)
+    except usb.core.USBError:
+        return False
+    n = len(data)
+    if n == frame.__sizeof__(False):
+        GsUsbFrame.unpack_into(frame, bytes(data), False)
+        return True
+    if n == frame.__sizeof__(True):
+        GsUsbFrame.unpack_into(frame, bytes(data), True)
+        return True
+    return False
+
 RATES = [
     (500_000, 20),
     (250_000, 40),
@@ -71,7 +90,7 @@ def drain(dev, seconds):
     fr = GsUsbFrame()
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
-        if dev.read(fr, 50):
+        if safe_read(dev, fr, 50):
             frames.append((
                 time.monotonic(),
                 fr.arbitration_id,
