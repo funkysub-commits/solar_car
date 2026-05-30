@@ -231,7 +231,15 @@ Connect the EZkontrol's CN2 connector to the DSD TECH SH-C31G USB-CAN adapter:
 > Enable the 120 ohm termination resistor on the SH-C31G if it is the last device on the CAN bus. The EZkontrol has its own 120 ohm termination enabled by default (brown wire CN2-11).
 ### 6.2 CAN protocol: MCU-to-METER (read-only)
 The EZkontrol broadcasts two J1939 extended CAN frames every 100ms. This is a passive protocol — no handshake required.  
-The solar car runs the EZkontrol motor controller and the BESTGO battery on **one shared CAN bus at 500 Kbps**, so the EZkontrol must use 500 Kbps too. Use the “EZ-Tune” Android app to set its CAN protocol to **102** (the 500 Kbps variant; protocol 2 is the 250 Kbps variant, and the controller shipped defaulted to 1). The setting persists across power cycles.  
+The solar car runs the EZkontrol motor controller and the BESTGO battery on **one shared CAN bus at 500 Kbps**, so the EZkontrol must use 500 Kbps too. Use the “EZ-Tune” Android app to set its CAN protocol to **101** — the 500 Kbps MCU-to-Meter (passive telemetry) variant. Do **not** use 102: that is the MCU-to-VCU variant, in which CAN takes over throttle/gear/brake. The controller shipped defaulted to 1. The setting persists across power cycles.
+
+| Protocol | Mode | Rate |
+| --- | --- | --- |
+| 1 | MCU-to-Meter (passive telemetry) | 250K |
+| 2 | MCU-to-VCU (CAN takes over throttle/gear/brake) | 250K |
+| 101 | MCU-to-Meter | 500K ← what you want |
+| 102 | MCU-to-VCU | 500K ← what you just set |
+
 ##### Message I — CAN ID 0x180117EF
 | Bytes | Data | Resolution | Offset | Range |
 | --- | --- | --- | --- | --- |
