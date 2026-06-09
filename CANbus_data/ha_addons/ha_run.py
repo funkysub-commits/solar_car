@@ -13,7 +13,7 @@ import os
 import sys
 import paramiko
 
-HOST = "100.100.79.71"
+HOST = os.environ.get("HA_HOST", "10.126.155.163")
 PORT = 22
 USER = "hassio"
 

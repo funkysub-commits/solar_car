@@ -42,16 +42,16 @@ This guide documents the complete setup of a solar car monitoring system built o
 The system consists of three external devices connected to a Raspberry Pi 4:  
 **EZkontrol B48800** — 48V BLDC motor controller connected via CAN bus through a DSD TECH SH-C31G USB-to-CAN adapter. Broadcasts voltage, current, speed, temperatures, and error status every 100ms.  
 **Battery pack (B00016 BMS)** — Connected via Bluetooth using the BLE Battery Management System integration in Home Assistant. Provides stored energy, battery level, and other BMS data.  
-**Waveshare 7.5" V2 e-ink display** — Connected via the SPI bus and GPIO pins through the e-Paper Driver HAT. Displays configurable sensor data from Home Assistant, refreshing every 5 minutes with an on-demand refresh button.  
+**Waveshare 7.5" V2 e-ink display** — Connected via the SPI bus and GPIO pins through the e-Paper Driver HAT. Renders a fixed solar-car dashboard from Home Assistant sensors — an analog speedometer, battery state-of-charge, temperature bar graphs, and a messages area. It refreshes only the screen regions that change (partial refresh, no flash) and deep-sleeps the panel when telemetry stops, so the image stays visible with no wear.  
 ### Software architecture
 Two services run on the Pi alongside Home Assistant OS:
 | Service | Purpose | Key detail |
 | --- | --- | --- |
 | solar-car-canbus | HA app — reads the CAN bus, pushes sensors to HA | both devices on one shared bus, REST API |
-| epaper-display | Reads HA sensors, draws to e-ink screen | Configurable via HA helpers |
+| solar_epaper | HA app — reads HA sensors, draws the dashboard to the e-ink screen | fixed solar-car layout, configurable via app options |
 
 
-The `solar-car-canbus` app is managed by Home Assistant — it brings up the CAN interface itself and restarts with HA. The e-ink display runs with access to /dev for SPI/GPIO.  
+Both run as Home Assistant apps and restart with HA. `solar-car-canbus` brings up the CAN interface itself; the `solar_epaper` display app runs with full access to /dev for SPI/GPIO. Each talks to HA through the Supervisor proxy, so neither needs a long-lived token.  
 
 ## 2. Prerequisites
 ### Hardware
@@ -128,94 +128,89 @@ python3 --version
 pip3 install RPi.GPIO spidev Pillow numpy gpiozero gpiod
 ```
 ### 4.3 Key challenge: HAOS container restrictions
-Home Assistant OS runs add-ons in sandboxed Docker containers. Even with Protection Mode disabled, the SSH add-on cannot directly open SPI devices. The solution is to run the display code in a separate privileged Docker container with /dev mounted.  
+Home Assistant OS runs apps in sandboxed Docker containers. Even with Protection Mode disabled, the SSH add-on cannot directly open SPI devices. The solution is to package the display code as its own HA app that runs privileged with `/dev` access (`full_access: true`).  
 Additionally, the Waveshare Python library uses gpiozero which doesn't work in this environment. The library must be patched to use gpiod (the modern Linux GPIO character device interface) instead. The CS pin (GPIO 8) must also be excluded since SPI hardware manages it automatically.  
-### 4.4 Building the patched Docker image
-Create the project directory:
-```zsh
-mkdir -p /config/epaper-display
-cd /config/epaper-display
-```
-##### patch.py — patches Waveshare library to use gpiod
-The patch script replaces all gpiozero references in epdconfig.py with gpiod equivalents. Key changes:
+### 4.4 The solar_epaper app build
+The display ships as a Home Assistant app — the source is in `display/addon/` in this repo; on the Pi it goes in `/addons/solar_epaper/` and installs from **Settings > Apps > App Store > Local apps** (same flow as the CANbus app in Section 6.3). There is no manual `docker build`/`docker run` — HA builds the image from the app's `Dockerfile` and starts it on boot.  
+
+The app's `Dockerfile` does the patching automatically at build time: it clones the Waveshare e-Paper library, then runs `patch.py` to convert it from gpiozero to gpiod.  
+##### patch.py — patches the Waveshare library to use gpiod
+`patch.py` rewrites `epdconfig.py`, replacing all gpiozero references with gpiod equivalents. Key changes:
 - Replaces gpiozero.LED and gpiozero.Button with gpiod.request_lines
 - Excludes GPIO 8 (CS pin) since SPI manages it
 - Replaces digital_write/digital_read with gpiod set_value/get_value
 - Updates module_init and module_exit to use gpiod
-> [!NOTE]
-> The full patch.py is stored in /config/epaper-display/ on your Pi.
-##### Dockerfile
-```dockerfile
-FROM python:3.12-alpine
 
-RUN apk add --no-cache git gcc musl-dev linux-headers ttf-dejavu
-RUN pip install --no-cache-dir spidev gpiod Pillow numpy requests
-RUN git clone https://github.com/waveshare/e-Paper.git /e-Paper
-
-COPY patch.py /patch.py
-RUN python3 /patch.py
-
-COPY display.py /display.py
-CMD ["python3", "/display.py"]
-```
-##### Build and test
-docker build -t epaper-display /config/epaper-display  
-
-# Quick test - run the Waveshare demo
+The full `patch.py` and the app's `Dockerfile` live alongside `display.py` in `display/addon/`.  
+##### Quick hardware test (optional)
+To confirm the panel and wiring before running the app, you can exec into the built app's container and run the Waveshare demo:
 ```zsh
-docker run --rm -it --privileged -v /dev:/dev epaper-display sh
 cd /e-Paper/RaspberryPi_JetsonNano/python/examples
 python3 epd_7in5_V2_test.py
 ```
 
 ## 5. E-ink display: Home Assistant integration
 ### 5.1 Display script
-The display script (display.py) reads configuration from Home Assistant helpers to determine what data to show. It supports a configurable title and 4 sensor slots. Every 5 minutes (or on button press), it fetches the slot entity IDs from HA helpers, resolves each to its current sensor state, and renders everything to the e-ink display.  
-Key features: reads input_text helpers for title and slot entity IDs, fetches each sensor's friendly_name/state/unit, renders a clean layout, and polls for the refresh button every 5 seconds during sleep.  
+The display script (`display.py`) renders a fixed solar-car dashboard onto the 800x480 panel:
+- **Header** — team logo + title + clock
+- **Left-top** — analog speedometer gauge (mph / km/h / rpm; converts raw motor rpm using the configured wheel diameter and gear ratio)
+- **Left-bottom** — messages area (high-temperature warnings plus a free-text message from HA)
+- **Right-top** — battery icon (state of charge) + pack voltage
+- **Right-bottom** — four temperature bar graphs (motor / EZkontrol / battery / Pi)
+
+It reads its sensors straight from the HA REST API (via the Supervisor proxy) and is built around panel longevity: it samples speed every few seconds and the slower values (temps / SoC / message) less often, **refreshes only the regions that actually changed** (partial refresh, no flash), does an occasional fast full refresh to clear ghosting, and after a period with no telemetry change settles the image and puts the panel into **deep sleep** — the image stays visible with zero power draw and zero wear, waking automatically on the next change. If every CAN-fed sensor goes stale it shows a "CAN bus not connected" frame instead of stale readings.  
 ### 5.2 Create HA helpers
-In Home Assistant, go to Settings > Devices & Services > Helpers and create:  
-| Helper type | Name | Default value |
-| --- | --- | --- |
-| Text | EInk Display Title | Solar Car Monitor |
-| Text | EInk Slot 1 | sensor.ezkontrol_motor_speed |
-| Text | EInk Slot 2 | sensor.ezkontrol_controller_temp |
-| Text | EInk Slot 3 | sensor.p_24050bnna70_b00016_stored_energy |
-| Text | EInk Slot 4 | sensor.p_24050bnna70_b00016_battery |
-| Button | EInk Refresh | (no default needed) |
+The app drives three optional HA helpers (Settings > Devices & Services > Helpers). Their entity IDs are set in the app's Configuration tab (defaults shown):  
+| Helper type | Suggested name | Entity ID (app option) | Purpose |
+| --- | --- | --- | --- |
+| Text | EInk Message | `input_text.eink_message` (`ent_message`) | free-text line shown in the messages area |
+| Toggle | EInk Display | `input_boolean.eink_display` (`ent_power`) | turn the panel on/off (clears the screen when off) |
+| Button | EInk Refresh | `input_button.eink_refresh` | forces a full de-ghosting refresh |
 
-
-Set the values via Developer Tools > Services > input_text.set_value after creation.  
+> [!NOTE]
+> The refresh button entity ID is fixed at `input_button.eink_refresh`. The message and power entities are configurable in the app options. If a helper is absent the app still runs — the panel just defaults to ON with no message.
 ### 5.3 Dashboard control card
 Add an Entities card to your dashboard with this YAML:  
 ```yaml
 type: entities
 title: E-Ink Display Control
 entities:
-  - entity: input_text.eink_display_title
-    name: Display Title
-  - entity: input_text.eink_slot_1
-    name: Slot 1
-  - entity: input_text.eink_slot_2
-    name: Slot 2
-  - entity: input_text.eink_slot_3
-    name: Slot 3
-  - entity: input_text.eink_slot_4
-    name: Slot 4
+  - entity: input_boolean.eink_display
+    name: Display Power
+  - entity: input_text.eink_message
+    name: Message
   - entity: input_button.eink_refresh
     name: Refresh Display Now
 ```
-### 5.4 Run the display container
-```zsh
-docker run -d --name epaper-display \
-  --privileged \
-  --restart=unless-stopped \
-  --network=host \
-  -v /dev:/dev \
-  -e HA_URL="http://100.100.79.71:8123" \
-  -e HA_TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyNDlhZWQ1NTFlZDk0MWVjOGM4NGI3MDU1MTk1Mzk3ZSIsImlhdCI6MTc3Mzg5OTEwMiwiZXhwIjoyMDg5MjU5MTAyfQ.CveoN77vg-21Eq3oJ1e_7FWMyCRhfKq0H0AS50mO7JE" \
-  -e INTERVAL=300 \
-  epaper-display
-```
+### 5.4 Install and configure the app
+Copy `display/addon/` to `/addons/solar_epaper/` on the Pi, then install it from **Settings > Apps > App Store > Local apps** and start it (it is set to start on boot). All settings live in the app's **Configuration** tab — no environment variables or tokens to set by hand.  
+
+| Option | Default | Purpose |
+| --- | --- | --- |
+| title | SOLAR STORMS | header title text |
+| speed_unit | mph | speedometer unit: `mph`, `kmh`, or `rpm` |
+| wheel_diameter_in | 20 | drive wheel diameter (in), for rpm → speed conversion |
+| gear_ratio | 1 | motor revs per wheel rev |
+| speed_max | 40 | speedometer full-scale, in `speed_unit` |
+| temp_unit | C | temperature display unit: `C` or `F` |
+| temp_max | 80 | temperature bar full-scale, in `temp_unit` |
+| temp_warn | 65 | high-temp warning threshold, in `temp_unit` |
+| speed_poll | 2.5 | seconds between speedometer samples |
+| slow_poll | 6 | seconds between temp / SoC / message samples |
+| full_refresh_every | 90 | partial pushes between de-ghosting full refreshes |
+| idle_sleep | 180 | seconds of no change before the panel deep-sleeps |
+| ent_speed | sensor.ezkontrol_motor_speed | motor speed (rpm) source entity |
+| ent_t_motor | sensor.ezkontrol_motor_temp | motor temperature entity |
+| ent_t_ezk | sensor.ezkontrol_controller_temp | controller temperature entity |
+| ent_t_batt | sensor.bestgo_pack_temp | battery pack temperature entity |
+| ent_t_pi | sensor.system_monitor_processor_temperature | Pi CPU temperature entity |
+| ent_soc | sensor.bestgo_soc | battery state-of-charge entity |
+| ent_voltage | sensor.bestgo_pack_voltage | pack voltage entity |
+| ent_message | input_text.eink_message | free-text message helper |
+| ent_power | input_boolean.eink_display | on/off toggle helper |
+
+> [!NOTE]
+> The default entity IDs match the `solar-car-canbus` app's sensors (Section 6.3), so with no hardware connected you can drive the display from the simulator (`simulator/solar_sim.py`), which pushes realistic values to those same entities.
 
 ## 6. CAN bus: EZkontrol motor controller
 ### 6.1 Hardware wiring
@@ -313,13 +308,13 @@ Key sensors created by this integration include:
 | Task | Command |
 | --- | --- |
 | View running containers | `docker ps` |
-| View e-ink logs | `docker logs -f epaper-display` |
+| View e-ink logs | `ha apps logs local_solar_epaper` |
 | View solar-car-canbus logs | `ha apps logs local_solarcar_canbus` |
-| Restart e-ink display | `docker restart epaper-display` |
+| Restart e-ink display | `ha apps restart local_solar_epaper` |
 | Restart solar-car-canbus | `ha apps restart local_solarcar_canbus` |
-| Stop e-ink before shutdown | `docker stop epaper-display` |
+| Stop e-ink before shutdown | `ha apps stop local_solar_epaper` |
 | Remove a container | `docker rm -f <container_name>` |
-| Rebuild e-ink image | `docker build -t epaper-display /config/epaper-display` |
+| Rebuild e-ink image | `ha apps rebuild local_solar_epaper` |
 | Rebuild solar-car-canbus | `ha apps rebuild local_solarcar_canbus` |
 
 
@@ -337,10 +332,11 @@ ip link set can0 up
 candump can0
 ```
 ### E-ink display diagnostics
+The simplest way to clear the panel is to switch the `input_boolean.eink_display` toggle off — the app clears the screen and sleeps the panel. To clear it by hand, stop the app and exec into its container:
 ```zsh
 # Clear the display manually
-docker stop epaper-display && docker rm epaper-display
-docker run --rm -it --privileged -v /dev:/dev epaper-display sh
+ha apps stop local_solar_epaper
+docker exec -it $(docker ps -qf name=solar_epaper) sh
 # Then inside the shell:
 python3 << 'EOF'
 import sys
@@ -371,7 +367,7 @@ ha host reboot
 
 
 
-All project files are stored in /config/epaper-display/ and /config/can-reader/ on the Raspberry Pi. These directories persist across reboots.  
+Both apps live in `/addons/` on the Raspberry Pi (`/addons/solar_epaper/` and `/addons/solar-car-canbus/`) and install from Settings > Apps > App Store > Local apps. This directory persists across reboots.  
 ## 9. Network setup discussion
 
 ![Diagram](readme_assets/diagram2.png)
@@ -455,17 +451,15 @@ Complete:
 - Home assistant alerts for: low storage space, critical home assistant errors, docker failures, etc, etc
 - Create screens for telemetry on chase vehicle with home assistant software
     - Look at telemetry video and code to see what that team thinks is important
-- Decide what to display on e-ink dashboard display and implement
-    - Currently simple display of 4 random sensors, clunky setup, slow refresh
-    - This V2 device can do fast updates on small portion of the screen (spedometer for example)
-    - Minimize screen flashes on update?
-    - Esp32 board alternative?
-###### Ideas for improvement:
-the Waveshare 7.5" V2 supports both fast refresh and partial refresh in the Python library. We just need to update the display script. Here's what we can improve:  
-**Fast refresh** — uses `init_fast()` instead of `init()`, cuts the full refresh from ~6 seconds to ~2 seconds with less flashing.  
-**Partial refresh** — only redraws the pixels that changed. No flash at all. Perfect for updating just the sensor values while keeping the layout static.  
-**Better approach**: Do a full refresh once on startup to set a clean base image, then use partial refresh for subsequent updates. Do a full refresh every ~30 cycles to prevent ghosting.
-Can get pretty fancy with this, but simple might be a good idea.  
+- Refine the e-ink dashboard (the `solar_epaper` app, Section 5)
+    - Done: purpose-built solar layout (speedometer, battery, temps, messages) replacing the old 4-slot display
+    - Done: fast + partial refresh — only changed regions redraw, no flash; periodic full refresh clears ghosting; panel deep-sleeps when idle
+    - Possible next steps: tune the layout/fonts, add more telemetry (current, power), Esp32 board alternative?
+###### How the refresh strategy works (implemented):
+The Waveshare 7.5" V2 supports both fast and partial refresh in the Python library, and `display.py` uses both:  
+**Fast refresh** — uses `init_fast()` instead of `init()`, cutting the full refresh from ~6 seconds to ~2 seconds with less flashing.  
+**Partial refresh** — only redraws the pixels that changed. No flash at all — used for the per-region sensor updates while the layout stays static.  
+**The approach used**: a full refresh on startup sets a clean base image, then partial refreshes handle subsequent updates, with a full refresh every `full_refresh_every` (default 90) pushes to prevent ghosting and a deep-sleep after `idle_sleep` seconds of no change.  
 
 
 

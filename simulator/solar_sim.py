@@ -28,7 +28,7 @@ import requests
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 
-HA_URL = os.environ.get("HA_URL", "http://192.168.0.243:8123").rstrip("/")
+HA_URL = os.environ.get("HA_URL", "http://10.126.155.163:8123").rstrip("/")
 HA_TOKEN = os.environ.get("HA_TOKEN", "")
 TICK = float(os.environ.get("TICK", "1.0"))          # seconds between pushes
 
