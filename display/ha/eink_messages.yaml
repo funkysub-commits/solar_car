@@ -1,0 +1,86 @@
+# Home Assistant package for the e-ink notification / message system.
+#
+# Enable packages once (in configuration.yaml):
+#     homeassistant:
+#       packages: !include_dir_named packages
+# then drop this file in /config/packages/eink_messages.yaml and restart HA.
+#
+# What it provides
+#   input_text.eink_hidden   - comma-separated list of warning keys the user has
+#                              chosen to hide on the e-paper. The add-on reads it
+#                              and prunes keys whose warning is no longer active.
+#   script.eink_hide         - add a key to the hidden list   (field: key)
+#   script.eink_unhide       - remove a key from the hidden list (field: key)
+#   script.eink_unhide_all   - clear the hidden list
+#
+# The add-on publishes the live message list to sensor.eink_warnings (created
+# automatically once the add-on runs - no need to define it here).
+
+input_text:
+  eink_hidden:
+    name: EInk Hidden Warnings
+    max: 255
+    icon: mdi:eye-off
+
+  # The free-text user message shown on the e-paper toast. If you ALREADY created
+  # input_text.eink_message as a UI helper (Settings > Devices & Services >
+  # Helpers), leave this commented out - defining it here too would be a duplicate
+  # entity. If you do NOT have it yet, uncomment this block.
+  # eink_message:
+  #   name: EInk Message
+  #   max: 255
+  #   icon: mdi:message-text
+
+script:
+  eink_hide:
+    alias: EInk Hide Message
+    icon: mdi:eye-off
+    mode: queued
+    max: 10
+    fields:
+      key:
+        description: Warning key to hide (e.g. temp_t_motor, can, user)
+        example: temp_t_motor
+    sequence:
+      - variables:
+          parts: >-
+            {{ states('input_text.eink_hidden').split(',')
+               | map('trim') | reject('eq','') | list }}
+      # stop here (no error) if it's already hidden
+      - condition: template
+        value_template: "{{ key not in parts }}"
+      - service: input_text.set_value
+        target:
+          entity_id: input_text.eink_hidden
+        data:
+          value: "{{ (parts + [key]) | join(',') }}"
+
+  eink_unhide:
+    alias: EInk Unhide Message
+    icon: mdi:eye
+    mode: queued
+    max: 10
+    fields:
+      key:
+        description: Warning key to unhide
+        example: temp_t_motor
+    sequence:
+      - variables:
+          parts: >-
+            {{ states('input_text.eink_hidden').split(',')
+               | map('trim') | reject('eq','') | reject('eq', key) | list }}
+      - service: input_text.set_value
+        target:
+          entity_id: input_text.eink_hidden
+        data:
+          value: "{{ parts | join(',') }}"
+
+  eink_unhide_all:
+    alias: EInk Unhide All
+    icon: mdi:eye-check
+    sequence:
+      - service: input_text.set_value
+        target:
+          entity_id: input_text.eink_hidden
+        data:
+          value: ""
