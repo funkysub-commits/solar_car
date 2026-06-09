@@ -3,6 +3,7 @@ SmartBMS_App/
 
 # Claude Code data
 .claude/
+status.json
 
 # Python virtual environment (recreate from CANbus_data/requirements.txt)
 venv/
