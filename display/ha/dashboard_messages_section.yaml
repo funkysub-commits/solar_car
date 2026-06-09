@@ -1,0 +1,191 @@
+# E-Paper Messages dashboard section.
+#
+# Paste the block below into your dashboard's raw config (the dashboard's
+# 3-dot menu > Edit dashboard > 3-dot menu > Raw configuration editor) as a
+# new entry in the view's `sections:` list. It needs sensor.eink_warnings
+# (published by the add-on) and the scripts from eink_messages.yaml.
+#
+# It shows every active message (live text, hidden ones marked) and a Hide
+# button for each message currently on the e-paper; Unhide all appears when
+# anything is hidden.
+
+type: grid
+cards:
+  - type: heading
+    heading: E-Paper Messages
+    heading_style: title
+    icon: mdi:message-alert
+  - type: markdown
+    text_only: true
+    content: |
+      {% set ws = state_attr('sensor.eink_warnings','warnings') %}
+      {% if ws %}{% for m in ws %}
+      {{ '🔕' if m.hidden else ('ℹ️' if m.icon == 'info' else '⚠️') }} {{ m.text }}{{ ' *(hidden)*' if m.hidden else '' }}
+      {% endfor %}{% else %}
+      *No active messages*
+      {% endif %}
+  - type: button
+    name: "Hide: CAN bus not connected"
+    icon: mdi:eye-off
+    show_state: false
+    tap_action:
+      action: perform-action
+      perform_action: script.eink_hide
+      data:
+        key: can
+    visibility:
+      - condition: template
+        value_template: "{{ 'can' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
+  - type: button
+    name: "Hide: High motor temp"
+    icon: mdi:eye-off
+    show_state: false
+    tap_action:
+      action: perform-action
+      perform_action: script.eink_hide
+      data:
+        key: temp_t_motor
+    visibility:
+      - condition: template
+        value_template: "{{ 'temp_t_motor' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
+  - type: button
+    name: "Hide: High EZkontrol temp"
+    icon: mdi:eye-off
+    show_state: false
+    tap_action:
+      action: perform-action
+      perform_action: script.eink_hide
+      data:
+        key: temp_t_ezk
+    visibility:
+      - condition: template
+        value_template: "{{ 'temp_t_ezk' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
+  - type: button
+    name: "Hide: High battery temp"
+    icon: mdi:eye-off
+    show_state: false
+    tap_action:
+      action: perform-action
+      perform_action: script.eink_hide
+      data:
+        key: temp_t_batt
+    visibility:
+      - condition: template
+        value_template: "{{ 'temp_t_batt' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
+  - type: button
+    name: "Hide: High Pi temp"
+    icon: mdi:eye-off
+    show_state: false
+    tap_action:
+      action: perform-action
+      perform_action: script.eink_hide
+      data:
+        key: temp_t_pi
+    visibility:
+      - condition: template
+        value_template: "{{ 'temp_t_pi' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
+  - type: button
+    name: "Hide: Speed not updating"
+    icon: mdi:eye-off
+    show_state: false
+    tap_action:
+      action: perform-action
+      perform_action: script.eink_hide
+      data:
+        key: stale_speed
+    visibility:
+      - condition: template
+        value_template: "{{ 'stale_speed' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
+  - type: button
+    name: "Hide: Motor temp not updating"
+    icon: mdi:eye-off
+    show_state: false
+    tap_action:
+      action: perform-action
+      perform_action: script.eink_hide
+      data:
+        key: stale_t_motor
+    visibility:
+      - condition: template
+        value_template: "{{ 'stale_t_motor' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
+  - type: button
+    name: "Hide: EZkontrol temp not updating"
+    icon: mdi:eye-off
+    show_state: false
+    tap_action:
+      action: perform-action
+      perform_action: script.eink_hide
+      data:
+        key: stale_t_ezk
+    visibility:
+      - condition: template
+        value_template: "{{ 'stale_t_ezk' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
+  - type: button
+    name: "Hide: Battery temp not updating"
+    icon: mdi:eye-off
+    show_state: false
+    tap_action:
+      action: perform-action
+      perform_action: script.eink_hide
+      data:
+        key: stale_t_batt
+    visibility:
+      - condition: template
+        value_template: "{{ 'stale_t_batt' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
+  - type: button
+    name: "Hide: Pi temp not updating"
+    icon: mdi:eye-off
+    show_state: false
+    tap_action:
+      action: perform-action
+      perform_action: script.eink_hide
+      data:
+        key: stale_t_pi
+    visibility:
+      - condition: template
+        value_template: "{{ 'stale_t_pi' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
+  - type: button
+    name: "Hide: Battery SOC not updating"
+    icon: mdi:eye-off
+    show_state: false
+    tap_action:
+      action: perform-action
+      perform_action: script.eink_hide
+      data:
+        key: stale_soc
+    visibility:
+      - condition: template
+        value_template: "{{ 'stale_soc' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
+  - type: button
+    name: "Hide: Pack voltage not updating"
+    icon: mdi:eye-off
+    show_state: false
+    tap_action:
+      action: perform-action
+      perform_action: script.eink_hide
+      data:
+        key: stale_voltage
+    visibility:
+      - condition: template
+        value_template: "{{ 'stale_voltage' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
+  - type: button
+    name: "Hide: User message"
+    icon: mdi:eye-off
+    show_state: false
+    tap_action:
+      action: perform-action
+      perform_action: script.eink_hide
+      data:
+        key: user
+    visibility:
+      - condition: template
+        value_template: "{{ 'user' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
+  - type: button
+    name: Unhide all
+    icon: mdi:eye-check
+    tap_action:
+      action: perform-action
+      perform_action: script.eink_unhide_all
+    visibility:
+      - condition: template
+        value_template: "{{ (state_attr('sensor.eink_warnings','keys_hidden') or []) | length > 0 }}"
