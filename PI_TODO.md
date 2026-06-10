@@ -53,7 +53,7 @@ as work on the PC piles up changes that need the Pi.
 
 ## Anytime (no Pi needed)
 
-- [ ] Push `main` to GitHub (commits `13159d9`, `ebdf292`, … are local-only).
+- [x] ~~Push `main` to GitHub~~ — done 2026-06-09 (`6f9faa0..814e1f8`).
 - [ ] Set the repo git identity if desired:
       `git config user.name "..."` / `git config user.email funkysub@gmail.com`
       (current commits are auto-attributed to the Windows account).
