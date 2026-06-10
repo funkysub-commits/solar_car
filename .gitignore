@@ -12,6 +12,17 @@ venv/
 __pycache__/
 *.pyc
 
+# Playwright MCP browser debug artifacts
+.playwright-mcp/
+
+# CAN capture / probe logs (curated test captures live in CANbus_data/tests/fixtures/)
+logs/
+*.log
+
+# Secrets — never commit tokens or env files
+HA_TOKEN.txt
+.env
+
 # Webcam capture scratch (e-paper display verification)
 .webcam/
 

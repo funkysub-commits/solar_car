@@ -100,9 +100,9 @@ From the HA web interface:
 3. Click Create Token, give it a name (e.g., 'Docker Containers')
 4. Copy the full token immediately — it won't be shown again
 ```text
-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIyNDlhZWQ1NTFlZDk0MWVjOGM4NGI3MDU1MTk1Mzk3ZSIsImlhdCI6MTc3Mzg5OTEwMiwiZXhwIjoyMDg5MjU5MTAyfQ.CveoN77vg-21Eq3oJ1e_7FWMyCRhfKq0H0AS50mO7JE
+<your-long-lived-token>   # do NOT commit the real token — store it in the HA_TOKEN environment variable
 ```
-5. Save it securely — you'll need it for both Docker containers
+5. Save it securely (outside this repo) — you'll need it for the PC-side scripts; the HA apps themselves use the Supervisor proxy and need no token
 
 > [!NOTE]
 > Home Assistant gives a warning in the logs about other software running, it can be ignored.
@@ -386,7 +386,7 @@ Instructions to setup a different cell phone hotspot and password: Through the h
 - [https://goldenmotor.bike/products/ezkontrol-48-volt-universal-bldc-controller?variant=45701095358709](https://goldenmotor.bike/products/ezkontrol-48-volt-universal-bldc-controller?variant=45701095358709)
 
 
-- **Security (deferred):** this README has a Home Assistant long-lived token in plaintext (sections 3.4 and 5.4) and HA login creds (`sct/letsgo`, in the Tailscale notes below) — committed and pushed to GitHub. Rotate the token, change the password, and replace both with placeholders + env vars. They are already in git history, so treat them as compromised.
+- **Security:** earlier revisions of this README and `CANbus_data/HA_TOKEN.txt` contained Home Assistant long-lived tokens and the HA login password in plaintext, committed and pushed to GitHub. The working tree is scrubbed (placeholders + env vars now), but they remain in git history — treat them as compromised: revoke both long-lived tokens in HA and change the password.
 - Debug can bus!!  Check wire connections!
     - Wire up CAN bus properly and switch to live mode
     - Debug CAN connection (termination switch, candump test)
@@ -434,7 +434,7 @@ Complete:
     - Home assistant added school wifi, should connect automatically
     - Installed tailscale app on windows, addon on home assistant, find IP and connect
         - Connected to funkysub@gmail.com account for now 
-        - Recent: [http://100.100.79.71:8123/](http://100.100.79.71:8123/)  sct/letsgo
+        - Recent: [http://100.100.79.71:8123/](http://100.100.79.71:8123/) (HA login — credentials not stored in this repo)
         - [https://login.tailscale.com/admin/welcome](https://login.tailscale.com/admin/welcome)
         - UNFORTUNATELY tailscale blocked by school wifi
 	
