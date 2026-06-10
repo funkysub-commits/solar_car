@@ -1,0 +1,25 @@
+"""Shared CAN decoding for the solar car's two bus devices.
+
+This package is the single source of truth for the frame protocols:
+
+  * :mod:`solarcar_can.bestgo`    -- BESTGO battery (Lithium Valley BMS),
+    SMA/Pylontech-compatible protocol, standard 11-bit IDs 0x351..0x379.
+  * :mod:`solarcar_can.ezkontrol` -- EZkontrol B48800 motor controller,
+    MCU-to-Meter protocol, extended 29-bit IDs 0x180117EF / 0x180217EF.
+  * :mod:`solarcar_can.transport` -- uniform frame source over gs_usb
+    (Windows, direct USB) and SocketCAN (Raspberry Pi / Linux).
+
+It is consumed by the CLI dashboards in `CANbus_data/` and by the
+`solar-car-canbus` Home Assistant add-on (which carries a vendored copy --
+see `sync_addon.py`). Decoders emit one canonical field-name set (the names
+the HA sensors are built from); both consumers read those names.
+"""
+from .bestgo import BestgoDecoder, BG_SENSORS
+from .ezkontrol import EzkontrolDecoder, EZ_SENSORS
+from .transport import open_transport, TransportError
+
+__all__ = [
+    "BestgoDecoder", "BG_SENSORS",
+    "EzkontrolDecoder", "EZ_SENSORS",
+    "open_transport", "TransportError",
+]

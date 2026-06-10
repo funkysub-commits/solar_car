@@ -1,4 +1,6 @@
-# Python dependencies for the CANbus_data PC-side tools (pc_files/).
+# Python dependencies for the CANbus_data tools on a Windows PC.
+# (On the Raspberry Pi use requirements-pi.txt instead -- SocketCAN
+# needs no USB packages.)
 # Recreate the environment on a new PC:
 #
 #   py -3.12 -m venv C:\projects\solar_car\venv
