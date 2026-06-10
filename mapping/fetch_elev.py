@@ -1,22 +1,34 @@
 #!/usr/bin/env python3
-"""Fetch driving-segment elevations for ALL days from OpenTopoData ned10m (10 m USGS 3DEP).
-Public limits: 100 locations/request, 1 req/s, 1000 req/day. ~13.2k pts -> ~133 reqs.
-Writes all_elev.json (consumed by viewer.html). Per-day cumulative distance resets to 0;
-each driving segment starts where the previous ended (no phantom trailer-gap distance)."""
+"""Fetch driving-segment elevations from OpenTopoData ned10m (10 m USGS 3DEP).
+
+Usage:
+    python fetch_elev.py                # all days -> all_elev.json
+    python fetch_elev.py --day 1       # just Day 1 (same JSON shape)
+    python fetch_elev.py -o out.json   # different output file
+
+Public API limits: 100 locations/request, 1 req/s, 1000 req/day. The full
+route is ~13.2k pts -> ~133 requests. Reads route.kml; the output is the
+shape viewer.html / build_viewer.py consume ({"grand": ..., "days": [...]}).
+Per-day cumulative distance resets to 0; each driving segment starts where
+the previous ended (no phantom trailer-gap distance).
+"""
+import argparse
 import xml.etree.ElementTree as ET
 import json, math, time, sys, urllib.request, urllib.parse
 
 KML = "route.kml"
 NS = {"k": "http://www.opengis.net/kml/2.2"}
 API = "https://api.opentopodata.org/v1/ned10m"
-BATCH = 100
-SLEEP = 1.1
+BATCH = 100          # max locations per request
+SLEEP = 1.1          # respect 1 req/s public limit
+
 
 def hav(a, b):
     R = 6371000.0
     la1, lo1, la2, lo2 = map(math.radians, [a[1], a[0], b[1], b[0]])
     h = math.sin((la2-la1)/2)**2 + math.cos(la1)*math.cos(la2)*math.sin((lo2-lo1)/2)**2
     return 2*R*math.asin(math.sqrt(h))
+
 
 def parse_driving_by_day():
     root = ET.parse(KML).getroot()
@@ -42,7 +54,9 @@ def parse_driving_by_day():
             days.append({"day": fname, "segments": segs})
     return days
 
+
 def fetch_elev(coords):
+    """coords: list of (lon,lat). Returns list of elevations (float or None)."""
     out = []
     n = len(coords)
     for i in range(0, n, BATCH):
@@ -63,8 +77,10 @@ def fetch_elev(coords):
                 time.sleep(wait)
         else:
             raise SystemExit(f"failed batch at {i}")
+        print(f"    {min(i+BATCH, n)}/{n} pts", file=sys.stderr)
         time.sleep(SLEEP)
     return out
+
 
 def interp_nulls(eles):
     eles = list(eles); n = len(eles)
@@ -81,10 +97,26 @@ def interp_nulls(eles):
             else: eles[i] = 0.0
     return eles
 
+
 def main():
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--day", type=int, default=None,
+                    help="fetch only this day (e.g. --day 1); default: all days")
+    ap.add_argument("-o", "--out", default="all_elev.json",
+                    help="output file (default: all_elev.json)")
+    args = ap.parse_args()
+
     days = parse_driving_by_day()
+    if args.day is not None:
+        want = f"Day {args.day}"
+        days = [d for d in days if d["day"] == want]
+        if not days:
+            raise SystemExit(f"no '{want}' driving segments found in {KML}")
+
     total_pts = sum(len(s["coords"]) for d in days for s in d["segments"])
-    print(f"Days: {len(days)}; total driving pts: {total_pts}", file=sys.stderr)
+    print(f"Days: {len(days)}; total driving pts: {total_pts} "
+          f"(~{-(-total_pts // BATCH)} requests at {SLEEP:.1f}s each)",
+          file=sys.stderr)
     out_days = []
     for d in days:
         print(f"=== {d['day']} ({sum(len(s['coords']) for s in d['segments'])} pts) ===",
@@ -132,9 +164,10 @@ def main():
         "n_points": sum(d["summary"]["n_points"] for d in out_days),
     }
     json.dump({"grand": grand, "days": out_days},
-              open("all_elev.json", "w"), separators=(",", ":"))
+              open(args.out, "w"), separators=(",", ":"))
     print(json.dumps(grand, indent=2), file=sys.stderr)
-    print("Wrote all_elev.json", file=sys.stderr)
+    print(f"Wrote {args.out}", file=sys.stderr)
+
 
 if __name__ == "__main__":
     main()

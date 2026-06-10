@@ -31,6 +31,24 @@ Devices on solar car:
 10. [Andy left to do](#10-andy-left-to-do)
 11. [Student to do (with Andy help)](#11-student-to-do-with-andy-help)
 
+## Repository layout
+
+What runs on the car vs. what is tooling:
+
+| Path | Role |
+| --- | --- |
+| `CANbus_data/ha_addons/solar-car-canbus/` | **Production** — HA add-on: decodes the shared CAN bus, pushes sensors. Carries a vendored copy of `solarcar_can` (regenerate with `sync_addon.py`). |
+| `display/addon/` | **Production** — HA add-on: renders the e-ink dashboard from HA sensors. |
+| `display/ha/` | HA dashboard YAML for the e-ink message/warning cards. |
+| `CANbus_data/solarcar_can/` | **The** CAN protocol library (BESTGO + EZkontrol decoders, transports). Single source of truth — edit here, never in the vendored copy. |
+| `CANbus_data/` (root scripts) | Cross-platform CLI dashboards (`monitor.py`, `bestgo_decode.py`, `ezkontrol_decode.py`), `sync_addon.py`, SSH helpers; see `CANbus_data/SETUP.md`. |
+| `CANbus_data/tools/`, `CANbus_data/tests/` | Bus diagnostics; golden-master decoder tests + captured fixtures. |
+| `CANbus_data/specs/` | Vendor protocol PDFs and extracted notes. |
+| `simulator/` | Pushes realistic fake telemetry to HA — drives the display with no hardware. |
+| `mapping/` | Race-route elevation tooling (`fetch_elev.py`, `build_viewer.py` → `viewer.html`). |
+| `archive/` | Superseded code kept for reference (old BLE battery GUI, Pi decode-test containers) — see `archive/README.md`. |
+| `PI_TODO.md` | Running list of tasks waiting on the Pi being powered up. |
+
 ## 1. System overview
 This guide documents the complete setup of a solar car monitoring system built on a Raspberry Pi 4 running Home Assistant OS. The system integrates three external hardware interfaces and presents data through both a web dashboard and a physical e-ink display.
 
