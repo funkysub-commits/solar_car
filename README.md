@@ -88,7 +88,7 @@ Both run as Home Assistant apps and restart with HA. `solar-car-canbus` brings u
 Built with Claude in this [context](https://claude.ai/share/ac0488df-1b63-45a8-bcfc-a0aab504916a)  
 
 Home Assistant OS (HAOS) installed on the Pi via Raspberry Pi Imager. The Advanced SSH & Web Terminal add-on must be installed with Protection Mode disabled to allow Docker access and GPIO/SPI operations.  
-A Long-Lived Access Token from Home Assistant is required for the containers to communicate with the HA REST API. Generate this from your HA profile page.  
+The two HA apps talk to HA through the Supervisor proxy and need **no** token. A Long-Lived Access Token is only needed for the optional PC-side tools (`simulator/solar_sim.py`, the SSH helpers) — see Section 3.4. Store it in the `HA_TOKEN` environment variable, never in this repo.  
 
 ## 3. Initial setup: Home Assistant OS
 ### 3.1 Flash HAOS to SD card
@@ -283,15 +283,30 @@ API. The two devices coexist on one bus because their IDs don't overlap —
 the EZkontrol uses 29-bit extended IDs (`0x1801xxxx`), the BESTGO BMS uses
 11-bit standard IDs (`0x351`–`0x379`).
 
-The app source is in `ha_addons/solar-car-canbus/` in this repo; on the Pi
-it is placed in `/addons/solar-car-canbus/` and installed from **Settings >
-Apps > App Store > Local apps**.
+The app source is in `CANbus_data/ha_addons/solar-car-canbus/` in this repo;
+on the Pi it is placed in `/addons/solar-car-canbus/` and installed from
+**Settings > Apps > App Store > Local apps**.
+
+The frame-decoding logic lives in the shared `CANbus_data/solarcar_can/`
+package — the single source of truth for both protocols, used by this app
+and by the cross-platform CLI dashboards (`CANbus_data/monitor.py`,
+`bestgo_decode.py`, `ezkontrol_decode.py`; see `CANbus_data/SETUP.md`).
+The app folder carries a **vendored copy** of the package (HA builds local
+apps with the app folder as the Docker context): after editing
+`solarcar_can/`, run `python CANbus_data/sync_addon.py` and rebuild the
+app. Golden-master tests (`CANbus_data/tests/test_decoders.py`) replay real
+bus captures from `tests/fixtures/` through the decoders.
 
 It publishes 34 sensors:
 - 13 `sensor.ezkontrol_*` — bus voltage/current, phase current, motor speed,
   controller/motor temperature, throttle, gear, brake, contactor, errors.
 - 21 `sensor.bestgo_*` — SOC/SOH, pack voltage/current/temperature, cell
   min/max voltage and temperature, charge/discharge limits, alarms, capacity.
+
+> [!NOTE]
+> Since app version 0.4.0, `sensor.ezkontrol_op_mode` reads a mode name
+> (`Normal` / `Cruise` / `EBS` / `Hold`) instead of a raw number — update
+> any automation that compared it numerically.
 
 `run.sh` brings up the `can0` interface at the configured bitrate before
 starting. If the USB-CAN adapter came up in STM32 DFU mode (so there is no
@@ -342,8 +357,9 @@ Key sensors created by this integration include:
 dmesg | grep -i can
 lsusb | grep canable
 
-# Bring up CAN interface manually
-ip link set can0 type can bitrate 250000
+# Bring up CAN interface manually (shared bus is 500 kbps; the
+# solar-car-canbus app and CANbus_data/can_up.sh do this for you)
+ip link set can0 type can bitrate 500000
 ip link set can0 up
 
 # Sniff raw CAN traffic (inside privileged container)
@@ -404,50 +420,20 @@ Instructions to setup a different cell phone hotspot and password: Through the h
 - [https://goldenmotor.bike/products/ezkontrol-48-volt-universal-bldc-controller?variant=45701095358709](https://goldenmotor.bike/products/ezkontrol-48-volt-universal-bldc-controller?variant=45701095358709)
 
 
-- **Security:** earlier revisions of this README and `CANbus_data/HA_TOKEN.txt` contained Home Assistant long-lived tokens and the HA login password in plaintext, committed and pushed to GitHub. The working tree is scrubbed (placeholders + env vars now), but they remain in git history — treat them as compromised: revoke both long-lived tokens in HA and change the password.
-- Debug can bus!!  Check wire connections!
-    - Wire up CAN bus properly and switch to live mode
-    - Debug CAN connection (termination switch, candump test)
-    - Eztune app:
-        - Verify EZkontrol baud rate setting via Bluetooth app (should be 250K, protocol = ??)
-- 2026-05-20
-    - PC to ezkontrol working at 250k
-    - PC to bestgo working at 500k
-    - Switch ezkontrol to 500k and test
-    - Integrate both into an can control reader on the pc
-        - Make it work regardless of what connected to
-    - Move that to basic home assistant docker container, test dashboard
-    - Create addon for home assistant “CAN bus reader”
-    - Test in the lab!!
-    - Update e-ink display to make prettier  
-After a reboot:  
-```zsh
-docker stop can-reader && docker rm can-reader
-docker ps | grep can
-docker run --rm -it --privileged --network=host -v /dev:/dev can-reader sh
+**The live list of pending tasks is [`PI_TODO.md`](PI_TODO.md)** — most need the Pi powered up (token revocation, deploying app 0.4.0, the EZkontrol live test). Highlights:
 
-ip link set can0 down
-ip link set can0 type can bitrate 250000
-ip link set can0 up
-candump can0
-```
-
-If still nothing after the power cycle and swap, let's try the handshake. The VCU protocol requires the controller to receive a 0xAA response before it starts broadcasting. Try sending it:  
-```zsh
-cansend can0 18EF00D0#AA00000000000000
-```
-Then immediately:
-
-```zsh
-candump can0
-Try these in order and let me know what happens at each step.
-cansend can0 18EF00D0#AA00000000000000
-candump can0
-```
-
-
+- **Security:** earlier revisions of this README and `CANbus_data/HA_TOKEN.txt` contained Home Assistant long-lived tokens and the HA login password in plaintext, committed and pushed to GitHub. The working tree is scrubbed (placeholders + env vars now), but they remain in git history — treat them as compromised: revoke both long-lived tokens in HA and change the password (tracked in `PI_TODO.md`).
+- EZkontrol **live** decode on the Pi has never been tested (BESTGO live works since 2026-05-30). With the controller wired to the shared 500K bus and EZ-Tune protocol set to 101, `candump can0` should show `180117EF`/`180217EF`, then the `sensor.ezkontrol_*` entities update. The MCU-to-Meter protocol is passive — no handshake needed (the `0xAA` handshake from earlier debugging notes applies only to the VCU protocol 2/102, which we don't use).
 
 Complete:
+- CAN integration (May–June 2026): PC decoding of both devices on the shared
+  500K bus; the `solar-car-canbus` HA app (sensors live in HA; BESTGO decode
+  verified on the Pi 2026-05-30); purpose-built e-ink dashboard layout.
+- Code cleanup phases 0–2 and 4 (2026-06-09): secrets scrubbed, repo
+  hygiene, decoders consolidated into `CANbus_data/solarcar_can/` with
+  golden-master tests, retired BLE GUI and scratch containers moved to
+  `archive/`. Phase 3 (display.py refactor) is specified in
+  `display/PHASE3_PLAN.md` but not started.
 - Enable Tailscale to connect to home assistant via the school wifi
     - Home assistant added school wifi, should connect automatically
     - Installed tailscale app on windows, addon on home assistant, find IP and connect
