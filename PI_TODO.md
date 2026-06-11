@@ -18,23 +18,25 @@ as work on the PC piles up changes that need the Pi.
 
 ## Deploy + verify CANbus add-on 0.4.0 (Phase 2 consolidation)
 
-- [ ] Copy the updated add-on to the Pi: `CANbus_data/ha_addons/solar-car-canbus/`
-      → `/addons/solar-car-canbus/`. **Must include the new `solarcar_can/`
-      subfolder** (vendored decoder package) — the build fails without it.
-- [ ] Rebuild + restart: `ha apps rebuild local_solarcar_canbus` then
-      `ha apps restart local_solarcar_canbus` (or uninstall/reinstall from
-      Settings → Apps → Local apps if rebuild doesn't pick up the version bump
-      to 0.4.0).
-- [ ] Check logs: `ha apps logs local_solarcar_canbus` — expect the usual
-      startup lines and periodic `BESTGO: V=... SOC=...%` summaries.
-- [ ] Verify BESTGO sensors still update (Developer Tools → States,
-      `sensor.bestgo_pack_voltage`, `sensor.bestgo_soc`, ...). This is the
-      proven-working path — it must behave exactly as before.
-- [ ] `sensor.ezkontrol_op_mode` now reads `"Normal"/"Cruise"/"EBS"/"Hold"`
-      instead of `0/2/3/4` (intentional). Check HA automations/dashboard
-      conditions for numeric comparisons against it and update any found.
-- [ ] Glance at the e-ink display — it reads the same sensors, so it should be
-      unaffected, but confirm after the add-on rebuild.
+- [x] ~~Copy the updated add-on to the Pi~~ — done 2026-06-11 via `ha_push.py`
+      (incl. `solarcar_can/`).
+- [x] ~~Rebuild~~ — done 2026-06-11. Required `ha supervisor update` first
+      (an outdated Supervisor blocks all store operations), then
+      `ha store reload` + `ha apps update local_solarcar_canbus`.
+- [x] ~~Verify the new code runs~~ — done 2026-06-11 in **dummy mode**: all
+      34 sensors push (13 ezkontrol + 21 bestgo), `sensor.ezkontrol_op_mode`
+      reads `Normal`. Options reverted to live mode; add-on left **stopped**.
+- [ ] **Live BESTGO verification still pending** — the SH-C31G USB-CAN
+      adapter was not plugged into the Pi (nothing on the USB bus). Plug it
+      in, start the app (`ha apps start local_solarcar_canbus` or the UI),
+      and confirm `sensor.bestgo_*` updates from the real battery.
+- [ ] Check HA automations/dashboards for numeric comparisons against
+      `sensor.ezkontrol_op_mode` (now `"Normal"/"Cruise"/"EBS"/"Hold"`,
+      was `0/2/3/4`) and update any found.
+- [ ] Glance at the e-ink display once live data flows — it reads the same
+      sensors, so it should be unaffected. (Note: the `solar_epaper` app
+      showed `state: error` on 2026-06-11 before the Supervisor update —
+      recheck it after a restart.)
 
 ## Still outstanding from before the refactor
 
