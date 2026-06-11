@@ -6,7 +6,19 @@ with open(filepath) as f:
 # regardless of how the upstream Waveshare file is formatted.
 c = '\n'.join(line.rstrip() for line in c.split('\n'))
 
-c = c.replace(
+
+def replace(text, old, new):
+    """c.replace() that REFUSES to no-op: if upstream Waveshare restructures
+    epdconfig.py and a pattern stops matching, the Docker build must fail
+    here, loudly - not 'succeed' and then crash the add-on at runtime."""
+    if old not in text:
+        raise SystemExit(
+            "patch.py: pattern not found in epdconfig.py - upstream layout "
+            f"changed? Unmatched pattern starts with:\n{old.strip().splitlines()[0]}")
+    return text.replace(old, new)
+
+
+c = replace(c,
     """    def __init__(self):
         import spidev
         import gpiozero
@@ -30,7 +42,7 @@ c = c.replace(
             self.BUSY_PIN: gpiod.LineSettings(direction=Direction.INPUT),
         })""")
 
-c = c.replace(
+c = replace(c,
     """    def digital_write(self, pin, value):
         if pin == self.RST_PIN:
             if value:
@@ -57,7 +69,7 @@ c = c.replace(
             return
         self.request.set_value(pin, self.gpiod_Value.ACTIVE if value else self.gpiod_Value.INACTIVE)""")
 
-c = c.replace(
+c = replace(c,
     """    def digital_read(self, pin):
         if pin == self.BUSY_PIN:
             return self.GPIO_BUSY_PIN.value
@@ -72,17 +84,17 @@ c = c.replace(
     """    def digital_read(self, pin):
         return 1 if self.request.get_value(pin) == self.gpiod_Value.ACTIVE else 0""")
 
-c = c.replace(
+c = replace(c,
     '        self.GPIO_PWR_PIN.on()',
     '        self.request.set_value(self.PWR_PIN, self.gpiod_Value.ACTIVE)')
 
-c = c.replace('self.GPIO_RST_PIN.off()', 'self.request.set_value(self.RST_PIN, self.gpiod_Value.INACTIVE)')
-c = c.replace('self.GPIO_DC_PIN.off()', 'self.request.set_value(self.DC_PIN, self.gpiod_Value.INACTIVE)')
-c = c.replace('self.GPIO_PWR_PIN.off()', 'self.request.set_value(self.PWR_PIN, self.gpiod_Value.INACTIVE)')
-c = c.replace('self.GPIO_RST_PIN.close()', 'pass')
-c = c.replace('self.GPIO_DC_PIN.close()', 'pass')
-c = c.replace('self.GPIO_PWR_PIN.close()', 'pass')
-c = c.replace('self.GPIO_BUSY_PIN.close()', 'self.request.release()')
+c = replace(c,'self.GPIO_RST_PIN.off()', 'self.request.set_value(self.RST_PIN, self.gpiod_Value.INACTIVE)')
+c = replace(c,'self.GPIO_DC_PIN.off()', 'self.request.set_value(self.DC_PIN, self.gpiod_Value.INACTIVE)')
+c = replace(c,'self.GPIO_PWR_PIN.off()', 'self.request.set_value(self.PWR_PIN, self.gpiod_Value.INACTIVE)')
+c = replace(c,'self.GPIO_RST_PIN.close()', 'pass')
+c = replace(c,'self.GPIO_DC_PIN.close()', 'pass')
+c = replace(c,'self.GPIO_PWR_PIN.close()', 'pass')
+c = replace(c,'self.GPIO_BUSY_PIN.close()', 'self.request.release()')
 
 with open(filepath, 'w') as f:
     f.write(c)

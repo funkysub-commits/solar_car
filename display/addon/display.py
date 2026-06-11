@@ -66,7 +66,8 @@ from datetime import datetime
 import config
 import layout
 import panel
-from alerts import (build_warnings, compute_stale, device_status,
+import ha_client
+from alerts import (build_warnings, compute_stale, device_status, fit_hidden,
                     merge_device_stale, publish_warnings)
 from ha_client import (ha_get, read_health, read_hidden, read_message,
                        read_number, read_temp_c, set_hidden)
@@ -124,7 +125,7 @@ def main():
         last_iso["voltage"] = lu
     if not voltage_unit:
         voltage_unit = "V"
-    ha_msg = read_message(config.ENTITIES["message"])
+    ha_msg = read_message(config.ENTITIES["message"]) or ""
     hidden = read_hidden()
     # CAN connectivity, from the CANbus app's health sensors. Tri-state per
     # entry: True up / False down / None unknown (sensor not published yet) -
@@ -138,7 +139,8 @@ def main():
         stale = compute_stale(last_iso)
         status = device_status(stale, health)
         stale = merge_device_stale(stale, *status)
-        return stale, build_warnings(temps, stale, status, ha_msg)
+        return stale, build_warnings(temps, stale, status, ha_msg,
+                                     ha_down=ha_client.ha_unreachable())
 
     def assemble():
         """Compute (stale map, visible warnings) and keep the published HA
@@ -172,6 +174,10 @@ def main():
         _, all_ws = current_alerts()
         active_keys = {w["key"] for w in all_ws}
         target &= active_keys
+        target, dropped = fit_hidden(target, all_ws)
+        if dropped:
+            logging.warning(f"hidden list over the 255-char input_text cap - "
+                            f"un-hid lowest-priority keys: {sorted(dropped)}")
         if target != cur:
             set_hidden(target)
         hidden = target
@@ -244,9 +250,11 @@ def main():
                 health["bus"] = read_health(config.ENT_CAN_BUS)
                 health["batt"] = read_health(config.ENT_CAN_BATT)
                 health["ezk"] = read_health(config.ENT_CAN_EZK)
-                prev_msg = ha_msg
-                ha_msg = read_message(config.ENTITIES["message"])
-                sync_hidden(ha_msg != prev_msg)   # single writer of eink_hidden
+                m = read_message(config.ENTITIES["message"])
+                if m is not None:                 # None = fetch failed; keep last
+                    msg_changed = (m != ha_msg)
+                    ha_msg = m
+                    sync_hidden(msg_changed)      # single writer of eink_hidden
                 last_slow = t0
 
             # manual refresh button forces a full (de-ghosting) refresh

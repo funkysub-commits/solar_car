@@ -47,10 +47,18 @@ REGIONS = {
 DATA_REGIONS = ("speed", "batt", "temps", "notify")
 
 
+_font_warned = set()
+
+
 def _font(name, size):
     try:
         return ImageFont.truetype(f"{config.FONT_DIR}/{name}", size)
-    except Exception:
+    except Exception as e:
+        if name not in _font_warned:        # warn once per face, not 9 times
+            _font_warned.add(name)
+            logging.warning(f"font {config.FONT_DIR}/{name} unavailable ({e}) - "
+                            "falling back to PIL's default; the dashboard will "
+                            "render with wrong text sizes")
         return ImageFont.load_default()
 
 

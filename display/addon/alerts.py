@@ -77,14 +77,26 @@ def merge_device_stale(stale, bus_down, batt_down, ezk_down):
     return out
 
 
-def build_warnings(temps, stale, status, ha_msg):
+def build_warnings(temps, stale, status, ha_msg, ha_down=False):
     """Build the ordered list of active warnings (highest priority first).
     status is the (bus_down, batt_down, ezk_down) triple from device_status;
     stale should already have device outages merged in (merge_device_stale).
 
+    ha_down means Home Assistant itself is unreachable. That makes every
+    CAN/staleness deduction unknowable (the data stops at HA, not at the bus),
+    so those warnings are replaced by a single accurate one - otherwise an HA
+    outage would masquerade as "CAN bus not connected" and send whoever is
+    debugging to the wrong subsystem.
+
     Each warning is a dict: {key, text, priority, icon}. 'key' is stable so the
     Home Assistant side can hide an individual warning. 'icon' is "warn" for
     alarms and "info" for the user message."""
+    if ha_down:
+        ws = [{"key": "ha", "text": "Home Assistant unreachable",
+               "priority": 110, "icon": "warn"}]
+        if ha_msg:        # last known message - still deliberately set
+            ws.append({"key": "user", "text": ha_msg, "priority": 30, "icon": "info"})
+        return ws
     bus_down, batt_down, ezk_down = status
     ws = []
     explained = set()      # keys whose staleness a device warning already explains
@@ -123,6 +135,20 @@ def build_warnings(temps, stale, status, ha_msg):
         ws.append({"key": "user", "text": ha_msg, "priority": 30, "icon": "info"})
     ws.sort(key=lambda w: -w["priority"])
     return ws
+
+
+def fit_hidden(keys, all_ws, limit=255):
+    """input_text caps its value at 255 chars, and a blind mid-key cut would
+    corrupt the whole hidden list. Drop the lowest-priority keys until the
+    CSV fits, keeping the hides that matter most. Returns (kept, dropped)."""
+    prio = {w["key"]: w["priority"] for w in all_ws}
+    keep = set(keys)
+    dropped = set()
+    while keep and len(",".join(sorted(keep))) > limit:
+        weakest = min(keep, key=lambda k: (prio.get(k, 0), k))
+        keep.discard(weakest)
+        dropped.add(weakest)
+    return keep, dropped
 
 
 def publish_warnings(all_ws, hidden):

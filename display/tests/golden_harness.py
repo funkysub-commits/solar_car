@@ -99,6 +99,11 @@ def scenarios(D, A):
     st, ws = assess(temps_ok, no_stale, {"bus": True, "batt": False, "ezk": False}, "")
     yield "both_down", dict(speed=22, temps=temps_ok, soc=78, voltage=58.4,
                             warnings=ws, stale=st, clock_str="14:32")
+    # HA itself unreachable: one accurate warning instead of bogus CAN noise
+    st = _mkstale(D, D.STALE_KEYS)        # everything ages out during an outage
+    ws = A.build_warnings(temps_ok, st, (False, False, False), "", ha_down=True)
+    yield "ha_down", dict(speed=22, temps=temps_ok, soc=78, voltage=58.4,
+                          warnings=ws, stale=st, clock_str="14:32")
     st, ws = assess(temps_ok, no_stale, HEALTH_OK, "Box this lap")
     yield "user_msg", dict(speed=22, temps=temps_ok, soc=78, voltage=58.4,
                            warnings=ws, stale=st, clock_str="14:32")
