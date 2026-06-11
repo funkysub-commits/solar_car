@@ -41,9 +41,10 @@ as work on the PC piles up changes that need the Pi.
 
 ## When the USB-CAN adapter is back (no battery/controller needed)
 
-- [ ] PC: plug the SH-C31G into the PC and run `python monitor.py` — the
-      adapter should open (gs_usb path) and the dashboards sit at
-      "waiting for frames". Tests the transport layer end to end.
+- [x] ~~PC transport test~~ — done 2026-06-11: adapter opened (after a
+      DFU-mode replug — the BOOT switch strikes again), `monitor.py` /
+      `bestgo_decode.py` (incl. ASC log) / mixed live+dummy all work on
+      the empty bus.
 - [ ] Pi: plug it into the Pi and start `local_solarcar_canbus` — run.sh
       should bring up can0 and the app should idle without frames. Then
       the CLI tools over SocketCAN (`./can_up.sh`, `python monitor.py`)
