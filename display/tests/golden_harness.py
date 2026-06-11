@@ -53,49 +53,64 @@ def _mkstale(D, keys=()):
 
 def scenarios(D, A):
     """Yield (name, kwargs-for-render). D = config-bearing module, A = the
-    module holding build_warnings (same module before the split)."""
+    alerts module (device_status / merge_device_stale / build_warnings)."""
     temps_ok = {"t_motor": 40.0, "t_ezk": 35.0, "t_batt": 30.0, "t_pi": 48.0}
     temps_hot1 = {**temps_ok, "t_motor": 72.0}
     temps_hot2 = {**temps_ok, "t_motor": 74.0, "t_batt": 68.0}
     temps_none = {k: None for k in temps_ok}
     no_stale = _mkstale(D)
     all_stale = _mkstale(D, D.STALE_KEYS)
+    HEALTH_OK = {"bus": True, "batt": True, "ezk": True}
+    HEALTH_UNKNOWN = {"bus": None, "batt": None, "ezk": None}   # sensors absent
 
-    def warns(temps, stale, can_down, msg, hidden=()):
-        ws = A.build_warnings(temps, stale, can_down, msg)
-        return [w for w in ws if w["key"] not in set(hidden)]
+    def assess(temps, stale, health, msg, hidden=()):
+        """Mirror the main loop's pipeline: status -> merged stale -> warnings.
+        Returns (merged stale map, visible warning list)."""
+        status = A.device_status(stale, health)
+        merged = A.merge_device_stale(stale, *status)
+        ws = A.build_warnings(temps, merged, status, msg)
+        return merged, [w for w in ws if w["key"] not in set(hidden)]
 
     yield "normal", dict(speed=22, temps=temps_ok, soc=78, voltage=58.4,
                          warnings=[], stale=no_stale, clock_str="14:32")
     yield "speed_none", dict(speed=None, temps=temps_ok, soc=78, voltage=58.4,
                              warnings=[], stale=no_stale, clock_str="14:32")
+    st, ws = assess(temps_hot1, no_stale, HEALTH_OK, "")
     yield "hot_one", dict(speed=22, temps=temps_hot1, soc=78, voltage=58.4,
-                          warnings=warns(temps_hot1, no_stale, False, ""),
-                          stale=no_stale, clock_str="14:32")
-    st4 = _mkstale(D, ("voltage",))
+                          warnings=ws, stale=st, clock_str="14:32")
+    st, ws = assess(temps_hot2, _mkstale(D, ("voltage",)), HEALTH_OK,
+                    "Pit stop in 2 laps - watch turn 3")
     yield "multi_badge", dict(speed=22, temps=temps_hot2, soc=78, voltage=58.4,
-                              warnings=warns(temps_hot2, st4, False,
-                                             "Pit stop in 2 laps - watch turn 3"),
-                              stale=st4, clock_str="14:32")
+                              warnings=ws, stale=st, clock_str="14:32")
+    st, ws = assess(temps_ok, all_stale, HEALTH_UNKNOWN, "")
     yield "can_down", dict(speed=22, temps=temps_ok, soc=78, voltage=58.4,
-                           warnings=warns(temps_ok, all_stale, True, ""),
-                           stale=all_stale, clock_str="14:32")
+                           warnings=ws, stale=st, clock_str="14:32")
+    st, ws = assess(temps_none, all_stale, HEALTH_UNKNOWN, "")
     yield "can_down_empty", dict(speed=None, temps=temps_none, soc=None, voltage=None,
-                                 warnings=warns(temps_none, all_stale, True, ""),
-                                 stale=all_stale, clock_str="14:32")
+                                 warnings=ws, stale=st, clock_str="14:32")
+    # device-level outages from the explicit health sensors: only the values
+    # fed by the down device get the "!" mark
+    st, ws = assess(temps_ok, no_stale, {"bus": True, "batt": False, "ezk": True}, "")
+    yield "batt_down", dict(speed=22, temps=temps_ok, soc=78, voltage=58.4,
+                            warnings=ws, stale=st, clock_str="14:32")
+    st, ws = assess(temps_ok, no_stale, {"bus": True, "batt": True, "ezk": False}, "")
+    yield "ezk_down", dict(speed=22, temps=temps_ok, soc=78, voltage=58.4,
+                           warnings=ws, stale=st, clock_str="14:32")
+    st, ws = assess(temps_ok, no_stale, {"bus": True, "batt": False, "ezk": False}, "")
+    yield "both_down", dict(speed=22, temps=temps_ok, soc=78, voltage=58.4,
+                            warnings=ws, stale=st, clock_str="14:32")
+    st, ws = assess(temps_ok, no_stale, HEALTH_OK, "Box this lap")
     yield "user_msg", dict(speed=22, temps=temps_ok, soc=78, voltage=58.4,
-                           warnings=warns(temps_ok, no_stale, False, "Box this lap"),
-                           stale=no_stale, clock_str="14:32")
+                           warnings=ws, stale=st, clock_str="14:32")
+    st, ws = assess(temps_ok, no_stale, HEALTH_OK,
+                    "A very long message that cannot possibly fit "
+                    "in the little notification chip and must be "
+                    "ellipsized cleanly at the right edge")
     yield "msg_ellipsis", dict(speed=22, temps=temps_ok, soc=78, voltage=58.4,
-                               warnings=warns(temps_ok, no_stale, False,
-                                              "A very long message that cannot possibly fit "
-                                              "in the little notification chip and must be "
-                                              "ellipsized cleanly at the right edge"),
-                               stale=no_stale, clock_str="14:32")
+                               warnings=ws, stale=st, clock_str="14:32")
+    st, ws = assess(temps_hot1, no_stale, HEALTH_OK, "", hidden=("temp_t_motor",))
     yield "hidden_all", dict(speed=22, temps=temps_hot1, soc=78, voltage=58.4,
-                             warnings=warns(temps_hot1, no_stale, False, "",
-                                            hidden=("temp_t_motor",)),
-                             stale=no_stale, clock_str="14:32")
+                             warnings=ws, stale=st, clock_str="14:32")
     yield "soc_0", dict(speed=0, temps=temps_ok, soc=0, voltage=42.0,
                         warnings=[], stale=no_stale, clock_str="23:59")
     yield "soc_15", dict(speed=38.6, temps=temps_ok, soc=15, voltage=46.1,

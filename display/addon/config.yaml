@@ -28,6 +28,9 @@ options:
   ent_voltage: sensor.bestgo_pack_voltage
   ent_message: input_text.eink_message
   ent_power: input_boolean.eink_display
+  ent_can_bus: binary_sensor.solarcar_can_bus
+  ent_can_battery: binary_sensor.solarcar_can_battery
+  ent_can_ezkontrol: binary_sensor.solarcar_can_ezkontrol
 schema:
   title: str
   speed_max: float
@@ -47,3 +50,6 @@ schema:
   ent_voltage: str
   ent_message: str
   ent_power: str
+  ent_can_bus: str
+  ent_can_battery: str
+  ent_can_ezkontrol: str

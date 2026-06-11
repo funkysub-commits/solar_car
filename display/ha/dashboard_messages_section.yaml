@@ -37,6 +37,30 @@ cards:
       - condition: template
         value_template: "{{ 'can' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
   - type: button
+    name: "Hide: Battery not on CAN"
+    icon: mdi:eye-off
+    show_state: false
+    tap_action:
+      action: perform-action
+      perform_action: script.eink_hide
+      data:
+        key: can_batt
+    visibility:
+      - condition: template
+        value_template: "{{ 'can_batt' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
+  - type: button
+    name: "Hide: EZkontrol not on CAN"
+    icon: mdi:eye-off
+    show_state: false
+    tap_action:
+      action: perform-action
+      perform_action: script.eink_hide
+      data:
+        key: can_ezk
+    visibility:
+      - condition: template
+        value_template: "{{ 'can_ezk' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
+  - type: button
     name: "Hide: High motor temp"
     icon: mdi:eye-off
     show_state: false

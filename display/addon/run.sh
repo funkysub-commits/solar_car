@@ -24,6 +24,9 @@ export ENT_SOC="$(bashio::config 'ent_soc')"
 export ENT_VOLTAGE="$(bashio::config 'ent_voltage')"
 export ENT_MESSAGE="$(bashio::config 'ent_message')"
 export ENT_POWER="$(bashio::config 'ent_power')"
+export ENT_CAN_BUS="$(bashio::config 'ent_can_bus')"
+export ENT_CAN_BATT="$(bashio::config 'ent_can_battery')"
+export ENT_CAN_EZK="$(bashio::config 'ent_can_ezkontrol')"
 
 bashio::log.info "speed=${ENT_SPEED} (value+unit from HA) poll=${SPEED_POLL}s"
 

@@ -37,29 +37,75 @@ def compute_stale(last_iso):
             for k in config.STALE_KEYS}
 
 
-def build_warnings(temps, stale, can_all_stale, ha_msg):
+def device_status(stale, health):
+    """Decide (bus_down, batt_down, ezk_down) for the CAN bus and the two
+    devices on it.
+
+    health maps {"bus", "batt", "ezk"} to the tri-state read of the CANbus
+    app's connectivity sensors (True up / False down / None unknown). An
+    explicit False wins outright; while a sensor is unknown (not published
+    yet, or HA unreachable) the same fact is inferred from staleness: a
+    device is presumed off the bus when every value it feeds has stopped
+    updating. A bus-level failure implies both devices, so their individual
+    flags are folded into bus_down rather than reported twice."""
+    batt_stale = all(stale.get(k) for k in config.BATT_KEYS)
+    ezk_stale = all(stale.get(k) for k in config.EZK_KEYS)
+    bus, batt, ezk = health.get("bus"), health.get("batt"), health.get("ezk")
+    bus_down = (bus is False) or (bus is None and batt_stale and ezk_stale)
+    batt_down = (batt is False) or (batt is None and batt_stale)
+    ezk_down = (ezk is False) or (ezk is None and ezk_stale)
+    if bus_down:
+        batt_down = ezk_down = False      # implied by the bus being down
+    return bus_down, batt_down, ezk_down
+
+
+def merge_device_stale(stale, bus_down, batt_down, ezk_down):
+    """Force the "!" mark onto every value fed by a device that is off the
+    bus - and only those values. A battery dropout marks exactly the three
+    battery-fed values; the EZkontrol values stay clean (and vice versa)."""
+    out = dict(stale)
+    down_keys = ()
+    if bus_down:
+        down_keys = config.CAN_KEYS
+    else:
+        if batt_down:
+            down_keys += config.BATT_KEYS
+        if ezk_down:
+            down_keys += config.EZK_KEYS
+    for k in down_keys:
+        out[k] = True
+    return out
+
+
+def build_warnings(temps, stale, status, ha_msg):
     """Build the ordered list of active warnings (highest priority first).
+    status is the (bus_down, batt_down, ezk_down) triple from device_status;
+    stale should already have device outages merged in (merge_device_stale).
 
     Each warning is a dict: {key, text, priority, icon}. 'key' is stable so the
     Home Assistant side can hide an individual warning. 'icon' is "warn" for
     alarms and "info" for the user message."""
+    bus_down, batt_down, ezk_down = status
     ws = []
-    if can_all_stale:
+    explained = set()      # keys whose staleness a device warning already explains
+    if bus_down:
         ws.append({"key": "can", "text": "CAN bus not connected",
                    "priority": 100, "icon": "warn"})
-        # The single "not connected" stands in for every CAN sensor, but a
-        # non-CAN sensor (e.g. the Pi's own temp) still reports its own
-        # staleness - "CAN bus not connected" doesn't explain a frozen Pi value.
-        for k, lbl in STALE_WARN_LABELS.items():
-            if k not in config.CAN_KEYS and stale.get(k):
-                ws.append({"key": f"stale_{k}", "text": f"{lbl} not updating",
-                           "priority": 50, "icon": "warn"})
-    else:
-        # bus is alive: each stalled sensor gets its own warning
-        for k, lbl in STALE_WARN_LABELS.items():
-            if stale.get(k):
-                ws.append({"key": f"stale_{k}", "text": f"{lbl} not updating",
-                           "priority": 50, "icon": "warn"})
+        explained.update(config.CAN_KEYS)
+    if batt_down:
+        ws.append({"key": "can_batt", "text": "Battery not on CAN bus",
+                   "priority": 90, "icon": "warn"})
+        explained.update(config.BATT_KEYS)
+    if ezk_down:
+        ws.append({"key": "can_ezk", "text": "EZkontrol not on CAN bus",
+                   "priority": 90, "icon": "warn"})
+        explained.update(config.EZK_KEYS)
+    # Any remaining stalled sensor gets its own warning - e.g. the Pi's own
+    # temperature, whose staleness no CAN warning explains.
+    for k, lbl in STALE_WARN_LABELS.items():
+        if k not in explained and stale.get(k):
+            ws.append({"key": f"stale_{k}", "text": f"{lbl} not updating",
+                       "priority": 50, "icon": "warn"})
     for k, lbl in TEMP_WARN_LABELS.items():
         if stale.get(k):
             continue                      # don't warn "high temp" off a frozen reading

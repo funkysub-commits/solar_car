@@ -91,6 +91,28 @@ def read_message(entity):
     return str(state).strip()
 
 
+_HEALTH_TRUE = {"on", "true", "connected", "ok", "online", "yes", "up", "healthy", "1"}
+_HEALTH_FALSE = {"off", "false", "disconnected", "not connected", "error",
+                 "offline", "no", "down", "unhealthy", "0"}
+
+
+def read_health(entity):
+    """Tri-state read of a connectivity/health entity: True = healthy,
+    False = down, None = unknown (entity missing, unavailable, or an
+    unrecognised state). None tells the caller to fall back to inferring the
+    same fact from sensor staleness - so the display keeps working before the
+    CANbus app publishes these sensors."""
+    state, _, _ = ha_get(entity)
+    if state in (None, "", "unknown", "unavailable"):
+        return None
+    s = str(state).strip().lower()
+    if s in _HEALTH_TRUE:
+        return True
+    if s in _HEALTH_FALSE:
+        return False
+    return None
+
+
 def read_hidden():
     """Return the set of warning keys the user has chosen to hide (read from the
     comma-separated input_text.eink_hidden helper)."""

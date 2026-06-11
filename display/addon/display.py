@@ -66,8 +66,9 @@ from datetime import datetime
 import config
 import layout
 import panel
-from alerts import build_warnings, compute_stale, publish_warnings
-from ha_client import (entity_age_seconds, ha_get, read_hidden, read_message,
+from alerts import (build_warnings, compute_stale, device_status,
+                    merge_device_stale, publish_warnings)
+from ha_client import (ha_get, read_health, read_hidden, read_message,
                        read_number, read_temp_c, set_hidden)
 from panel import full_refresh, push_region, region_snaps, settle_and_sleep
 from render import render
@@ -125,11 +126,19 @@ def main():
         voltage_unit = "V"
     ha_msg = read_message(config.ENTITIES["message"])
     hidden = read_hidden()
+    # CAN connectivity, from the CANbus app's health sensors. Tri-state per
+    # entry: True up / False down / None unknown (sensor not published yet) -
+    # None falls back to staleness inference inside device_status().
+    health = {"bus": read_health(config.ENT_CAN_BUS),
+              "batt": read_health(config.ENT_CAN_BATT),
+              "ezk": read_health(config.ENT_CAN_EZK)}
 
-    def can_all_stale():
-        return all(last_iso[k] is None
-                   or entity_age_seconds(last_iso[k]) > config.STALE_AGE
-                   for k in config.CAN_KEYS)
+    def current_alerts():
+        """(stale map with device outages merged in, full warning list)."""
+        stale = compute_stale(last_iso)
+        status = device_status(stale, health)
+        stale = merge_device_stale(stale, *status)
+        return stale, build_warnings(temps, stale, status, ha_msg)
 
     def assemble():
         """Compute (stale map, visible warnings) and keep the published HA
@@ -137,8 +146,7 @@ def main():
         slow-poll step (sync_hidden) so there is exactly one writer of
         input_text.eink_hidden - this just reads it."""
         nonlocal _pub_sig, _pub_time
-        stale = compute_stale(last_iso)
-        all_ws = build_warnings(temps, stale, can_all_stale(), ha_msg)
+        stale, all_ws = current_alerts()
         visible = [w for w in all_ws if w["key"] not in hidden]
         # publish on change, and as a heartbeat every PUBLISH_EVERY seconds so the
         # REST-published sensor reappears within ~30s of a Home Assistant restart
@@ -161,9 +169,8 @@ def main():
         target = set(cur)
         if msg_changed:
             target.discard("user")
-        active_keys = {w["key"] for w in
-                       build_warnings(temps, compute_stale(last_iso),
-                                      can_all_stale(), ha_msg)}
+        _, all_ws = current_alerts()
+        active_keys = {w["key"] for w in all_ws}
         target &= active_keys
         if target != cur:
             set_hidden(target)
@@ -234,6 +241,9 @@ def main():
                     voltage, voltage_unit = vv, (vu or voltage_unit)
                 if lu is not None:
                     last_iso["voltage"] = lu
+                health["bus"] = read_health(config.ENT_CAN_BUS)
+                health["batt"] = read_health(config.ENT_CAN_BATT)
+                health["ezk"] = read_health(config.ENT_CAN_EZK)
                 prev_msg = ha_msg
                 ha_msg = read_message(config.ENTITIES["message"])
                 sync_hidden(ha_msg != prev_msg)   # single writer of eink_hidden
