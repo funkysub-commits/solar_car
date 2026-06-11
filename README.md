@@ -399,7 +399,37 @@ exit
 ha host reboot
 ```
 
+### Supervisor staleness (matters for race day)
 
+If the Pi sits powered off for weeks, the HA Supervisor falls behind its
+latest release. Observed 2026-06-11 after such a gap: a stale Supervisor
+**blocks all app-store operations** — install, update, rebuild, even
+`ha store reload` fail with *"blocked from execution, supervisor needs to
+be updated first"* — until you run `ha supervisor update` (needs internet,
+takes a couple of minutes).
+
+What this does and doesn't affect:
+
+- **Running apps keep running.** The two apps are ordinary Docker
+  containers; the Supervisor being outdated doesn't stop them, and
+  `boot: auto` apps still start normally after a reboot. Telemetry on race
+  day does not depend on the Supervisor being current.
+- The apps reach HA through the Supervisor *proxy* (`http://supervisor/core`),
+  which keeps working while stale. The only brief interruption is **during**
+  a Supervisor self-update (it restarts; sensor pushes error for a few
+  seconds and then recover — the canbus app logs and retries on its own).
+- With **no internet** (the normal race condition), the Supervisor can't
+  even discover it is outdated, so nothing gets blocked — but you also
+  can't install or rebuild anything, since app builds need `apk`/`pip`
+  downloads anyway.
+- The real risk window is **maintenance you postpone to race week**: with a
+  stale Supervisor plus a flaky hotspot, an "emergency rebuild" first costs
+  you a Supervisor update on slow internet.
+
+**Race prep rule:** a few days before the race, power the Pi up on a network
+with internet, let the Supervisor update (or run `ha supervisor update`),
+rebuild/verify both apps, and then **freeze** — no app or HA updates at the
+track.
 
 Both apps live in `/addons/` on the Raspberry Pi (`/addons/solar_epaper/` and `/addons/solar-car-canbus/`) and install from Settings > Apps > App Store > Local apps. This directory persists across reboots.  
 ## 9. Network setup discussion

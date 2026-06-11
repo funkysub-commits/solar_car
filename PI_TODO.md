@@ -45,6 +45,17 @@ as work on the PC piles up changes that need the Pi.
       `candump can0` should show `180117EF`/`180217EF` frames, then check the
       `sensor.ezkontrol_*` entities update.
 
+## Race prep (a few days before, on a network with internet)
+
+- [ ] Power the Pi up early and let the HA Supervisor update (or run
+      `ha supervisor update`). A stale Supervisor blocks all app
+      install/update/rebuild operations until it's current (hit this
+      2026-06-11) — running apps are unaffected, but don't discover that
+      during an emergency fix at the track. See README §8 "Supervisor
+      staleness" for details.
+- [ ] After it's current: verify both apps start and push sensors, then
+      freeze — no HA/app updates at the track.
+
 ## Optional / nice-to-have on the Pi
 
 - [ ] Try the unified CLI tools over SocketCAN: copy `CANbus_data/` to the Pi,
