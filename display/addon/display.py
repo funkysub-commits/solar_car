@@ -16,7 +16,8 @@ focused modules, all copied flat next to this file in the container:
 
 Layout
   Header        : team logo + title + clock
-  Left          : analog speedometer gauge (mph / km/h / rpm)
+  Left          : analog speedometer gauge (value + unit exactly as the
+                  configured HA entity reports them - no conversion here)
   Right-top     : battery icon (state of charge) + pack voltage
   Right-bottom  : four vertical temperature bar graphs (motor / EZkontrol / battery / Pi)
   Bottom band   : a small centred notification "toast" that only appears while a
@@ -70,7 +71,6 @@ from ha_client import (entity_age_seconds, ha_get, read_hidden, read_message,
                        read_number, read_temp_c, set_hidden)
 from panel import full_refresh, push_region, region_snaps, settle_and_sleep
 from render import render
-from units import rpm_to_speed
 
 
 def fmt_temps(temps):
@@ -93,7 +93,8 @@ def main():
     signal.signal(signal.SIGTERM, on_term)
     signal.signal(signal.SIGINT, on_term)
 
-    logging.info(f"init + clear  (speed unit: {config.SPEED_LABEL}, temp unit: {config.TEMP_UNIT})")
+    logging.info(f"init + clear  (temp unit: {config.TEMP_UNIT}; "
+                 f"speed value+unit come from {config.ENTITIES['speed']})")
     epd.init()
     epd.Clear()
 
@@ -104,7 +105,8 @@ def main():
     # freshness timestamp, or a single transient read error would instantly flag
     # the value stale (and could falsely flip the whole display to "CAN bus not
     # connected"). Only advance the timestamp on a successful read.
-    speed, _, lu = read_number(config.ENTITIES["speed"])
+    speed, speed_unit, lu = read_number(config.ENTITIES["speed"])
+    speed_unit = speed_unit or ""
     if lu is not None:
         last_iso["speed"] = lu
     temps = {k: None for k in ("t_motor", "t_ezk", "t_batt", "t_pi")}
@@ -130,9 +132,9 @@ def main():
                    for k in config.CAN_KEYS)
 
     def assemble():
-        """Compute (display speed, stale map, visible warnings) and keep the
-        published HA warning list in sync. The hidden-key set is owned and pruned
-        by the slow-poll step (sync_hidden) so there is exactly one writer of
+        """Compute (stale map, visible warnings) and keep the published HA
+        warning list in sync. The hidden-key set is owned and pruned by the
+        slow-poll step (sync_hidden) so there is exactly one writer of
         input_text.eink_hidden - this just reads it."""
         nonlocal _pub_sig, _pub_time
         stale = compute_stale(last_iso)
@@ -146,7 +148,7 @@ def main():
             publish_warnings(all_ws, hidden)
             _pub_sig = sig
             _pub_time = now
-        return rpm_to_speed(speed), stale, visible
+        return stale, visible
 
     def sync_hidden(msg_changed):
         """Read the authoritative hidden set and rewrite it iff it needs changing:
@@ -170,18 +172,18 @@ def main():
     _pub_sig = None
     _pub_time = 0.0
 
-    disp, stale, visible = assemble()
+    stale, visible = assemble()
     clock = datetime.now().strftime("%H:%M")
     powered = ha_get(config.POWER_TOGGLE)[0] != "off"   # default ON if the toggle is absent
     if powered:
-        img = render(disp, temps, soc, voltage, voltage_unit, visible, stale, clock)
+        img = render(speed, speed_unit, temps, soc, voltage, voltage_unit, visible, stale, clock)
         full_refresh(epd, img)            # clean base frame, then partial mode
         logging.info("initial frame drawn")
     else:
         epd.sleep()                       # already cleared above; just sleep the panel
         logging.info("display starts OFF (HA toggle)")
 
-    last_snaps = region_snaps(disp, temps, soc, voltage, visible, stale, clock)
+    last_snaps = region_snaps(speed, speed_unit, temps, soc, voltage, visible, stale, clock)
     refresh_count = 0
     last_slow = time.time()
     last_button, _, _ = ha_get(config.REFRESH_BUTTON)
@@ -206,9 +208,11 @@ def main():
             powered = True
 
             # fast value - speed, every loop (keep prior age on a failed read)
-            s, _, lu = read_number(config.ENTITIES["speed"])
+            s, su, lu = read_number(config.ENTITIES["speed"])
             if s is not None:
                 speed = s
+            if su:
+                speed_unit = su
             if lu is not None:
                 last_iso["speed"] = lu
 
@@ -241,34 +245,35 @@ def main():
             if btn is not None:
                 last_button = btn
 
-            disp, stale, visible = assemble()
+            stale, visible = assemble()
             clock = datetime.now().strftime("%H:%M")
 
-            snaps = region_snaps(disp, temps, soc, voltage, visible, stale, clock)
+            snaps = region_snaps(speed, speed_unit, temps, soc, voltage, visible, stale, clock)
             changed = [r for r in layout.REGIONS if snaps[r] != last_snaps.get(r)]
             data_changed = any(r in layout.DATA_REGIONS for r in changed)
 
             if data_changed or force or turning_on:
-                img = render(disp, temps, soc, voltage, voltage_unit, visible, stale, clock)
+                img = render(speed, speed_unit, temps, soc, voltage, voltage_unit, visible, stale, clock)
+                spd_txt = "--" if speed is None else f"{speed:.0f}{speed_unit}"
                 if turning_on or not awake or force or refresh_count >= config.FULL_REFRESH_EVERY:
                     full_refresh(epd, img)        # power-on / wake / de-ghost
                     awake = True
                     refresh_count = 0
                     logging.info(f"{'display ON' if turning_on else 'full refresh'} - "
-                                 f"speed={disp:.0f}{config.SPEED_LABEL} "
+                                 f"speed={spd_txt} "
                                  f"temps={fmt_temps(temps)} soc={soc} warn={len(visible)}")
                 else:
                     for r in changed:             # gentle per-region update
                         push_region(epd, img, r)
                         refresh_count += 1
-                    logging.info(f"partial {changed} - speed={disp:.0f}{config.SPEED_LABEL} "
+                    logging.info(f"partial {changed} - speed={spd_txt} "
                                  f"(count {refresh_count}/{config.FULL_REFRESH_EVERY})")
                 last_snaps = snaps
                 idle_since = t0
             elif awake and (t0 - idle_since) >= config.IDLE_SLEEP:
                 # no telemetry change for a while - settle the image and sleep
                 # the panel (e-paper must not be left powered/active when idle)
-                img = render(disp, temps, soc, voltage, voltage_unit, visible, stale, clock)
+                img = render(speed, speed_unit, temps, soc, voltage, voltage_unit, visible, stale, clock)
                 settle_and_sleep(epd, img)
                 awake = False
                 last_snaps = snaps

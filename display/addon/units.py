@@ -1,24 +1,15 @@
-"""Small unit/value helpers shared by the rendering and panel code."""
-import math
+"""Small unit/value helpers shared by the rendering and panel code.
 
+The speedometer does NO unit conversion: the value and its unit label come
+straight from the configured Home Assistant entity. If mph is wanted from an
+rpm source, a template sensor in HA does the conversion (see
+display/ha/eink_messages.yaml) and ent_speed points at it.
+"""
 import config
 
 
 def clamp(v, lo, hi):
     return max(lo, min(hi, v))
-
-
-def rpm_to_speed(rpm):
-    """Convert raw motor rpm into the configured speedometer unit."""
-    if rpm is None:
-        return None
-    if config.SPEED_UNIT == "rpm":
-        return rpm
-    wheel_rpm = rpm / config.GEAR_RATIO if config.GEAR_RATIO else rpm
-    inches_per_min = wheel_rpm * math.pi * config.WHEEL_DIAMETER_IN
-    if config.SPEED_UNIT in ("kmh", "km/h"):
-        return inches_per_min * 60.0 * 0.0254 / 1000.0      # km/h
-    return inches_per_min * 60.0 / 63360.0                  # mph
 
 
 def to_display_temp(t_c):

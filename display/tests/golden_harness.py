@@ -37,11 +37,13 @@ BASE_ENV = {
     "TITLE": "SOLAR STORMS",
 }
 
-# Config groups: name -> extra env. The add-on parses these at import time.
+# Config groups: name -> (extra env, speedometer unit label). The add-on
+# parses env at import time; the unit label is passed straight to render()
+# the same way the main loop passes the HA entity's unit_of_measurement.
 GROUPS = {
-    "default": {},                                   # mph-style defaults, deg C
-    "fahrenheit": {"TEMP_UNIT": "F", "TEMP_MAX": "176", "TEMP_WARN": "149"},
-    "highscale": {"SPEED_MAX": "3000"},              # rpm-style full scale
+    "default": ({}, "mph"),                          # defaults, deg C
+    "fahrenheit": ({"TEMP_UNIT": "F", "TEMP_MAX": "176", "TEMP_WARN": "149"}, "km/h"),
+    "highscale": ({"SPEED_MAX": "3000"}, "rpm"),     # rpm-style full scale
 }
 
 
@@ -126,8 +128,9 @@ def render_group(group):
         D = C
 
     GOLDEN.mkdir(parents=True, exist_ok=True)
+    unit = GROUPS[group][1]
     for name, kw in scenarios(D, A):
-        img = R.render(kw["speed"], kw["temps"], kw["soc"], kw["voltage"], "V",
+        img = R.render(kw["speed"], unit, kw["temps"], kw["soc"], kw["voltage"], "V",
                        kw["warnings"], kw["stale"], kw["clock_str"])
         digest = hashlib.sha256(img.tobytes()).hexdigest()
         img.save(GOLDEN / f"{group}_{name}.png")
@@ -137,7 +140,7 @@ def render_group(group):
 def run_all():
     """Parent mode: run every group in a fresh subprocess, return dict."""
     out = {}
-    for group, extra in GROUPS.items():
+    for group, (extra, _unit) in GROUPS.items():
         env = {**os.environ, **BASE_ENV, **extra}
         r = subprocess.run([sys.executable, __file__, "--group", group],
                            env=env, capture_output=True, text=True)

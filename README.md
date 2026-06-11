@@ -206,10 +206,7 @@ Copy `display/addon/` to `/addons/solar_epaper/` on the Pi, then install it from
 | Option | Default | Purpose |
 | --- | --- | --- |
 | title | SOLAR STORMS | header title text |
-| speed_unit | mph | speedometer unit: `mph`, `kmh`, or `rpm` |
-| wheel_diameter_in | 20 | drive wheel diameter (in), for rpm → speed conversion |
-| gear_ratio | 1 | motor revs per wheel rev |
-| speed_max | 40 | speedometer full-scale, in `speed_unit` |
+| speed_max | 40 | speedometer full-scale, in the speed entity's unit |
 | temp_unit | C | temperature display unit: `C` or `F` |
 | temp_max | 80 | temperature bar full-scale, in `temp_unit` |
 | temp_warn | 65 | high-temp warning threshold, in `temp_unit` |
@@ -217,7 +214,7 @@ Copy `display/addon/` to `/addons/solar_epaper/` on the Pi, then install it from
 | slow_poll | 6 | seconds between temp / SoC / message samples |
 | full_refresh_every | 90 | partial pushes between de-ghosting full refreshes |
 | idle_sleep | 180 | seconds of no change before the panel deep-sleeps |
-| ent_speed | sensor.ezkontrol_motor_speed | motor speed (rpm) source entity |
+| ent_speed | sensor.ezkontrol_motor_speed | speed source entity — its value **and unit** are shown as-is (the app does no conversion; for mph point this at `sensor.solar_car_speed`, the template sensor from `display/ha/eink_messages.yaml`) |
 | ent_t_motor | sensor.ezkontrol_motor_temp | motor temperature entity |
 | ent_t_ezk | sensor.ezkontrol_controller_temp | controller temperature entity |
 | ent_t_batt | sensor.bestgo_pack_temp | battery pack temperature entity |

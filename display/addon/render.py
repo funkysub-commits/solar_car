@@ -48,8 +48,9 @@ def _ellipsize(d, text, font, max_w):
     return (text + ell) if text else ell
 
 
-def draw_speedometer(d, speed, stale=False):
-    """speed is already in display units (mph / km/h / rpm)."""
+def draw_speedometer(d, speed, unit, stale=False):
+    """speed and its unit label are shown exactly as Home Assistant reports
+    them - the add-on does no unit conversion."""
     cx, cy, r = layout.SPEED_CX, layout.SPEED_CY, layout.SPEED_R
 
     d.text((cx, 62), "SPEED", font=F_LABEL, fill=0, anchor="ma")
@@ -79,7 +80,7 @@ def draw_speedometer(d, speed, stale=False):
     # large numeric readout
     num = "--" if speed is None else f"{speed:.0f}"
     d.text((cx, cy + 70), num, font=F_SPEED, fill=0, anchor="mm")
-    d.text((cx, cy + 116), config.SPEED_LABEL, font=F_UNIT, fill=0, anchor="mm")
+    d.text((cx, cy + 116), unit, font=F_UNIT, fill=0, anchor="mm")
 
     if stale:
         # mark next to the SPEED title - the value isn't being updated
@@ -198,9 +199,10 @@ def draw_notify(d, warnings):
         d.text((bcx, cy - 1), str(count), font=F_BADGE, fill=255, anchor="mm")
 
 
-def render(speed, temps, soc, voltage, voltage_unit, warnings, stale, clock_str):
-    """speed is already in display units (see rpm_to_speed). warnings is the
-    visible (non-hidden) ordered warning list. stale maps value keys -> bool."""
+def render(speed, speed_unit, temps, soc, voltage, voltage_unit, warnings, stale, clock_str):
+    """speed/speed_unit are passed through from the HA entity untouched.
+    warnings is the visible (non-hidden) ordered warning list. stale maps
+    value keys -> bool."""
     img = Image.new('1', (W, H), 255)
     d = ImageDraw.Draw(img)
 
@@ -217,7 +219,7 @@ def render(speed, temps, soc, voltage, voltage_unit, warnings, stale, clock_str)
     d.text((tx, 9), config.TITLE, font=F_TITLE, fill=0, anchor="la")
     d.text((W - 18, 9), clock_str, font=F_TITLE, fill=0, anchor="ra")
 
-    draw_speedometer(d, speed, stale.get("speed", False))
+    draw_speedometer(d, speed, speed_unit, stale.get("speed", False))
     draw_battery(d, soc, voltage, voltage_unit,
                  stale.get("soc", False), stale.get("voltage", False))
     draw_temps(d, temps, stale)

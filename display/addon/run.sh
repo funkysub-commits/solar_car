@@ -7,9 +7,6 @@ export HA_URL="http://supervisor/core"
 export HA_TOKEN="${SUPERVISOR_TOKEN}"
 
 export TITLE="$(bashio::config 'title')"
-export SPEED_UNIT="$(bashio::config 'speed_unit')"
-export WHEEL_DIAMETER_IN="$(bashio::config 'wheel_diameter_in')"
-export GEAR_RATIO="$(bashio::config 'gear_ratio')"
 export SPEED_MAX="$(bashio::config 'speed_max')"
 export TEMP_UNIT="$(bashio::config 'temp_unit')"
 export TEMP_MAX="$(bashio::config 'temp_max')"
@@ -28,6 +25,6 @@ export ENT_VOLTAGE="$(bashio::config 'ent_voltage')"
 export ENT_MESSAGE="$(bashio::config 'ent_message')"
 export ENT_POWER="$(bashio::config 'ent_power')"
 
-bashio::log.info "speed=${ENT_SPEED} unit=${SPEED_UNIT} poll=${SPEED_POLL}s"
+bashio::log.info "speed=${ENT_SPEED} (value+unit from HA) poll=${SPEED_POLL}s"
 
 exec python3 /display.py

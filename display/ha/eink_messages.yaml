@@ -12,6 +12,11 @@
 #   script.eink_hide         - add a key to the hidden list   (field: key)
 #   script.eink_unhide       - remove a key from the hidden list (field: key)
 #   script.eink_unhide_all   - clear the hidden list
+#   sensor.solar_car_speed   - motor rpm converted to mph. The display add-on
+#                              does NO unit conversion (it shows value + unit
+#                              exactly as the entity reports them), so this
+#                              template sensor is where rpm->mph happens; point
+#                              the add-on's ent_speed option at it.
 #
 # The add-on publishes the live message list to sensor.eink_warnings (created
 # automatically once the add-on runs - no need to define it here).
@@ -84,3 +89,25 @@ script:
           entity_id: input_text.eink_hidden
         data:
           value: ""
+
+# Vehicle speed in mph, derived from the EZkontrol motor rpm. The conversion
+# lives HERE (in Home Assistant) by design: the e-ink add-on shows the value
+# and unit exactly as its ent_speed entity reports them. Set the add-on's
+# ent_speed option to sensor.solar_car_speed to put mph on the gauge. Adjust
+# the wheel diameter / gear ratio below to match the drivetrain.
+template:
+  - sensor:
+      - name: "Solar Car Speed"
+        unique_id: solar_car_speed_mph
+        unit_of_measurement: "mph"
+        state_class: measurement
+        icon: mdi:speedometer
+        availability: >-
+          {{ states('sensor.ezkontrol_motor_speed')
+             not in ('unknown', 'unavailable', '') }}
+        state: >-
+          {% set rpm = states('sensor.ezkontrol_motor_speed') | float(0) %}
+          {% set wheel_diameter_in = 20.0 %}
+          {% set gear_ratio = 1.0 %}
+          {% set wheel_rpm = rpm / gear_ratio %}
+          {{ (wheel_rpm * pi * wheel_diameter_in * 60 / 63360) | round(1) }}

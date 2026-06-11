@@ -21,12 +21,10 @@ SLOW_POLL = max(1.0, float(os.environ.get("SLOW_POLL", "6")))      # seconds bet
 FULL_REFRESH_EVERY = int(os.environ.get("FULL_REFRESH_EVERY", "90"))  # partial pushes between de-ghost full refreshes
 IDLE_SLEEP = float(os.environ.get("IDLE_SLEEP", "180"))      # seconds of no change before the panel deep-sleeps
 
-# Speed: the source entity reports motor rpm; the speedometer can show that
-# raw rpm, or convert to mph / km/h using the drive wheel size and gear ratio.
-SPEED_UNIT = os.environ.get("SPEED_UNIT", "mph").strip().lower()
-WHEEL_DIAMETER_IN = float(os.environ.get("WHEEL_DIAMETER_IN", "20"))   # drive wheel diameter, inches
-GEAR_RATIO = float(os.environ.get("GEAR_RATIO", "1") or "1")           # motor revs per wheel rev
-SPEED_MAX = float(os.environ.get("SPEED_MAX", "40"))         # speedometer full-scale, in SPEED_UNIT
+# Speed: shown exactly as the source entity reports it - value AND unit come
+# from Home Assistant (no conversion in the add-on). Point ent_speed at a
+# sensor in the unit you want on the gauge and set speed_max to match.
+SPEED_MAX = float(os.environ.get("SPEED_MAX", "40"))         # speedometer full-scale, in the entity's unit
 
 # Temperatures: read internally as degrees Celsius, displayed in TEMP_UNIT.
 # TEMP_MAX and TEMP_WARN are interpreted in the *display* unit (so for "F" the
@@ -45,8 +43,6 @@ STALE_AGE = float(os.environ.get("STALE_AGE", "60"))
 # Re-publish sensor.eink_warnings at least this often (seconds) even when the
 # warning list is unchanged, so it self-heals after a Home Assistant restart.
 PUBLISH_EVERY = float(os.environ.get("PUBLISH_EVERY", "30"))
-
-SPEED_LABEL = {"rpm": "rpm", "mph": "mph", "kmh": "km/h", "km/h": "km/h"}.get(SPEED_UNIT, SPEED_UNIT)
 
 LOGO_PATH = os.environ.get("LOGO_PATH", "/logo.png")
 FONT_DIR = os.environ.get("FONT_DIR", "/usr/share/fonts/dejavu")
