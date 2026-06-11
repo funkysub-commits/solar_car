@@ -118,6 +118,12 @@ def render_group(group):
         import alerts as A
     except ImportError:
         A = D
+    try:
+        import config as C
+    except ImportError:
+        C = D
+    if not hasattr(D, "STALE_KEYS"):          # post-split: config owns the keys
+        D = C
 
     GOLDEN.mkdir(parents=True, exist_ok=True)
     for name, kw in scenarios(D, A):

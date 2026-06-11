@@ -9,7 +9,7 @@ RUN apk add --no-cache git gcc musl-dev linux-headers ttf-dejavu \
 COPY patch.py /patch.py
 RUN python3 /patch.py
 
-COPY run.sh display.py logo.png /
+COPY run.sh *.py logo.png /
 RUN chmod a+x /run.sh
 
 CMD ["/run.sh"]
