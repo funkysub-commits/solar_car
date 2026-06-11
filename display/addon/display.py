@@ -208,7 +208,7 @@ REGIONS = {
 # The clock is redrawn alongside telemetry but never wakes the panel by itself.
 DATA_REGIONS = ("speed", "batt", "temps", "notify")
 
-FONT_DIR = "/usr/share/fonts/dejavu"
+FONT_DIR = os.environ.get("FONT_DIR", "/usr/share/fonts/dejavu")
 
 # Keys that carry a displayed numeric value and therefore can show a "!" mark.
 STALE_KEYS = ("speed", "t_motor", "t_ezk", "t_batt", "t_pi", "soc", "voltage")
