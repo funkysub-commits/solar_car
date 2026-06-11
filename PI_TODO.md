@@ -33,10 +33,21 @@ as work on the PC piles up changes that need the Pi.
 - [ ] Check HA automations/dashboards for numeric comparisons against
       `sensor.ezkontrol_op_mode` (now `"Normal"/"Cruise"/"EBS"/"Hold"`,
       was `0/2/3/4`) and update any found.
-- [ ] Glance at the e-ink display once live data flows — it reads the same
-      sensors, so it should be unaffected. (Note: the `solar_epaper` app
-      showed `state: error` on 2026-06-11 before the Supervisor update —
-      recheck it after a restart.)
+- [x] ~~E-ink display recheck~~ — done 2026-06-11: its `error` state was the
+      OLD pre-add-on `epaper-display` container resurrecting on boot and
+      holding the GPIO lines (`Errno 16 Resource busy`). That container is
+      now `docker rm`'d for good. App verified end-to-end: simulator →
+      HA → panel partial refreshes (speed/batt/temps/clock regions).
+
+## When the USB-CAN adapter is back (no battery/controller needed)
+
+- [ ] PC: plug the SH-C31G into the PC and run `python monitor.py` — the
+      adapter should open (gs_usb path) and the dashboards sit at
+      "waiting for frames". Tests the transport layer end to end.
+- [ ] Pi: plug it into the Pi and start `local_solarcar_canbus` — run.sh
+      should bring up can0 and the app should idle without frames. Then
+      the CLI tools over SocketCAN (`./can_up.sh`, `python monitor.py`)
+      per CANbus_data/SETUP.md.
 
 ## Still outstanding from before the refactor
 
