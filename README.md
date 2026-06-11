@@ -422,14 +422,20 @@ What this does and doesn't affect:
   even discover it is outdated, so nothing gets blocked — but you also
   can't install or rebuild anything, since app builds need `apk`/`pip`
   downloads anyway.
-- The real risk window is **maintenance you postpone to race week**: with a
-  stale Supervisor plus a flaky hotspot, an "emergency rebuild" first costs
-  you a Supervisor update on slow internet.
+- The real risk window is an **emergency app fix mid-race with a stale
+  Supervisor**: before the Supervisor will rebuild anything, it first wants
+  its own update — an extra multi-minute download over a flaky hotspot,
+  exactly when you don't want it.
 
-**Race prep rule:** a few days before the race, power the Pi up on a network
-with internet, let the Supervisor update (or run `ha supervisor update`),
-rebuild/verify both apps, and then **freeze** — no app or HA updates at the
-track.
+**Race rule: keep the Supervisor updated.** A few days before the race,
+power the Pi up on a network with internet, run `ha supervisor update`, and
+verify both apps. Then *during* the race, whenever the hotspot is up, check
+`ha supervisor info` and update it again if one is offered — a current
+Supervisor means an emergency app fix is just push files → `ha store
+reload` → update, with no Supervisor detour first. (App rebuilds need
+internet for `apk`/`pip` regardless, so the hotspot is a prerequisite for
+any mid-race fix.) Time Supervisor updates for when the car is stopped —
+sensor pushes drop for a few seconds while it restarts.
 
 Both apps live in `/addons/` on the Raspberry Pi (`/addons/solar_epaper/` and `/addons/solar-car-canbus/`) and install from Settings > Apps > App Store > Local apps. This directory persists across reboots.  
 ## 9. Network setup discussion

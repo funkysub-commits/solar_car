@@ -53,8 +53,11 @@ as work on the PC piles up changes that need the Pi.
       2026-06-11) — running apps are unaffected, but don't discover that
       during an emergency fix at the track. See README §8 "Supervisor
       staleness" for details.
-- [ ] After it's current: verify both apps start and push sensors, then
-      freeze — no HA/app updates at the track.
+- [ ] After it's current: verify both apps start and push sensors.
+- [ ] During the race: whenever the hotspot is up, keep the Supervisor
+      updated (`ha supervisor info` / `ha supervisor update`, ideally while
+      the car is stopped) so an emergency app fix never has to wait on a
+      Supervisor update first.
 
 ## Optional / nice-to-have on the Pi
 
