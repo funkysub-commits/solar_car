@@ -58,6 +58,25 @@ as work on the PC piles up changes that need the Pi.
       the CLI tools over SocketCAN (`./can_up.sh`, `python monitor.py`)
       per CANbus_data/SETUP.md.
 
+## Deploy + verify e-ink add-on 1.3.0 (Phase 3 refactor + speed/CAN-health rework)
+
+- [ ] Copy `display/addon/` to the Pi's `/addons/solar-epaper/`, rebuild,
+      start. Options to update after the rebuild: the three `ent_can_*`
+      health sensors are PLACEHOLDER ids until the canbus app publishes real
+      ones; `speed_unit`/`wheel_diameter_in`/`gear_ratio` are gone.
+- [ ] Apply `display/ha/eink_messages.yaml` as a package (creates
+      `input_text.eink_hidden`, hide scripts, and `sensor.solar_car_speed` -
+      the rpm->mph template sensor) and set the add-on's `ent_speed` to
+      `sensor.solar_car_speed` for mph on the gauge.
+- [ ] Add the `display/ha/dashboard_messages_section.yaml` section to the
+      dashboard (now includes Hide buttons for the new `can_batt`/`can_ezk`
+      device warnings).
+- [ ] Verify on the panel: toast + count badge, per-device "!" marks (battery
+      vs EZkontrol), hide round-trip from the dashboard.
+- [ ] CANbus app: publish the three CAN health sensors (bus/adapter up,
+      battery on CAN, EZkontrol on CAN), then set their real entity ids in
+      the display add-on options.
+
 ## Still outstanding from before the refactor
 
 - [ ] EZkontrol live decode has **never** been tested on the Pi. With the

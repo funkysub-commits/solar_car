@@ -1,7 +1,21 @@
 # Phase 3 plan — e-ink display refactor (`display/addon/display.py`)
 
-Status: **planned, not started** (written 2026-06-09). Do Phase 2's Pi
-verification first (see `PI_TODO.md`) so this lands on a known-good base.
+Status: **done 2026-06-11** (written 2026-06-09). Executed as planned with
+these notes:
+
+- `warnings.py` is named **`alerts.py`** — modules are copied flat into `/`
+  on the container, where a `warnings.py` would shadow the stdlib module
+  that requests/logging import.
+- Golden harness: `display/tests/golden_harness.py` (`write` / `check`),
+  48 frames hashed on the raw framebuffer with committed DejaVu fonts;
+  21 unit tests in `display/tests/test_alerts.py`.
+- All four bundled bug fixes landed; #4 additionally gives the panel a
+  distinct "Home Assistant unreachable" toast (key `ha`).
+- Landed alongside (same series, separate commits): speed shown HA-native
+  (value+unit from the entity, conversion moved to a template sensor), and
+  CAN bus/battery/EZkontrol health sensors with staleness fallback and
+  device-scoped "!" marks.
+- Pi verification (plan step 4) tracked in `PI_TODO.md`.
 
 ## Goal
 
