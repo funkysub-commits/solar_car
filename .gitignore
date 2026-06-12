@@ -28,3 +28,7 @@ HA_TOKEN.txt
 
 # large HAOS data for recovery
 haos_recovery_data/
+
+# Golden render images — regenerated on demand by display/tests/golden_harness.py.
+# Only the hashes.txt baseline (and the committed DejaVu fonts) are tracked.
+display/tests/golden/*.png
