@@ -67,9 +67,10 @@ so the section stays uncluttered.
 
 | key | shown when |
 |-----|------------|
-| `can` | the CAN bus/adapter is down — from the canbus app's bus-health sensor when it exists, else inferred from every CAN-fed sensor being stale → "CAN bus not connected" |
-| `can_batt` | bus is up but the battery isn't talking on CAN (health sensor or inference); marks `!` on exactly the battery-fed values (SoC, voltage, BATT temp) |
-| `can_ezk` | bus is up but the EZkontrol isn't talking on CAN; marks `!` on exactly the EZkontrol-fed values (speed, motor temp, EZK temp) |
+| `can` | the CAN bus/adapter is down — from `sensor.canadapter_status` (1/0), else inferred from every CAN-fed sensor being stale → "CAN bus not connected" |
+| `can_batt` | bus is up but the battery isn't on CAN — from `sensor.bestgo_status`, else inference; marks `!` on exactly the battery-fed values (SoC, voltage, BATT temp) |
+| `can_ezk` | bus is up but the EZkontrol isn't on CAN — from `sensor.ezkontrol_status`, else inference; marks `!` on exactly the EZkontrol-fed values (speed, motor temp, EZK temp) |
+| `ha` | the add-on can't reach Home Assistant at all → "Home Assistant unreachable" (replaces the CAN/staleness deductions, which are unknowable during an HA outage) |
 | `temp_t_motor` / `temp_t_ezk` / `temp_t_batt` / `temp_t_pi` | that temperature ≥ `temp_warn` (live reading only) |
 | `stale_speed` / `stale_t_motor` / `stale_t_ezk` / `stale_t_batt` / `stale_t_pi` / `stale_soc` / `stale_voltage` | that sensor stopped updating (but the bus as a whole is alive) |
 | `user` | `input_text.eink_message` is non-empty |

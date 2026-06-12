@@ -73,9 +73,10 @@ as work on the PC piles up changes that need the Pi.
       device warnings).
 - [ ] Verify on the panel: toast + count badge, per-device "!" marks (battery
       vs EZkontrol), hide round-trip from the dashboard.
-- [ ] CANbus app: publish the three CAN health sensors (bus/adapter up,
-      battery on CAN, EZkontrol on CAN), then set their real entity ids in
-      the display add-on options.
+- [x] ~~CANbus app: publish the three CAN health sensors~~ — already published
+      by canbus 0.7.0 (`sensor.canadapter_status` / `bestgo_status` /
+      `ezkontrol_status`, 1/0). The display add-on now defaults `ent_can_*` to
+      these real ids (no longer placeholders).
 
 ## Still outstanding from before the refactor
 

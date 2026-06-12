@@ -153,13 +153,16 @@ _HEALTH_FALSE = {"off", "false", "disconnected", "not connected", "error",
 
 def read_health(entity):
     """Tri-state read of a connectivity/health entity: True = healthy,
-    False = down, None = unknown (entity missing, unavailable, or an
-    unrecognised state). None tells the caller to fall back to inferring the
-    same fact from sensor staleness - so the display keeps working before the
-    CANbus app publishes these sensors."""
-    state, _, _ = ha_get(entity)
+    False = down, None = unknown. None tells the caller to fall back to
+    inferring the same fact from sensor staleness. Unknown covers: the entity
+    missing/unavailable, an unrecognised state, OR the health sensor itself
+    having gone stale (its publisher - the CANbus app - stopped), since a
+    frozen '1' would otherwise mask a real outage."""
+    state, _, lu = ha_get(entity)
     if state in (None, "", "unknown", "unavailable"):
         return None
+    if entity_age_seconds(lu) > config.STALE_AGE:
+        return None                      # health signal itself is stale
     s = str(state).strip().lower()
     if s in _HEALTH_TRUE:
         return True

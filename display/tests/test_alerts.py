@@ -136,12 +136,21 @@ class ReaderParsing(unittest.TestCase):
         self.addCleanup(lambda: setattr(ha_client, "ha_get", self._orig))
 
     def test_read_health_states(self):
+        from datetime import datetime, timezone
+        fresh = datetime.now(timezone.utc).isoformat()
         for state, want in [("on", True), ("Connected", True), ("ok", True),
+                            ("1", True), ("0", False),
                             ("off", False), ("disconnected", False),
                             ("error", False), ("weird", None),
                             ("unavailable", None), (None, None)]:
-            self.fake_get((state, {} if state else {}, "t" if state else None))
+            self.fake_get((state, {} if state else {}, fresh if state else None))
             self.assertEqual(ha_client.read_health("x"), want, state)
+
+    def test_read_health_stale_signal_is_unknown(self):
+        # a health sensor frozen at "1" but not updated for ages reads unknown,
+        # so the caller falls back to data-staleness inference
+        self.fake_get(("1", {}, "2020-01-01T00:00:00Z"))
+        self.assertIsNone(ha_client.read_health("x"))
 
     def test_read_message_tristate(self):
         self.fake_get((None, {}, None))              # request failed

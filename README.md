@@ -223,9 +223,9 @@ Copy `display/addon/` to `/addons/solar_epaper/` on the Pi, then install it from
 | ent_voltage | sensor.bestgo_pack_voltage | pack voltage entity |
 | ent_message | input_text.eink_message | free-text message helper |
 | ent_power | input_boolean.eink_display | on/off toggle helper |
-| ent_can_bus | binary_sensor.solarcar_can_bus | CAN-adapter/bus health sensor (**placeholder** — set the real id once the canbus app publishes it; until then the app infers bus state from sensor staleness) |
-| ent_can_battery | binary_sensor.solarcar_can_battery | battery-on-CAN health sensor (placeholder, same fallback) |
-| ent_can_ezkontrol | binary_sensor.solarcar_can_ezkontrol | EZkontrol-on-CAN health sensor (placeholder, same fallback) |
+| ent_can_bus | sensor.canadapter_status | CAN adapter/bus health (1/0) from the canbus app; the display infers from sensor staleness if it's unknown or itself stale |
+| ent_can_battery | sensor.bestgo_status | battery-on-CAN health (1/0), same fallback |
+| ent_can_ezkontrol | sensor.ezkontrol_status | EZkontrol-on-CAN health (1/0), same fallback |
 
 > [!NOTE]
 > The default entity IDs match the `solar-car-canbus` app's sensors (Section 6.3), so with no hardware connected you can drive the display from the simulator (`simulator/solar_sim.py`), which pushes realistic values to those same entities.

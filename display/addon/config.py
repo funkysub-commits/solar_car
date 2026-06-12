@@ -68,15 +68,15 @@ POWER_TOGGLE = os.environ.get("ENT_POWER", "input_boolean.eink_display")
 WARN_SENSOR = os.environ.get("ENT_WARN_SENSOR", "sensor.eink_warnings")
 ENT_HIDDEN = os.environ.get("ENT_HIDDEN", "input_text.eink_hidden")
 
-# CAN health sensors, published by the solar-car-canbus app: is the USB-CAN
-# adapter/bus up, is the battery talking on CAN, is the EZkontrol talking on
-# CAN. PLACEHOLDER entity ids - the app doesn't publish these yet; set the
-# real names in the add-on options once they exist. While an entity is
-# missing/unknown the display falls back to inferring the same fact from
-# per-sensor staleness, so this works either way.
-ENT_CAN_BUS = os.environ.get("ENT_CAN_BUS", "binary_sensor.solarcar_can_bus")
-ENT_CAN_BATT = os.environ.get("ENT_CAN_BATT", "binary_sensor.solarcar_can_battery")
-ENT_CAN_EZK = os.environ.get("ENT_CAN_EZK", "binary_sensor.solarcar_can_ezkontrol")
+# CAN health sensors, published by the solar-car-canbus app (1 = up, 0 = down):
+# canadapter_status (USB-CAN bus open), bestgo_status (battery sending frames),
+# ezkontrol_status (controller sending frames). If one reads unknown OR has
+# itself gone stale (the canbus app stopped pushing it), the display falls
+# back to inferring the same fact from per-sensor staleness, so it is robust
+# either way.
+ENT_CAN_BUS = os.environ.get("ENT_CAN_BUS", "sensor.canadapter_status")
+ENT_CAN_BATT = os.environ.get("ENT_CAN_BATT", "sensor.bestgo_status")
+ENT_CAN_EZK = os.environ.get("ENT_CAN_EZK", "sensor.ezkontrol_status")
 
 HEADERS = {"Authorization": f"Bearer {HA_TOKEN}"}
 
