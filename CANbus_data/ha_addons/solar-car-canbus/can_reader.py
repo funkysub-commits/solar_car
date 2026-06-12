@@ -146,6 +146,50 @@ def push_adapter_status(val):
     })
 
 
+def host_ip():
+    """Best-effort primary LAN IPv4 of the *host* (the add-on runs with
+    host_network, so this is the address other machines reach HA at -- not
+    HA core's internal container IP, which the built-in local_ip sensor would
+    report). Uses the default-route source-IP trick; no packets are sent.
+    Returns None when there's no usable LAN address."""
+    import socket
+    ip = None
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("1.1.1.1", 80))   # picks the source IP for the default route
+        ip = s.getsockname()[0]
+    except OSError:
+        pass
+    finally:
+        s.close()
+    if ip and not ip.startswith("127."):
+        return ip
+    try:                              # fallback when there is no default route
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            cand = info[4][0]
+            if not cand.startswith("127."):
+                return cand
+    except OSError:
+        pass
+    return None
+
+
+def push_network(ip):
+    """Push sensor.network_status (1 = host has a LAN IP) and
+    sensor.haos_ip_address (the address to reach Home Assistant at)."""
+    up = 1 if ip else 0
+    push_state("sensor.network_status", up, {
+        "friendly_name": "Network Status",
+        "icon": "mdi:lan-connect" if up else "mdi:lan-disconnect",
+        "source": "solar_car_canbus",
+    })
+    push_state("sensor.haos_ip_address", ip or "unknown", {
+        "friendly_name": "HAOS IP Address",
+        "icon": "mdi:ip-network",
+        "source": "solar_car_canbus",
+    })
+
+
 def _iface_is_up():
     """True if CAN_INTERFACE exists and is administratively up (IFF_UP).
 
@@ -218,6 +262,8 @@ def main():
     adapter_pushed = None    # last pushed canadapter_status value
     adapter_push_at = 0.0
     adapter_interval = min(d.push_interval for d in devices)
+    net_ip_pushed = None     # last pushed host IP (None until first push)
+    net_push_at = 0.0
 
     if live:
         logging.info(f"Opening SocketCAN {CAN_INTERFACE}")
@@ -269,6 +315,17 @@ def main():
                 push_adapter_status(adapter_ok)
                 adapter_pushed = adapter_ok
                 adapter_push_at = now
+
+            # Host network: the LAN IP to reach HA at, and a simple up flag.
+            # Pushed on change and at least every interval (cheap; no packets).
+            if net_ip_pushed is None or now - net_push_at >= adapter_interval:
+                ip = host_ip()
+                if ip != net_ip_pushed:
+                    logging.info(f"Host IP -> {ip or 'none'} "
+                                 f"(network {'up' if ip else 'down'})")
+                push_network(ip)
+                net_ip_pushed = ip
+                net_push_at = now
 
             for d in devices:
                 if now - d.last_push < d.push_interval:

@@ -57,6 +57,16 @@ as work on the PC piles up changes that need the Pi.
       `candump can0` should show `180117EF`/`180217EF` frames, then check the
       `sensor.ezkontrol_*` entities update.
 
+## E-ink: show network status (future — display code change)
+
+- [ ] The add-on now publishes `sensor.haos_ip_address`,
+      `sensor.network_status`, and `binary_sensor.1_1_1_1` (internet, built-in
+      ping). To surface them on the e-ink (e.g. a footer line "HA 10.66.76.162
+      ● online"), `display/addon/display.py` needs a small render addition +
+      new `ent_*` options. Fits naturally into the Phase 3 display refactor
+      (`display/PHASE3_PLAN.md`); until then the sensors are visible on the
+      HA dashboard.
+
 ## Race prep (a few days before, on a network with internet)
 
 - [ ] Power the Pi up early and let the HA Supervisor update (or run
