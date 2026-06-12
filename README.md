@@ -297,11 +297,21 @@ apps with the app folder as the Docker context): after editing
 app. Golden-master tests (`CANbus_data/tests/test_decoders.py`) replay real
 bus captures from `tests/fixtures/` through the decoders.
 
-It publishes 34 sensors:
+It publishes 37 sensors:
 - 13 `sensor.ezkontrol_*` — bus voltage/current, phase current, motor speed,
   controller/motor temperature, throttle, gear, brake, contactor, errors.
 - 21 `sensor.bestgo_*` — SOC/SOH, pack voltage/current/temperature, cell
   min/max voltage and temperature, charge/discharge limits, alarms, capacity.
+- 3 health sensors (since 0.5.0), pushed even when no data is flowing:
+
+| Sensor | 1 means | 0 means |
+| --- | --- | --- |
+| `sensor.canadapter_status` | CAN bus open (or all-dummy) | adapter missing/lost — the app keeps running and retries every 10 s, and can re-up a replugged adapter by itself |
+| `sensor.ezkontrol_status` | EZkontrol frames seen within 3 push intervals (or dummy) | controller silent |
+| `sensor.bestgo_status` | BESTGO frames seen within 3 push intervals (or dummy) | battery silent |
+
+These make race-day triage one glance: adapter dead vs. one device quiet
+vs. add-on not running (sensors `unavailable`).
 
 > [!NOTE]
 > Since app version 0.4.0, `sensor.ezkontrol_op_mode` reads a mode name

@@ -19,6 +19,7 @@ package has to be carried inside it). Edit the original, then re-sync.
 import os
 import time
 import logging
+import subprocess
 
 import requests
 
@@ -32,6 +33,10 @@ logging.basicConfig(level=logging.INFO,
 HA_URL = os.environ.get("HA_URL", "http://supervisor/core")
 HA_TOKEN = os.environ.get("HA_TOKEN", "")
 CAN_INTERFACE = os.environ.get("CAN_INTERFACE", "can0")
+CAN_BITRATE = os.environ.get("CAN_BITRATE", "500000")
+
+BUS_RETRY_SEC = 10       # how often to retry opening a lost/missing CAN bus
+STATUS_MISS_INTERVALS = 3  # device status drops to 0 after this many silent push intervals
 
 EZKONTROL_DUMMY = os.environ.get("EZKONTROL_DUMMY", "false").lower() == "true"
 EZKONTROL_PUSH_INTERVAL = int(os.environ.get("EZKONTROL_PUSH_INTERVAL", "2"))
@@ -59,6 +64,8 @@ class Device:
         self.summary_fn = summary_fn
         self.data = {}
         self.last_push = 0.0
+        self.last_rx = 0.0       # when this device last claimed a frame
+        self.last_status = None  # last pushed status value (for change logging)
 
     def decode(self, arb_id, raw):
         """Decode a frame into self.data. Return True if it belonged here."""
@@ -66,7 +73,15 @@ class Device:
         if fields is None:
             return False
         self.data.update(fields)
+        self.last_rx = time.time()
         return True
+
+    def status(self, now):
+        """1 if this device is alive: dummy mode counts as alive; live mode
+        requires a frame within STATUS_MISS_INTERVALS push intervals."""
+        if self.dummy:
+            return 1
+        return 1 if (now - self.last_rx) <= STATUS_MISS_INTERVALS * self.push_interval else 0
 
 
 def push_device(device):
@@ -90,17 +105,84 @@ def push_device(device):
             attrs["unit_of_measurement"] = cfg["unit"]
         if cfg.get("device_class"):
             attrs["device_class"] = cfg["device_class"]
+        push_state(entity_id, value, attrs)
+
+
+def push_state(entity_id, value, attrs):
+    """POST one entity state to the HA REST API."""
+    try:
+        r = requests.post(
+            f"{HA_URL}/api/states/{entity_id}",
+            headers=HEADERS,
+            json={"state": str(value), "attributes": attrs},
+            timeout=5,
+        )
+        if r.status_code not in (200, 201):
+            logging.warning(f"{entity_id}: HTTP {r.status_code} {r.text[:200]}")
+    except Exception as e:
+        logging.error(f"{entity_id}: {e}")
+
+
+def push_device_status(device, now):
+    """Push sensor.<prefix>_status (1 = alive, 0 = silent). Logs transitions."""
+    val = device.status(now)
+    if val != device.last_status:
+        logging.info(f"{device.name} status -> {val}"
+                     + ("" if val else f" (no frames for {STATUS_MISS_INTERVALS}x{device.push_interval}s)"))
+        device.last_status = val
+    push_state(f"sensor.{device.prefix}_status", val, {
+        "friendly_name": f"{device.name} Status",
+        "icon": "mdi:check-network" if val else "mdi:close-network",
+        "source": "solar_car_canbus",
+    })
+
+
+def push_adapter_status(val):
+    """Push sensor.canadapter_status (1 = CAN bus open, 0 = adapter missing/lost)."""
+    push_state("sensor.canadapter_status", val, {
+        "friendly_name": "CAN Adapter Status",
+        "icon": "mdi:usb-port" if val else "mdi:usb-off",
+        "source": "solar_car_canbus",
+    })
+
+
+def _iface_is_up():
+    """True if CAN_INTERFACE exists and is administratively up (IFF_UP).
+
+    A SocketCAN bind succeeds even on a *down* interface (recv then fails),
+    so we can't rely on can.Bus() raising to detect a dropped link — we have
+    to check IFF_UP ourselves before opening."""
+    try:
+        with open(f"/sys/class/net/{CAN_INTERFACE}/flags") as f:
+            return bool(int(f.read().strip(), 16) & 0x1)   # IFF_UP
+    except OSError:
+        return False   # interface missing (adapter unplugged)
+
+
+def open_bus():
+    """Bring CAN_INTERFACE up if it's down or missing, then open SocketCAN.
+
+    The add-on has NET_ADMIN and iproute2, so a downed or replugged adapter
+    heals without restarting the add-on. Returns None if the interface can't
+    be brought up (e.g. adapter physically unplugged) — the caller keeps
+    retrying and reports canadapter_status=0 meanwhile."""
+    import can
+    if not _iface_is_up():
         try:
-            r = requests.post(
-                f"{HA_URL}/api/states/{entity_id}",
-                headers=HEADERS,
-                json={"state": str(value), "attributes": attrs},
-                timeout=5,
-            )
-            if r.status_code not in (200, 201):
-                logging.warning(f"{entity_id}: HTTP {r.status_code} {r.text[:200]}")
+            subprocess.run(["ip", "link", "set", CAN_INTERFACE, "down"],
+                           capture_output=True)
+            subprocess.run(["ip", "link", "set", CAN_INTERFACE, "type", "can",
+                            "bitrate", CAN_BITRATE], check=True, capture_output=True)
+            subprocess.run(["ip", "link", "set", CAN_INTERFACE, "up"],
+                           check=True, capture_output=True)
         except Exception as e:
-            logging.error(f"{entity_id}: {e}")
+            logging.debug(f"CAN bring-up failed: {e}")
+            return None
+    try:
+        return can.interface.Bus(channel=CAN_INTERFACE, interface='socketcan')
+    except Exception as e:
+        logging.debug(f"CAN open failed: {e}")
+        return None
 
 
 EZKONTROL = Device(
@@ -132,18 +214,42 @@ def main():
     live = [d for d in devices if not d.dummy]
 
     bus = None
+    bus_retry_at = 0.0
+    adapter_pushed = None    # last pushed canadapter_status value
+    adapter_push_at = 0.0
+    adapter_interval = min(d.push_interval for d in devices)
+
     if live:
-        import can
         logging.info(f"Opening SocketCAN {CAN_INTERFACE}")
-        bus = can.interface.Bus(channel=CAN_INTERFACE, interface='socketcan')
-        logging.info("Listening (live: " + ", ".join(d.name for d in live) + ")")
+        bus = open_bus()
+        if bus is not None:
+            logging.info("Listening (live: " + ", ".join(d.name for d in live) + ")")
+        else:
+            logging.error(f"{CAN_INTERFACE} not available; will keep retrying "
+                          f"every {BUS_RETRY_SEC}s (canadapter_status=0)")
     else:
         logging.info("All devices in dummy mode; CAN bus not opened")
 
     try:
         while True:
+            now = time.time()
+            if live and bus is None and now >= bus_retry_at:
+                bus_retry_at = now + BUS_RETRY_SEC
+                bus = open_bus()
+                if bus is not None:
+                    logging.info(f"{CAN_INTERFACE} recovered; listening again")
+
             if bus is not None:
-                msg = bus.recv(timeout=0.2)
+                try:
+                    msg = bus.recv(timeout=0.2)
+                except Exception as e:
+                    logging.error(f"CAN bus lost: {e}")
+                    try:
+                        bus.shutdown()
+                    except Exception:
+                        pass
+                    bus = None
+                    msg = None
                 if msg is not None:
                     raw = bytes(msg.data)
                     for d in live:
@@ -153,15 +259,29 @@ def main():
                 time.sleep(0.2)
 
             now = time.time()
+
+            # canadapter_status: 1 while the bus is open (all-dummy counts
+            # as 1). Pushed on every change and at least every push interval.
+            adapter_ok = 1 if (not live or bus is not None) else 0
+            if adapter_ok != adapter_pushed or now - adapter_push_at >= adapter_interval:
+                if adapter_ok != adapter_pushed:
+                    logging.info(f"CAN adapter status -> {adapter_ok}")
+                push_adapter_status(adapter_ok)
+                adapter_pushed = adapter_ok
+                adapter_push_at = now
+
             for d in devices:
                 if now - d.last_push < d.push_interval:
                     continue
+                d.last_push = now
                 if d.dummy:
                     d.data = d.dummy_fn()
                 if d.data:
                     push_device(d)
                     logging.info(f"{d.name}: {d.summary_fn(d.data)}")
-                    d.last_push = now
+                # Status is pushed every interval even with no data, so a
+                # silent device reads 0 instead of having missing sensors.
+                push_device_status(d, now)
     except KeyboardInterrupt:
         logging.info("Shutting down")
     finally:

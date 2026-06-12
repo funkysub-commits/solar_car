@@ -37,40 +37,38 @@ else
 
         if [ -z "${adapter}" ]; then
             bashio::log.error "USB-CAN adapter not found on the USB bus"
-            exit 1
-        fi
+        else
+            # sysfs name e.g. "1-1.3" -> hub "1-1", port "3"
+            hub="${adapter%.*}"
+            port="${adapter##*.}"
+            bashio::log.info "Power-cycling adapter at hub ${hub} port ${port} (15s off)"
+            if ! uhubctl -l "${hub}" -p "${port}" -a cycle -d 15; then
+                bashio::log.warning "uhubctl power-cycle reported an error"
+            fi
 
-        # sysfs name e.g. "1-1.3" -> hub "1-1", port "3"
-        hub="${adapter%.*}"
-        port="${adapter##*.}"
-        bashio::log.info "Power-cycling adapter at hub ${hub} port ${port} (15s off)"
-        if ! uhubctl -l "${hub}" -p "${port}" -a cycle -d 15; then
-            bashio::log.warning "uhubctl power-cycle reported an error"
+            # Wait for the interface to (re)appear after USB re-enumeration.
+            for _ in $(seq 1 20); do
+                [ -d "/sys/class/net/${CAN_INTERFACE}" ] && break
+                sleep 1
+            done
         fi
-
-        # Wait for the interface to (re)appear after USB re-enumeration.
-        for _ in $(seq 1 20); do
-            [ -d "/sys/class/net/${CAN_INTERFACE}" ] && break
-            sleep 1
-        done
     fi
 
+    # A missing or unconfigurable interface is no longer fatal: can_reader.py
+    # pushes sensor.canadapter_status=0 and keeps retrying the bus, so the
+    # add-on stays up and HA shows the failure instead of a dead app.
     if [ ! -d "/sys/class/net/${CAN_INTERFACE}" ]; then
-        bashio::log.error "${CAN_INTERFACE} still not present after recovery"
-        exit 1
+        bashio::log.error "${CAN_INTERFACE} not present -- starting anyway (canadapter_status will be 0)"
+    else
+        bashio::log.info "Bringing up ${CAN_INTERFACE} at ${CAN_BITRATE} bps"
+        ip link set "${CAN_INTERFACE}" down 2>/dev/null || true
+        if ! ip link set "${CAN_INTERFACE}" type can bitrate "${CAN_BITRATE}" \
+           || ! ip link set "${CAN_INTERFACE}" up; then
+            bashio::log.error "Failed to configure ${CAN_INTERFACE} -- starting anyway"
+        else
+            bashio::log.info "${CAN_INTERFACE} is up"
+        fi
     fi
-
-    bashio::log.info "Bringing up ${CAN_INTERFACE} at ${CAN_BITRATE} bps"
-    ip link set "${CAN_INTERFACE}" down 2>/dev/null || true
-    if ! ip link set "${CAN_INTERFACE}" type can bitrate "${CAN_BITRATE}"; then
-        bashio::log.error "Failed to configure ${CAN_INTERFACE}"
-        exit 1
-    fi
-    if ! ip link set "${CAN_INTERFACE}" up; then
-        bashio::log.error "Failed to bring up ${CAN_INTERFACE}"
-        exit 1
-    fi
-    bashio::log.info "${CAN_INTERFACE} is up"
 fi
 
 export CAN_INTERFACE CAN_BITRATE
