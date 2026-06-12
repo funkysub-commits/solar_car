@@ -26,10 +26,18 @@ as work on the PC piles up changes that need the Pi.
 - [x] ~~Verify the new code runs~~ — done 2026-06-11 in **dummy mode**: all
       34 sensors push (13 ezkontrol + 21 bestgo), `sensor.ezkontrol_op_mode`
       reads `Normal`. Options reverted to live mode; add-on left **stopped**.
-- [ ] **Live BESTGO verification still pending** — the SH-C31G USB-CAN
-      adapter was not plugged into the Pi (nothing on the USB bus). Plug it
-      in, start the app (`ha apps start local_solarcar_canbus` or the UI),
-      and confirm `sensor.bestgo_*` updates from the real battery.
+- [x] ~~Live BESTGO decode through the new code~~ — verified **on the PC**
+      2026-06-12: real battery decodes correctly through the shared
+      `solarcar_can` package (SOC 54%, pack 52.5 V, cells 3281-3282 mV @ 1 mV
+      spread, all internally consistent), 176 frames across all 14 IDs at
+      ~14 Hz. First real-hardware decode through the refactored package.
+- [ ] **Live BESTGO on the *Pi* still unconfirmed.** Earlier 2026-06-12 the
+      Pi had can0 up but `rx_packets: 0` with the battery — no frames
+      arriving. The PC works at 500k, so the battery + decode are proven
+      good; the Pi-side zero-RX points at that connection (termination
+      switch on the SH-C31G, CAN_H/L wiring, or `can0` bitrate). When the
+      adapter goes back on the Pi: `candump can0` should show 0x351.. frames;
+      if RX stays 0, check termination + wiring first.
 - [ ] Check HA automations/dashboards for numeric comparisons against
       `sensor.ezkontrol_op_mode` (now `"Normal"/"Cruise"/"EBS"/"Hold"`,
       was `0/2/3/4`) and update any found.
