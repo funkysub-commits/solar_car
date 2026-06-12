@@ -60,12 +60,12 @@ as work on the PC piles up changes that need the Pi.
 ## E-ink: show network status (future — display code change)
 
 - [ ] The add-on now publishes `sensor.haos_ip_address`,
-      `sensor.network_status`, and `binary_sensor.1_1_1_1` (internet, built-in
-      ping). To surface them on the e-ink (e.g. a footer line "HA 10.66.76.162
-      ● online"), `display/addon/display.py` needs a small render addition +
-      new `ent_*` options. Fits naturally into the Phase 3 display refactor
-      (`display/PHASE3_PLAN.md`); until then the sensors are visible on the
-      HA dashboard.
+      `sensor.network_status`, `binary_sensor.lan_connected`, and
+      `binary_sensor.wan_connected`. To surface them on the e-ink (e.g. a
+      footer line "HA 10.66.76.162  LAN● WAN●"), `display/addon/display.py`
+      needs a small render addition + new `ent_*` options. Fits naturally
+      into the Phase 3 display refactor (`display/PHASE3_PLAN.md`); until
+      then the sensors are visible on the HA dashboard.
 
 ## Race prep (a few days before, on a network with internet)
 

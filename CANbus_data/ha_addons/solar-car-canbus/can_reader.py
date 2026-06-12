@@ -18,7 +18,10 @@ package has to be carried inside it). Edit the original, then re-sync.
 """
 import os
 import time
+import socket
+import struct
 import logging
+import threading
 import subprocess
 
 import requests
@@ -37,6 +40,8 @@ CAN_BITRATE = os.environ.get("CAN_BITRATE", "500000")
 
 BUS_RETRY_SEC = 10       # how often to retry opening a lost/missing CAN bus
 STATUS_MISS_INTERVALS = 3  # device status drops to 0 after this many silent push intervals
+NET_INTERVAL = 10        # seconds between host-network checks (runs off-thread)
+NET_TIMEOUT = 1.5        # per-probe TCP connect timeout
 
 EZKONTROL_DUMMY = os.environ.get("EZKONTROL_DUMMY", "false").lower() == "true"
 EZKONTROL_PUSH_INTERVAL = int(os.environ.get("EZKONTROL_PUSH_INTERVAL", "2"))
@@ -146,13 +151,17 @@ def push_adapter_status(val):
     })
 
 
+# ===========================================================================
+# Host network monitoring
+#
+# Runs on its own thread (NetworkMonitor) so its blocking TCP probes never
+# stall the CAN read loop. The add-on has host_network, so these see the
+# host's real interfaces -- the address other machines reach HA at, not HA
+# core's internal container IP (which the built-in local_ip sensor reports).
+# ===========================================================================
 def host_ip():
-    """Best-effort primary LAN IPv4 of the *host* (the add-on runs with
-    host_network, so this is the address other machines reach HA at -- not
-    HA core's internal container IP, which the built-in local_ip sensor would
-    report). Uses the default-route source-IP trick; no packets are sent.
-    Returns None when there's no usable LAN address."""
-    import socket
+    """Primary LAN IPv4 of the host, via the default-route source-IP trick
+    (no packets sent). None when there's no usable LAN address."""
     ip = None
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
@@ -174,20 +183,81 @@ def host_ip():
     return None
 
 
-def push_network(ip):
-    """Push sensor.network_status (1 = host has a LAN IP) and
-    sensor.haos_ip_address (the address to reach Home Assistant at)."""
-    up = 1 if ip else 0
-    push_state("sensor.network_status", up, {
-        "friendly_name": "Network Status",
-        "icon": "mdi:lan-connect" if up else "mdi:lan-disconnect",
+def default_gateway():
+    """The host's default-route gateway IPv4 (read live from /proc/net/route,
+    so it tracks network changes -- router vs hotspot vs ethernet). None if
+    there is no default route."""
+    try:
+        with open("/proc/net/route") as f:
+            for line in f.readlines()[1:]:
+                p = line.split()
+                if len(p) > 3 and p[1] == "00000000" and int(p[3], 16) & 0x2:
+                    return socket.inet_ntoa(struct.pack("<L", int(p[2], 16)))
+    except OSError:
+        pass
+    return None
+
+
+def tcp_reachable(host, ports, timeout=NET_TIMEOUT):
+    """True if `host` answers at L3 on any of `ports`. A refused connection
+    (RST) still proves reachability, so this works against gateways with no
+    open ports -- only a timeout / no-route counts as unreachable."""
+    if not host:
+        return False
+    for port in ports:
+        try:
+            socket.create_connection((host, port), timeout=timeout).close()
+            return True
+        except ConnectionRefusedError:
+            return True
+        except OSError:
+            continue
+    return False
+
+
+def push_connectivity(entity_id, ok, name, icon_on, icon_off):
+    """Push a binary_sensor (connectivity) as on/off."""
+    push_state(entity_id, "on" if ok else "off", {
+        "friendly_name": name,
+        "device_class": "connectivity",
+        "icon": icon_on if ok else icon_off,
         "source": "solar_car_canbus",
     })
-    push_state("sensor.haos_ip_address", ip or "unknown", {
-        "friendly_name": "HAOS IP Address",
-        "icon": "mdi:ip-network",
-        "source": "solar_car_canbus",
-    })
+
+
+def network_monitor(stop):
+    """Daemon loop: every NET_INTERVAL, publish the host IP and the LAN/WAN
+    reachability sensors. Kept off the main loop so the TCP probes' timeouts
+    can never delay CAN frame reading."""
+    last = None
+    while not stop.is_set():
+        ip = host_ip()
+        gw = default_gateway()
+        lan = tcp_reachable(gw, (80, 443, 53)) if gw else bool(ip)
+        wan = tcp_reachable("1.1.1.1", (53,)) or tcp_reachable("8.8.8.8", (53,))
+
+        push_state("sensor.haos_ip_address", ip or "unknown", {
+            "friendly_name": "HAOS IP Address",
+            "icon": "mdi:ip-network",
+            "source": "solar_car_canbus",
+        })
+        push_state("sensor.network_status", 1 if ip else 0, {
+            "friendly_name": "Network Status",
+            "icon": "mdi:lan-connect" if ip else "mdi:lan-disconnect",
+            "source": "solar_car_canbus",
+        })
+        push_connectivity("binary_sensor.lan_connected", lan, "LAN Connected",
+                          "mdi:lan-connect", "mdi:lan-disconnect")
+        push_connectivity("binary_sensor.wan_connected", wan, "WAN Connected",
+                          "mdi:web", "mdi:web-off")
+
+        cur = (ip, lan, wan)
+        if cur != last:
+            logging.info(f"network: ip={ip or 'none'} "
+                         f"lan={'up' if lan else 'down'} "
+                         f"wan={'up' if wan else 'down'}")
+            last = cur
+        stop.wait(NET_INTERVAL)
 
 
 def _iface_is_up():
@@ -262,8 +332,12 @@ def main():
     adapter_pushed = None    # last pushed canadapter_status value
     adapter_push_at = 0.0
     adapter_interval = min(d.push_interval for d in devices)
-    net_ip_pushed = None     # last pushed host IP (None until first push)
-    net_push_at = 0.0
+
+    # Host network monitoring runs on its own thread so its blocking probes
+    # never delay CAN reads.
+    net_stop = threading.Event()
+    threading.Thread(target=network_monitor, args=(net_stop,),
+                     name="network-monitor", daemon=True).start()
 
     if live:
         logging.info(f"Opening SocketCAN {CAN_INTERFACE}")
@@ -316,17 +390,6 @@ def main():
                 adapter_pushed = adapter_ok
                 adapter_push_at = now
 
-            # Host network: the LAN IP to reach HA at, and a simple up flag.
-            # Pushed on change and at least every interval (cheap; no packets).
-            if net_ip_pushed is None or now - net_push_at >= adapter_interval:
-                ip = host_ip()
-                if ip != net_ip_pushed:
-                    logging.info(f"Host IP -> {ip or 'none'} "
-                                 f"(network {'up' if ip else 'down'})")
-                push_network(ip)
-                net_ip_pushed = ip
-                net_push_at = now
-
             for d in devices:
                 if now - d.last_push < d.push_interval:
                     continue
@@ -342,6 +405,7 @@ def main():
     except KeyboardInterrupt:
         logging.info("Shutting down")
     finally:
+        net_stop.set()
         if bus is not None:
             bus.shutdown()
 

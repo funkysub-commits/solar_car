@@ -1,5 +1,5 @@
 name: Solar Car CANbus Reader
-version: "0.6.0"
+version: "0.7.0"
 slug: solarcar_canbus
 description: Reads the EZkontrol motor controller and BESTGO battery from one shared CAN bus and pushes sensors to Home Assistant
 arch:
