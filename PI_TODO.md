@@ -31,13 +31,21 @@ as work on the PC piles up changes that need the Pi.
       `solarcar_can` package (SOC 54%, pack 52.5 V, cells 3281-3282 mV @ 1 mV
       spread, all internally consistent), 176 frames across all 14 IDs at
       ~14 Hz. First real-hardware decode through the refactored package.
-- [ ] **Live BESTGO on the *Pi* still unconfirmed.** Earlier 2026-06-12 the
-      Pi had can0 up but `rx_packets: 0` with the battery — no frames
-      arriving. The PC works at 500k, so the battery + decode are proven
-      good; the Pi-side zero-RX points at that connection (termination
-      switch on the SH-C31G, CAN_H/L wiring, or `can0` bitrate). When the
-      adapter goes back on the Pi: `candump can0` should show 0x351.. frames;
-      if RX stays 0, check termination + wiring first.
+- [x] ~~Full shared-bus decode (both devices, one adapter)~~ — PASSED on the
+      **PC** 2026-06-13: `monitor.py` decoded EZkontrol (22 Hz) and BESTGO
+      (11 Hz) simultaneously, clean, no errors, bus voltages agree. This is
+      the real race configuration. **Termination finding:** with BOTH devices
+      connected, the adapter's 120R switch should be **OFF** (the EZkontrol
+      and battery terminate the two ends) — verified working that way.
+- [ ] **Live decode on the *Pi* still unconfirmed.** Earlier 2026-06-12 the
+      Pi had can0 up but `rx_packets: 0` with just the battery. Likely
+      **termination**: a single device + adapter needs the adapter's 120R
+      switch **ON** (to be the second terminator); the zero-RX run may have
+      had it off → under-terminated bus → no valid frames. The PC decodes
+      both devices fine at 500k, so battery/controller/decode are all proven.
+      On the Pi: `candump can0` should show frames; if RX stays 0, set
+      adapter termination per the device count (both devices = off, one = on)
+      and check CAN_H/L wiring before suspecting bitrate.
 - [ ] Check HA automations/dashboards for numeric comparisons against
       `sensor.ezkontrol_op_mode` (now `"Normal"/"Cruise"/"EBS"/"Hold"`,
       was `0/2/3/4`) and update any found.
