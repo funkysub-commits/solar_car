@@ -1,6 +1,16 @@
 """Panel geometry, fonts and the team logo - every cross-cutting pixel
 coordinate gets a name here so the draw code and the partial-refresh regions
-can never drift apart."""
+can never drift apart.
+
+Layout (800x480):
+  Header (0-48): logo + title + clock
+  Left  : speedometer (top)  +  MESSAGE box (bottom)   [user free-text message]
+  Right : battery (top)      +  temperatures (bottom)
+  Warning bar (428-476): full-width, fills left->right with active WARNINGS
+                         (highest priority leftmost), '+N' overflow badge right.
+The message box and the warning bar are deliberately separate: plain user
+messages live in the box, only warnings use the bar.
+"""
 import logging
 
 from PIL import Image, ImageFont
@@ -12,40 +22,49 @@ W, H = 800, 480
 HEAD_H = 48
 DIV_X = 452          # vertical divider between left column and right column
 BAT_DIV_Y = 262      # right column: battery above, temperatures below
-CONTENT_BOT = 432    # main content ends here; below is the notification band
+MSG_DIV_Y = 300      # left column: speedometer above, message box below
+CONTENT_BOT = 424    # main content ends here; below is the warning bar
 
-# Speedometer (left column)
-SPEED_CX, SPEED_CY, SPEED_R = 228, 206, 120
+# Speedometer (left-top)
+SPEED_CX, SPEED_CY, SPEED_R = 228, 176, 86
+
+# Message box (left-bottom)
+MSG_X = 18
+MSG_LABEL_Y = 308
+MSG_FIRST_LINE_Y = 338
+MSG_LINE_H = 26
 
 # Battery (right-top)
-BATT_X = DIV_X + 22          # left edge of the battery block
+BATT_X = DIV_X + 22
 BATT_BOX_Y0, BATT_BOX_Y1 = 90, 168
 BATT_BOX_W = 232
-BATT_SOC_Y = 222             # SoC percentage baseline
-BATT_VOLT_Y = 234            # voltage readout baseline
+BATT_SOC_Y = 222
+BATT_VOLT_Y = 234
 
 # Temperature bars (right-bottom)
-TEMP_TOP_Y, TEMP_BASE_Y = 330, 406
-TEMP_HALF = 25               # half-width of each bar
+TEMP_TOP_Y, TEMP_BASE_Y = 326, 398
+TEMP_HALF = 25
 
-# Notification toast (bottom band)
-NOTIFY_CY = 456
-NOTIFY_H = 34
+# Warning bar (full-width bottom)
+WARN_Y0, WARN_Y1 = 428, 476
+WARN_CY = 452
+WARN_CHIP_H = 34
+WARN_X0, WARN_X1 = 16, 784      # usable horizontal span for chips + badge
 
 # Independent partial-refresh regions, (x0, y0, x1, y1).
 # x coordinates MUST be multiples of 8 - the panel only refreshes byte-aligned
 # columns. Regions stay clear of the frame/divider lines so those never ghost.
 REGIONS = {
-    "speed":  (8, 50, 448, CONTENT_BOT),
-    "batt":   (456, 50, 792, 260),
-    "temps":  (456, 264, 792, CONTENT_BOT),
-    "notify": (8, 436, 792, 476),
-    "clock":  (608, 4, 792, 46),
+    "speed": (8, 50, 448, 298),
+    "msg":   (8, 304, 448, CONTENT_BOT),
+    "batt":  (456, 50, 792, 260),
+    "temps": (456, 264, 792, CONTENT_BOT),
+    "warn":  (8, WARN_Y0, 792, 476),
+    "clock": (608, 4, 792, 46),
 }
 # Regions that count as real telemetry: a change here keeps the panel awake.
 # The clock is redrawn alongside telemetry but never wakes the panel by itself.
-DATA_REGIONS = ("speed", "batt", "temps", "notify")
-
+DATA_REGIONS = ("speed", "msg", "batt", "temps", "warn")
 
 _font_warned = set()
 
@@ -54,7 +73,7 @@ def _font(name, size):
     try:
         return ImageFont.truetype(f"{config.FONT_DIR}/{name}", size)
     except Exception as e:
-        if name not in _font_warned:        # warn once per face, not 9 times
+        if name not in _font_warned:        # warn once per face, not many times
             _font_warned.add(name)
             logging.warning(f"font {config.FONT_DIR}/{name} unavailable ({e}) - "
                             "falling back to PIL's default; the dashboard will "
@@ -64,12 +83,13 @@ def _font(name, size):
 
 F_TITLE  = _font("DejaVuSans-Bold.ttf", 28)
 F_LABEL  = _font("DejaVuSans-Bold.ttf", 19)
-F_SPEED  = _font("DejaVuSans-Bold.ttf", 64)
-F_UNIT   = _font("DejaVuSans.ttf", 22)
+F_SPEED  = _font("DejaVuSans-Bold.ttf", 54)
+F_UNIT   = _font("DejaVuSans.ttf", 20)
 F_SOC    = _font("DejaVuSans-Bold.ttf", 56)
 F_TEMP   = _font("DejaVuSans-Bold.ttf", 26)
 F_SMALL  = _font("DejaVuSans.ttf", 17)
-F_NOTIFY = _font("DejaVuSans-Bold.ttf", 22)
+F_MSG    = _font("DejaVuSans.ttf", 19)
+F_WARN   = _font("DejaVuSans-Bold.ttf", 20)
 F_BADGE  = _font("DejaVuSans-Bold.ttf", 16)
 
 LOGO_H = 40

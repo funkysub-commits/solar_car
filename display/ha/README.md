@@ -1,21 +1,32 @@
-# E-ink notification / message system — Home Assistant setup
+# E-ink warnings / message system — Home Assistant setup
 
-The add-on ([../addon/display.py](../addon/display.py)) now shows **all** warnings as a
-single notification "toast" at the bottom-centre of the e-paper, and publishes the
-live message list back to Home Assistant so you can see every message and hide
-individual ones from the screen.
+The add-on ([../addon/display.py](../addon/display.py)) keeps **plain user messages**
+and **warnings** separate:
+
+* the user's free-text message (`input_text.eink_message`) shows in the **MESSAGE
+  box** (bottom-left of the panel);
+* **warnings** fill the **bottom warning bar** left→right, highest priority leftmost,
+  with a `+N` pill at the right when more are active than fit.
+
+It also publishes the live warning list back to Home Assistant so you can see every
+warning and hide individual ones from the screen.
 
 ## What the add-on does
 
-* Draws a small centred notification box at the bottom of the panel **only when a
-  warning is active**. It shows the single most important warning; if more than one
-  is active a round badge shows the total count.
-* Warning priority (most important first): **CAN bus not connected** → **high temp
-  (hotter = higher)** → **a sensor that stopped updating** → **user message**.
-* Any value whose source entity has stopped updating (its `last_reported` stops
-  advancing) gets a small `!` mark drawn next to it. A value that is simply steady
-  but still being reported is **not** marked.
-* Publishes `sensor.eink_warnings` (state = active message count) with attributes
+* Fills the bottom bar with active warning chips (highest priority leftmost); a `+N`
+  pill shows how many didn't fit.
+* Warning priority (highest first): **Home Assistant unreachable** → **CAN adapter
+  disconnected** → **BESTGO disconnected** → **EZkontrol disconnected** → **high temp
+  (hotter = higher, capped below the device warnings)** → **a sensor that stopped
+  updating**.
+* The three CAN devices are tracked independently from the canbus app's health
+  sensors (`sensor.canadapter_status` / `bestgo_status` / `ezkontrol_status`, 1/0),
+  falling back to staleness inference when a sensor is unknown or itself stale.
+* Any value whose source has stopped updating gets a small `!` mark, scoped to the
+  device that feeds it: a BESTGO dropout marks only SoC/voltage/BATT temp, an
+  EZkontrol dropout only speed/motor/EZK temp, the adapter marks every CAN value.
+  A steady-but-still-reported value is **not** marked.
+* Publishes `sensor.eink_warnings` (state = active warning count) with attributes
   `warnings`, `lines`, `keys_visible`, `keys_hidden`.
 * Reads `input_text.eink_hidden` (comma-separated warning keys) and removes those
   from the e-paper. Keys whose warning is no longer active are pruned automatically,
@@ -23,10 +34,10 @@ individual ones from the screen.
 
 ## Apply (two pieces)
 
-### 1. Helper + hide scripts — `eink_messages.yaml`
+### 1. Helper + hide scripts + mph template — `eink_messages.yaml`
 
-This defines `input_text.eink_hidden` and `script.eink_hide` / `eink_unhide` /
-`eink_unhide_all`.
+Defines `input_text.eink_hidden`, `script.eink_hide` / `eink_unhide` /
+`eink_unhide_all`, and `sensor.solar_car_speed` (the rpm→mph template sensor).
 
 Easiest is the HA **packages** mechanism:
 
@@ -41,39 +52,41 @@ Easiest is the HA **packages** mechanism:
 (Alternatively: create the `input_text.eink_hidden` text helper in the UI — max length
 255 — and paste the three `script:` blocks into your existing `scripts.yaml`.)
 
-> **User message helper:** the add-on shows the free-text message from
-> `input_text.eink_message`. If you don't already have that helper, create it
-> (UI text helper, max 255) or uncomment the `eink_message:` block in
-> `eink_messages.yaml`. Without it the user-message line simply never appears
-> (everything else still works).
+> **User message helper:** the MESSAGE box shows `input_text.eink_message`. If you
+> don't already have that helper, create it (UI text helper, max 255) or uncomment the
+> `eink_message:` block in `eink_messages.yaml`. Without it the box just shows
+> "- no message -".
 
-### 2. Dashboard section — `dashboard_messages_section.yaml`
+### 2. Dashboard section — `dashboard_warnings_section.yaml`
 
-This adds an **E-Paper Messages** section that lists every active message (live text,
-hidden ones marked) with a **Hide** button for each message currently on the e-paper,
-plus an **Unhide all** button.
+Adds an **E-Paper Warnings** section that lists every active warning (hidden ones
+marked), a **Hide** button for each warning currently on the e-paper, an **Unhide
+all** button, and a field to type the e-paper message. Add it to both the **Solar
+Car** and **All Data** dashboards.
 
-1. Open the Solar Car dashboard → 3-dot menu → **Edit dashboard** → 3-dot menu →
+1. Open the dashboard → 3-dot menu → **Edit dashboard** → 3-dot menu →
    **Raw configuration editor**.
 2. Paste the `type: grid` block from
-   [dashboard_messages_section.yaml](dashboard_messages_section.yaml) as a new entry in
+   [dashboard_warnings_section.yaml](dashboard_warnings_section.yaml) as a new entry in
    the view's `sections:` list.
 3. **Save**.
 
-The Hide buttons only appear for messages that are actually on the e-paper right now,
-so the section stays uncluttered.
+The Hide buttons only appear for warnings actually on the e-paper right now, so the
+section stays uncluttered.
 
 ## Warning keys (for reference)
 
 | key | shown when |
 |-----|------------|
-| `can` | the CAN bus/adapter is down — from `sensor.canadapter_status` (1/0), else inferred from every CAN-fed sensor being stale → "CAN bus not connected" |
-| `can_batt` | bus is up but the battery isn't on CAN — from `sensor.bestgo_status`, else inference; marks `!` on exactly the battery-fed values (SoC, voltage, BATT temp) |
-| `can_ezk` | bus is up but the EZkontrol isn't on CAN — from `sensor.ezkontrol_status`, else inference; marks `!` on exactly the EZkontrol-fed values (speed, motor temp, EZK temp) |
-| `ha` | the add-on can't reach Home Assistant at all → "Home Assistant unreachable" (replaces the CAN/staleness deductions, which are unknowable during an HA outage) |
+| `ha` | the add-on can't reach Home Assistant at all → "Home Assistant unreachable" (replaces the CAN/staleness deductions, unknowable during an HA outage) |
+| `can_adapter` | the USB-CAN adapter/bus is down — `sensor.canadapter_status` 0, else inferred from every CAN value being stale; marks `!` on all CAN values |
+| `can_bestgo` | the battery isn't on CAN — `sensor.bestgo_status` 0, else inference; marks `!` on SoC, voltage, BATT temp |
+| `can_ezk` | the EZkontrol isn't on CAN — `sensor.ezkontrol_status` 0, else inference; marks `!` on speed, motor temp, EZK temp |
 | `temp_t_motor` / `temp_t_ezk` / `temp_t_batt` / `temp_t_pi` | that temperature ≥ `temp_warn` (live reading only) |
-| `stale_speed` / `stale_t_motor` / `stale_t_ezk` / `stale_t_batt` / `stale_t_pi` / `stale_soc` / `stale_voltage` | that sensor stopped updating (but the bus as a whole is alive) |
-| `user` | `input_text.eink_message` is non-empty |
+| `stale_speed` / `stale_t_motor` / `stale_t_ezk` / `stale_t_batt` / `stale_t_pi` / `stale_soc` / `stale_voltage` | that sensor stopped updating, where a device warning doesn't already explain it (e.g. the Pi's own temperature) |
 
-To hide a message manually you can also just type its key into
-`input_text.eink_hidden` (comma-separated); to unhide, remove it or clear the field.
+The plain user message is **not** a warning - it lives in the MESSAGE box, set via
+`input_text.eink_message`.
+
+To hide a warning manually you can also type its key into `input_text.eink_hidden`
+(comma-separated); to unhide, remove it or clear the field.

@@ -24,7 +24,7 @@ class DeviceStatus(unittest.TestCase):
     def test_all_healthy(self):
         self.assertEqual(alerts.device_status(stale(), OK), (False, False, False))
 
-    def test_explicit_bus_down_wins(self):
+    def test_explicit_adapter_down(self):
         s = alerts.device_status(stale(), {"bus": False, "batt": True, "ezk": True})
         self.assertEqual(s, (True, False, False))
 
@@ -32,18 +32,20 @@ class DeviceStatus(unittest.TestCase):
         s = alerts.device_status(stale(), {"bus": True, "batt": False, "ezk": True})
         self.assertEqual(s, (False, True, False))
 
-    def test_bus_down_folds_devices(self):
+    def test_no_folding_all_three_independent(self):
+        # all three explicitly down -> all three flagged (no folding now)
         s = alerts.device_status(stale(), {"bus": False, "batt": False, "ezk": False})
-        self.assertEqual(s, (True, False, False))
+        self.assertEqual(s, (True, True, True))
 
     def test_inference_battery_only(self):
         # health sensors absent; only battery-fed values stale -> batt_down
         s = alerts.device_status(stale(*config.BATT_KEYS), UNKNOWN)
         self.assertEqual(s, (False, True, False))
 
-    def test_inference_all_stale_is_bus_down(self):
+    def test_inference_all_stale_is_adapter_down(self):
+        # everything stale -> adapter inferred down, and the two devices too
         s = alerts.device_status(stale(*config.CAN_KEYS), UNKNOWN)
-        self.assertEqual(s, (True, False, False))
+        self.assertEqual(s, (True, True, True))
 
     def test_explicit_true_blocks_inference(self):
         # health says battery is fine even though its values look stale
@@ -63,7 +65,7 @@ class MergeDeviceStale(unittest.TestCase):
         for k in config.EZK_KEYS + ("t_pi",):
             self.assertFalse(merged[k], k)
 
-    def test_bus_down_marks_all_can_keys_not_pi(self):
+    def test_adapter_down_marks_all_can_keys_not_pi(self):
         merged = alerts.merge_device_stale(stale(), True, False, False)
         for k in config.CAN_KEYS:
             self.assertTrue(merged[k], k)
@@ -77,38 +79,46 @@ class BuildWarnings(unittest.TestCase):
         return [w["key"] for w in ws]
 
     def test_priority_order(self):
+        # bestgo down + a live high motor temp + Pi temp stale (non-CAN)
         temps = {**self.TEMPS, "t_motor": 72.0}
         st = alerts.merge_device_stale(stale("t_pi"), False, True, False)
-        ws = alerts.build_warnings(temps, st, (False, True, False), "hi")
+        ws = alerts.build_warnings(temps, st, (False, True, False))
         self.assertEqual(self.keys(ws),
-                         ["can_batt", "temp_t_motor", "stale_t_pi", "user"])
+                         ["can_bestgo", "temp_t_motor", "stale_t_pi"])
 
-    def test_bus_down_explains_can_keys_keeps_pi(self):
-        st = alerts.merge_device_stale(stale("t_pi"), True, False, False)
-        ws = alerts.build_warnings(self.TEMPS, st, (True, False, False), "")
-        self.assertEqual(self.keys(ws), ["can", "stale_t_pi"])
+    def test_all_three_devices_separate_adapter_first(self):
+        st = alerts.merge_device_stale(stale("t_pi"), True, True, True)
+        ws = alerts.build_warnings(self.TEMPS, st, (True, True, True))
+        self.assertEqual(self.keys(ws),
+                         ["can_adapter", "can_bestgo", "can_ezk", "stale_t_pi"])
 
     def test_device_warning_replaces_its_stale_warnings(self):
         st = alerts.merge_device_stale(stale(), False, True, False)
-        ws = alerts.build_warnings(self.TEMPS, st, (False, True, False), "")
-        self.assertEqual(self.keys(ws), ["can_batt"])
+        ws = alerts.build_warnings(self.TEMPS, st, (False, True, False))
+        self.assertEqual(self.keys(ws), ["can_bestgo"])
 
     def test_hotter_sorts_first(self):
         temps = {**self.TEMPS, "t_motor": 70.0, "t_batt": 78.0}
-        ws = alerts.build_warnings(temps, stale(), (False, False, False), "")
+        ws = alerts.build_warnings(temps, stale(), (False, False, False))
         self.assertEqual(self.keys(ws), ["temp_t_batt", "temp_t_motor"])
 
     def test_high_temp_suppressed_when_stale(self):
         temps = {**self.TEMPS, "t_motor": 90.0}
         ws = alerts.build_warnings(temps, stale("t_motor"),
-                                   (False, False, False), "")
+                                   (False, False, False))
         self.assertEqual(self.keys(ws), ["stale_t_motor"])
 
-    def test_ha_down_replaces_everything_but_user(self):
+    def test_device_warning_outranks_temp(self):
+        # a live high temp is capped (<=90) so device-down warnings stay above it
+        temps = {**self.TEMPS, "t_pi": 200.0}     # absurdly hot, capped priority
+        ws = alerts.build_warnings(temps, stale(), (False, True, False))
+        self.assertEqual(self.keys(ws)[0], "can_bestgo")
+
+    def test_ha_down_is_only_warning(self):
         st = stale(*config.STALE_KEYS)
         ws = alerts.build_warnings({**self.TEMPS, "t_motor": 99.0}, st,
-                                   (True, False, False), "msg", ha_down=True)
-        self.assertEqual(self.keys(ws), ["ha", "user"])
+                                   (True, False, False), ha_down=True)
+        self.assertEqual(self.keys(ws), ["ha"])
 
 
 class FitHidden(unittest.TestCase):

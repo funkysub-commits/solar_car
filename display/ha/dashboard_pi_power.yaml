@@ -1,0 +1,39 @@
+# Pi Power dashboard section — shut down / reboot the Raspberry Pi host from
+# the dashboard, instead of digging through Settings > System > Power Button.
+#
+# Both buttons call the built-in Supervisor host services and pop a
+# confirmation dialog first so they can't be hit by accident. "Shut down" is
+# the equivalent of Settings > System > (power) > Shut down system — after it
+# the Pi is OFF and must be physically power-cycled to come back.
+#
+# Paste this `type: grid` block as a new entry in the dashboard view's
+# `sections:` list (Raw configuration editor).
+
+type: grid
+cards:
+  - type: heading
+    heading: Pi Power
+    heading_style: title
+    icon: mdi:raspberry-pi
+  - type: button
+    name: Shut Down Pi
+    icon: mdi:power
+    show_state: false
+    tap_action:
+      action: perform-action
+      perform_action: hassio.host_shutdown
+      confirmation:
+        text: >-
+          Shut down the Raspberry Pi? Home Assistant and the car telemetry will
+          stop, and the Pi must be physically power-cycled to turn it back on.
+  - type: button
+    name: Reboot Pi
+    icon: mdi:restart
+    show_state: false
+    tap_action:
+      action: perform-action
+      perform_action: hassio.host_reboot
+      confirmation:
+        text: >-
+          Reboot the Raspberry Pi? Home Assistant will be unavailable for about
+          a minute while it restarts.

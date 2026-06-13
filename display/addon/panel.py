@@ -64,22 +64,24 @@ def diagnose_gpio():
                 pass
 
 
-def region_snaps(speed, speed_unit, temps, soc, voltage, warnings, stale, clock_str):
+def region_snaps(speed, speed_unit, temps, soc, voltage, warnings, stale,
+                 ha_msg, clock_str):
     """Per-region coarse snapshot - a region is only refreshed when its tuple
     changes. speed/speed_unit come straight from the HA entity. Stale flags are
     included so a value's "!" mark appearing/clearing triggers a refresh."""
     return {
         "speed": (None if speed is None else round(speed), speed_unit,
                   stale.get("speed", False)),
+        "msg": ha_msg,
         "batt": (None if soc is None else round(soc),
                  None if voltage is None else round(voltage, 1),
                  stale.get("soc", False), stale.get("voltage", False)),
         "temps": tuple((None if temps.get(k) is None else round(to_display_temp(temps.get(k))),
                         stale.get(k, False))
                        for k in ("t_motor", "t_ezk", "t_batt", "t_pi")),
-        "notify": (warnings[0]["text"] if warnings else None,
-                   warnings[0].get("icon") if warnings else None,
-                   len(warnings)),
+        # the bar renders deterministically from this ordered text list, so
+        # any add/remove/reorder/text-change refreshes it
+        "warn": tuple(w["text"] for w in warnings),
         "clock": clock_str,
     }
 

@@ -1,55 +1,71 @@
-# E-Paper Messages dashboard section.
+# E-Paper Warnings dashboard section.
 #
-# Paste the block below into your dashboard's raw config (the dashboard's
-# 3-dot menu > Edit dashboard > 3-dot menu > Raw configuration editor) as a
-# new entry in the view's `sections:` list. It needs sensor.eink_warnings
+# Lists every active warning on the e-paper and gives a Hide button for each
+# one currently shown; Unhide all appears when anything is hidden. (Plain
+# user messages are NOT warnings - set those via input_text.eink_message.)
+#
+# Paste this `type: grid` block as a new entry in a dashboard view's
+# `sections:` list (Raw configuration editor). Needs sensor.eink_warnings
 # (published by the add-on) and the scripts from eink_messages.yaml.
-#
-# It shows every active message (live text, hidden ones marked) and a Hide
-# button for each message currently on the e-paper; Unhide all appears when
-# anything is hidden.
 
 type: grid
 cards:
   - type: heading
-    heading: E-Paper Messages
+    heading: E-Paper Warnings
     heading_style: title
-    icon: mdi:message-alert
+    icon: mdi:alert
   - type: markdown
     text_only: true
     content: |
       {% set ws = state_attr('sensor.eink_warnings','warnings') %}
       {% if ws %}{% for m in ws %}
-      {{ '🔕' if m.hidden else ('ℹ️' if m.icon == 'info' else '⚠️') }} {{ m.text }}{{ ' *(hidden)*' if m.hidden else '' }}
+      {{ '🔕' if m.hidden else '⚠️' }} {{ m.text }}{{ ' *(hidden)*' if m.hidden else '' }}
       {% endfor %}{% else %}
-      *No active messages*
+      *No active warnings*
       {% endif %}
+  - type: entities
+    title: Send a message to the e-paper
+    entities:
+      - entity: input_text.eink_message
+        name: Message
   - type: button
-    name: "Hide: CAN bus not connected"
+    name: "Hide: Home Assistant unreachable"
     icon: mdi:eye-off
     show_state: false
     tap_action:
       action: perform-action
       perform_action: script.eink_hide
       data:
-        key: can
+        key: ha
     visibility:
       - condition: template
-        value_template: "{{ 'can' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
+        value_template: "{{ 'ha' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
   - type: button
-    name: "Hide: Battery not on CAN"
+    name: "Hide: CAN adapter disconnected"
     icon: mdi:eye-off
     show_state: false
     tap_action:
       action: perform-action
       perform_action: script.eink_hide
       data:
-        key: can_batt
+        key: can_adapter
     visibility:
       - condition: template
-        value_template: "{{ 'can_batt' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
+        value_template: "{{ 'can_adapter' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
   - type: button
-    name: "Hide: EZkontrol not on CAN"
+    name: "Hide: BESTGO disconnected"
+    icon: mdi:eye-off
+    show_state: false
+    tap_action:
+      action: perform-action
+      perform_action: script.eink_hide
+      data:
+        key: can_bestgo
+    visibility:
+      - condition: template
+        value_template: "{{ 'can_bestgo' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
+  - type: button
+    name: "Hide: EZkontrol disconnected"
     icon: mdi:eye-off
     show_state: false
     tap_action:
@@ -192,18 +208,6 @@ cards:
     visibility:
       - condition: template
         value_template: "{{ 'stale_voltage' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
-  - type: button
-    name: "Hide: User message"
-    icon: mdi:eye-off
-    show_state: false
-    tap_action:
-      action: perform-action
-      perform_action: script.eink_hide
-      data:
-        key: user
-    visibility:
-      - condition: template
-        value_template: "{{ 'user' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
   - type: button
     name: Unhide all
     icon: mdi:eye-check

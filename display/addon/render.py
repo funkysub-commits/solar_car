@@ -1,20 +1,18 @@
 """Frame composition: pure-PIL drawing of the dashboard. No hardware, no
 network - fully testable on a PC (the golden-image harness drives render())."""
-import math
-
 from PIL import Image, ImageDraw
 
 import config
 import layout
-from layout import (W, H, HEAD_H, DIV_X, BAT_DIV_Y, CONTENT_BOT,
+from layout import (W, H, HEAD_H, DIV_X, BAT_DIV_Y, MSG_DIV_Y, CONTENT_BOT,
                     F_TITLE, F_LABEL, F_SPEED, F_UNIT, F_SOC, F_TEMP,
-                    F_SMALL, F_NOTIFY, F_BADGE)
+                    F_SMALL, F_MSG, F_WARN, F_BADGE)
 from units import clamp, to_display_temp
 
 
 def draw_warn_mark(d, cx, cy, h=18):
     """A small warning triangle with an exclamation - drawn next to any value
-    whose data has stopped arriving, and used as the toast's alarm icon."""
+    whose data has stopped arriving, and used as a warning chip's icon."""
     half = h / 2.0
     top = (cx, cy - half)
     bl = (cx - half * 1.06, cy + half)
@@ -28,16 +26,6 @@ def draw_warn_mark(d, cx, cy, h=18):
     d.ellipse((cx - dr, dy - dr, cx + dr, dy + dr), fill=0)
 
 
-def draw_info_mark(d, cx, cy, h=18):
-    """A small circled "i" - the toast icon for a plain user message."""
-    r = h / 2.0
-    d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=255, outline=0, width=2)
-    dr = max(1.3, h * 0.08)
-    dy = cy - r * 0.42
-    d.ellipse((cx - dr, dy - dr, cx + dr, dy + dr), fill=0)
-    d.line((cx, cy - r * 0.08, cx, cy + r * 0.52), fill=0, width=max(2, int(h * 0.12)))
-
-
 def _ellipsize(d, text, font, max_w):
     """Trim text with a trailing ellipsis so it fits within max_w pixels."""
     if d.textlength(text, font=font) <= max_w:
@@ -48,44 +36,79 @@ def _ellipsize(d, text, font, max_w):
     return (text + ell) if text else ell
 
 
+def _wrap(d, text, font, max_w, max_lines):
+    """Word-wrap text to max_w pixels and at most max_lines lines; the last
+    line is ellipsized if the text doesn't fit."""
+    words = text.split()
+    lines, cur = [], ""
+    for w in words:
+        trial = (cur + " " + w).strip()
+        if not cur or d.textlength(trial, font=font) <= max_w:
+            cur = trial
+        else:
+            lines.append(cur)
+            cur = w
+            if len(lines) == max_lines:
+                break
+    if len(lines) < max_lines and cur:
+        lines.append(cur)
+    if len(lines) == max_lines:
+        # if anything was dropped, mark the final line with an ellipsis
+        joined = " ".join(lines)
+        if joined != text:
+            lines[-1] = _ellipsize(d, lines[-1] + " …", font, max_w)
+    return lines[:max_lines]
+
+
 def draw_speedometer(d, speed, unit, stale=False):
     """speed and its unit label are shown exactly as Home Assistant reports
     them - the add-on does no unit conversion."""
     cx, cy, r = layout.SPEED_CX, layout.SPEED_CY, layout.SPEED_R
 
-    d.text((cx, 62), "SPEED", font=F_LABEL, fill=0, anchor="ma")
+    d.text((cx, 54), "SPEED", font=F_LABEL, fill=0, anchor="ma")
     d.arc((cx - r, cy - r, cx + r, cy + r), 180, 360, fill=0, width=4)
 
-    # tick marks around the arc (0..10, major every 5)
+    import math
     for i in range(11):
         a = math.radians(180 + 180 * (i / 10.0))
         ca, sa = math.cos(a), math.sin(a)
         major = (i % 5 == 0)
-        r2 = r - 18 if major else r - 11
+        r2 = r - 15 if major else r - 9
         d.line((cx + r * ca, cy + r * sa, cx + r2 * ca, cy + r2 * sa),
                fill=0, width=3 if major else 2)
 
-    # scale end labels
-    d.text((cx - r, cy + 8), "0", font=F_SMALL, fill=0, anchor="ma")
-    d.text((cx + r, cy + 8), f"{config.SPEED_MAX:.0f}", font=F_SMALL, fill=0, anchor="ma")
+    d.text((cx - r, cy + 4), "0", font=F_SMALL, fill=0, anchor="ma")
+    d.text((cx + r, cy + 4), f"{config.SPEED_MAX:.0f}", font=F_SMALL, fill=0, anchor="ma")
 
-    # needle
     val = 0.0 if speed is None else clamp(speed, 0, config.SPEED_MAX)
     a = math.radians(180 + 180 * (val / config.SPEED_MAX))
     ca, sa = math.cos(a), math.sin(a)
-    rn = r - 26
+    rn = r - 22
     d.line((cx, cy, cx + rn * ca, cy + rn * sa), fill=0, width=5)
-    d.ellipse((cx - 9, cy - 9, cx + 9, cy + 9), fill=0)
+    d.ellipse((cx - 8, cy - 8, cx + 8, cy + 8), fill=0)
 
-    # large numeric readout
     num = "--" if speed is None else f"{speed:.0f}"
-    d.text((cx, cy + 70), num, font=F_SPEED, fill=0, anchor="mm")
-    d.text((cx, cy + 116), unit, font=F_UNIT, fill=0, anchor="mm")
+    d.text((cx, cy + 56), num, font=F_SPEED, fill=0, anchor="mm")
+    d.text((cx, cy + 94), unit, font=F_UNIT, fill=0, anchor="mm")
 
     if stale:
-        # mark next to the SPEED title - the value isn't being updated
         w = d.textlength("SPEED", font=F_LABEL)
-        draw_warn_mark(d, cx + w / 2 + 18, 72, 22)
+        draw_warn_mark(d, cx + w / 2 + 18, 62, 22)
+
+
+def draw_messages(d, ha_msg):
+    """The MESSAGE box (left-bottom): the user's free-text message from Home
+    Assistant, wrapped. Warnings do NOT appear here - they have their own bar."""
+    d.text((layout.MSG_X, layout.MSG_LABEL_Y), "MESSAGE", font=F_LABEL, fill=0, anchor="la")
+    y = layout.MSG_FIRST_LINE_Y
+    if not ha_msg:
+        d.text((layout.MSG_X, y), "- no message -", font=F_MSG, fill=0, anchor="la")
+        return
+    max_w = 448 - layout.MSG_X - 10
+    n_lines = (CONTENT_BOT - y) // layout.MSG_LINE_H
+    for line in _wrap(d, ha_msg, F_MSG, max_w, max(1, n_lines)):
+        d.text((layout.MSG_X, y), line, font=F_MSG, fill=0, anchor="la")
+        y += layout.MSG_LINE_H
 
 
 def draw_battery(d, soc, voltage, vunit, stale_soc=False, stale_v=False):
@@ -124,12 +147,7 @@ def draw_battery(d, soc, voltage, vunit, stale_soc=False, stale_v=False):
 def draw_temps(d, temps, stale):
     d.text((DIV_X + 22, 270), "TEMPERATURES", font=F_LABEL, fill=0, anchor="la")
 
-    items = [
-        ("MOTOR", "t_motor"),
-        ("EZK",   "t_ezk"),
-        ("BATT",  "t_batt"),
-        ("PI",    "t_pi"),
-    ]
+    items = [("MOTOR", "t_motor"), ("EZK", "t_ezk"), ("BATT", "t_batt"), ("PI", "t_pi")]
     area_x0, area_x1 = DIV_X + 10, W - 12
     slot = (area_x1 - area_x0) / len(items)
     half = layout.TEMP_HALF
@@ -137,8 +155,7 @@ def draw_temps(d, temps, stale):
     bar_h = base_y - top_y
 
     for i, (lbl, key) in enumerate(items):
-        val_c = temps.get(key)
-        val = to_display_temp(val_c)              # convert C -> display unit
+        val = to_display_temp(temps.get(key))
         cx = area_x0 + slot * i + slot / 2
         d.rectangle((cx - half, top_y, cx + half, base_y), outline=0, width=2)
         if val is not None:
@@ -152,57 +169,76 @@ def draw_temps(d, temps, stale):
             draw_warn_mark(d, cx + half + 9, top_y + 12, 17)
 
 
-def draw_notify(d, warnings):
-    """Draw the bottom notification toast: a small centred box showing the most
-    important active warning, with a count badge if more than one is active.
-    Draws nothing when there are no active warnings."""
+# Warning-bar chip metrics
+_PAD = 10
+_ICON = 18
+_GAP_ICON = 7
+_GAP_CHIP = 8
+
+
+def _chip_w(d, text):
+    return _PAD * 2 + _ICON + _GAP_ICON + int(d.textlength(text, font=F_WARN))
+
+
+def _draw_chip(d, x, w, text):
+    cy, h = layout.WARN_CY, layout.WARN_CHIP_H
+    d.rounded_rectangle((x, cy - h // 2, x + w, cy + h // 2), radius=8,
+                        fill=255, outline=0, width=2)
+    draw_warn_mark(d, x + _PAD + _ICON // 2, cy, _ICON)
+    d.text((x + _PAD + _ICON + _GAP_ICON, cy), text, font=F_WARN, fill=0, anchor="lm")
+
+
+def _draw_overflow(d, n):
+    """Filled pill at the bar's right end: '+N' warnings that didn't fit."""
+    cy, h = layout.WARN_CY, layout.WARN_CHIP_H
+    txt = f"+{n}"
+    tw = int(d.textlength(txt, font=F_BADGE))
+    w = tw + 18
+    x1 = layout.WARN_X1
+    x0 = x1 - w
+    d.rounded_rectangle((x0, cy - h // 2, x1, cy + h // 2), radius=8, fill=0)
+    d.text(((x0 + x1) // 2, cy - 1), txt, font=F_BADGE, fill=255, anchor="mm")
+    return x0
+
+
+def draw_warnings_bar(d, warnings):
+    """Fill the bottom bar left->right with warning chips (highest priority
+    leftmost). If they don't all fit, show a '+N' pill at the right for the
+    overflow. Draws nothing when there are no warnings."""
     if not warnings:
         return
-    top = warnings[0]
-    count = len(warnings)
-
-    cy = layout.NOTIFY_CY
-    box_h = layout.NOTIFY_H
-    pad = 14
-    icon_sz = 22
-    gap = 9
-    badge_d = 26 if count > 1 else 0
-    badge_gap = 9 if count > 1 else 0
-
-    max_box_w = W - 80
-    max_text_w = max_box_w - (pad * 2 + icon_sz + gap + badge_gap + badge_d)
-    text = _ellipsize(d, top["text"], F_NOTIFY, max_text_w)
-    tw = d.textlength(text, font=F_NOTIFY)
-
-    box_w = int(pad * 2 + icon_sz + gap + tw + badge_gap + badge_d)
-    bx0 = (W - box_w) // 2
-    bx1 = bx0 + box_w
-    by0 = cy - box_h // 2
-    by1 = cy + box_h // 2
-
-    # white fill clears whatever was beneath, then a rounded outline = a chip
-    d.rounded_rectangle((bx0, by0, bx1, by1), radius=9, fill=255, outline=0, width=2)
-
-    ix = bx0 + pad + icon_sz // 2
-    if top.get("icon") == "info":
-        draw_info_mark(d, ix, cy, icon_sz)
-    else:
-        draw_warn_mark(d, ix, cy, icon_sz)
-
-    tx = bx0 + pad + icon_sz + gap
-    d.text((tx, cy), text, font=F_NOTIFY, fill=0, anchor="lm")
-
-    if count > 1:
-        r = badge_d // 2
-        bcx = bx1 - pad - r
-        d.ellipse((bcx - r, cy - r, bcx + r, cy + r), fill=0)
-        d.text((bcx, cy - 1), str(count), font=F_BADGE, fill=255, anchor="mm")
+    n = len(warnings)
+    x = layout.WARN_X0
+    shown = 0
+    for i, w in enumerate(warnings):
+        cw = _chip_w(d, w["text"])
+        gap = _GAP_CHIP if shown else 0
+        remaining_after = n - (shown + 1)
+        # reserve room for the '+N' pill only if something will overflow
+        reserve = 44 if remaining_after > 0 else 0
+        if shown and x + gap + cw + reserve > layout.WARN_X1:
+            break
+        if not shown and cw > layout.WARN_X1 - layout.WARN_X0:
+            # a single very long warning: ellipsize it to the whole bar
+            text = _ellipsize(d, w["text"], F_WARN,
+                              layout.WARN_X1 - layout.WARN_X0 - (_PAD * 2 + _ICON + _GAP_ICON))
+            cw = _chip_w(d, text)
+            _draw_chip(d, x, cw, text)
+            shown = 1
+            break
+        _draw_chip(d, x + gap, cw, w["text"])
+        x += gap + cw
+        shown += 1
+    if shown < n:
+        _draw_overflow(d, n - shown)
 
 
-def render(speed, speed_unit, temps, soc, voltage, voltage_unit, warnings, stale, clock_str):
-    """speed/speed_unit are passed through from the HA entity untouched.
-    warnings is the visible (non-hidden) ordered warning list. stale maps
-    value keys -> bool."""
+def render(speed, speed_unit, temps, soc, voltage, voltage_unit,
+           warnings, stale, ha_msg, clock_str):
+    """speed/speed_unit pass through from the HA entity untouched. warnings is
+    the visible (non-hidden) ordered warning list; ha_msg is the user's
+    free-text message (shown in the MESSAGE box, not the warning bar). stale
+    maps value keys -> bool."""
     img = Image.new('1', (W, H), 255)
     d = ImageDraw.Draw(img)
 
@@ -210,8 +246,8 @@ def render(speed, speed_unit, temps, soc, voltage, voltage_unit, warnings, stale
     d.line((2, HEAD_H, W - 3, HEAD_H), fill=0, width=2)
     d.line((DIV_X, HEAD_H, DIV_X, CONTENT_BOT), fill=0, width=2)
     d.line((DIV_X, BAT_DIV_Y, W - 3, BAT_DIV_Y), fill=0, width=2)
+    d.line((8, MSG_DIV_Y, 444, MSG_DIV_Y), fill=0, width=2)
 
-    # header: logo + title + clock
     tx = 16
     if layout.LOGO is not None:
         img.paste(layout.LOGO, (14, 5))
@@ -220,8 +256,9 @@ def render(speed, speed_unit, temps, soc, voltage, voltage_unit, warnings, stale
     d.text((W - 18, 9), clock_str, font=F_TITLE, fill=0, anchor="ra")
 
     draw_speedometer(d, speed, speed_unit, stale.get("speed", False))
+    draw_messages(d, ha_msg)
     draw_battery(d, soc, voltage, voltage_unit,
                  stale.get("soc", False), stale.get("voltage", False))
     draw_temps(d, temps, stale)
-    draw_notify(d, warnings)
+    draw_warnings_bar(d, warnings)
     return img

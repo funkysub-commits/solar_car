@@ -38,86 +38,80 @@ def compute_stale(last_iso):
 
 
 def device_status(stale, health):
-    """Decide (bus_down, batt_down, ezk_down) for the CAN bus and the two
-    devices on it.
+    """Decide (adapter_down, batt_down, ezk_down) for the three CAN devices,
+    each INDEPENDENTLY (no folding) so each gets its own warning:
 
-    health maps {"bus", "batt", "ezk"} to the tri-state read of the CANbus
-    app's connectivity sensors (True up / False down / None unknown). An
-    explicit False wins outright; while a sensor is unknown (not published
-    yet, or HA unreachable) the same fact is inferred from staleness: a
-    device is presumed off the bus when every value it feeds has stopped
-    updating. A bus-level failure implies both devices, so their individual
-    flags are folded into bus_down rather than reported twice."""
-    batt_stale = all(stale.get(k) for k in config.BATT_KEYS)
-    ezk_stale = all(stale.get(k) for k in config.EZK_KEYS)
-    bus, batt, ezk = health.get("bus"), health.get("batt"), health.get("ezk")
-    bus_down = (bus is False) or (bus is None and batt_stale and ezk_stale)
-    batt_down = (batt is False) or (batt is None and batt_stale)
-    ezk_down = (ezk is False) or (ezk is None and ezk_stale)
-    if bus_down:
-        batt_down = ezk_down = False      # implied by the bus being down
-    return bus_down, batt_down, ezk_down
+      adapter = sensor.canadapter_status (the USB-CAN bus itself)
+      batt    = sensor.bestgo_status     (the battery BMS)
+      ezk     = sensor.ezkontrol_status  (the motor controller)
+
+    health maps {"bus","batt","ezk"} to the tri-state read of those sensors
+    (True up / False down / None unknown). An explicit False wins outright;
+    while a sensor is unknown (not published yet, or HA unreachable) the same
+    fact is inferred from staleness - a device is presumed off the bus when
+    every value it feeds has stopped updating, and the adapter when ALL CAN
+    values have."""
+    a, b, e = health.get("bus"), health.get("batt"), health.get("ezk")
+    adapter_down = (a is False) or (a is None and all(stale.get(k) for k in config.CAN_KEYS))
+    batt_down = (b is False) or (b is None and all(stale.get(k) for k in config.BATT_KEYS))
+    ezk_down = (e is False) or (e is None and all(stale.get(k) for k in config.EZK_KEYS))
+    return adapter_down, batt_down, ezk_down
 
 
-def merge_device_stale(stale, bus_down, batt_down, ezk_down):
+def merge_device_stale(stale, adapter_down, batt_down, ezk_down):
     """Force the "!" mark onto every value fed by a device that is off the
     bus - and only those values. A battery dropout marks exactly the three
-    battery-fed values; the EZkontrol values stay clean (and vice versa)."""
+    battery-fed values; the EZkontrol values stay clean (and vice versa); the
+    adapter being down marks every CAN value."""
     out = dict(stale)
-    down_keys = ()
-    if bus_down:
-        down_keys = config.CAN_KEYS
-    else:
-        if batt_down:
-            down_keys += config.BATT_KEYS
-        if ezk_down:
-            down_keys += config.EZK_KEYS
+    down_keys = set()
+    if adapter_down:
+        down_keys |= set(config.CAN_KEYS)
+    if batt_down:
+        down_keys |= set(config.BATT_KEYS)
+    if ezk_down:
+        down_keys |= set(config.EZK_KEYS)
     for k in down_keys:
         out[k] = True
     return out
 
 
-def build_warnings(temps, stale, status, ha_msg, ha_down=False):
-    """Build the ordered list of active warnings (highest priority first).
-    status is the (bus_down, batt_down, ezk_down) triple from device_status;
-    stale should already have device outages merged in (merge_device_stale).
+def build_warnings(temps, stale, status, ha_down=False):
+    """Build the ordered list of active WARNINGS (highest priority first). The
+    plain user message is NOT a warning - it lives in its own message box - so
+    it is not produced here.
+
+    status is the (adapter_down, batt_down, ezk_down) triple; stale should
+    already have device outages merged in (merge_device_stale).
 
     ha_down means Home Assistant itself is unreachable. That makes every
     CAN/staleness deduction unknowable (the data stops at HA, not at the bus),
     so those warnings are replaced by a single accurate one - otherwise an HA
-    outage would masquerade as "CAN bus not connected" and send whoever is
-    debugging to the wrong subsystem.
+    outage would masquerade as a CAN fault and send whoever is debugging to the
+    wrong subsystem.
 
-    Each warning is a dict: {key, text, priority, icon}. 'key' is stable so the
-    Home Assistant side can hide an individual warning. 'icon' is "warn" for
-    alarms and "info" for the user message."""
+    Each warning is a dict {key, text, priority, icon}; 'key' is stable so the
+    HA dashboard can hide an individual warning."""
     if ha_down:
-        ws = [{"key": "ha", "text": "Home Assistant unreachable",
-               "priority": 110, "icon": "warn"}]
-        if ha_msg:        # last known message - still deliberately set
-            ws.append({"key": "user", "text": ha_msg, "priority": 30, "icon": "info"})
-        return ws
-    bus_down, batt_down, ezk_down = status
+        return [{"key": "ha", "text": "Home Assistant unreachable",
+                 "priority": 110, "icon": "warn"}]
+    adapter_down, batt_down, ezk_down = status
     ws = []
     explained = set()      # keys whose staleness a device warning already explains
-    if bus_down:
-        ws.append({"key": "can", "text": "CAN bus not connected",
+    # Three INDEPENDENT device warnings; the adapter takes priority.
+    if adapter_down:
+        ws.append({"key": "can_adapter", "text": "CAN adapter disconnected",
                    "priority": 100, "icon": "warn"})
         explained.update(config.CAN_KEYS)
     if batt_down:
-        ws.append({"key": "can_batt", "text": "Battery not on CAN bus",
-                   "priority": 90, "icon": "warn"})
+        ws.append({"key": "can_bestgo", "text": "BESTGO disconnected",
+                   "priority": 96, "icon": "warn"})
         explained.update(config.BATT_KEYS)
     if ezk_down:
-        ws.append({"key": "can_ezk", "text": "EZkontrol not on CAN bus",
-                   "priority": 90, "icon": "warn"})
+        ws.append({"key": "can_ezk", "text": "EZkontrol disconnected",
+                   "priority": 95, "icon": "warn"})
         explained.update(config.EZK_KEYS)
-    # Any remaining stalled sensor gets its own warning - e.g. the Pi's own
-    # temperature, whose staleness no CAN warning explains.
-    for k, lbl in STALE_WARN_LABELS.items():
-        if k not in explained and stale.get(k):
-            ws.append({"key": f"stale_{k}", "text": f"{lbl} not updating",
-                       "priority": 50, "icon": "warn"})
+    # high temps (live readings only) - capped below the device warnings
     for k, lbl in TEMP_WARN_LABELS.items():
         if stale.get(k):
             continue                      # don't warn "high temp" off a frozen reading
@@ -126,13 +120,15 @@ def build_warnings(temps, stale, status, ha_msg, ha_down=False):
             continue
         v = units.to_display_temp(v_c)
         if v >= config.TEMP_WARN:
-            # a live high temp is a safety issue: it outranks a single stale
-            # sensor, and a hotter sensor sorts ahead of a cooler one
             ws.append({"key": f"temp_{k}",
                        "text": f"High temp: {lbl} {v:.0f}°{config.TEMP_UNIT}",
-                       "priority": 70 + min(25, v - config.TEMP_WARN), "icon": "warn"})
-    if ha_msg:
-        ws.append({"key": "user", "text": ha_msg, "priority": 30, "icon": "info"})
+                       "priority": 70 + min(20, v - config.TEMP_WARN), "icon": "warn"})
+    # any remaining stalled sensor a device warning doesn't already explain
+    # (e.g. the Pi's own temperature)
+    for k, lbl in STALE_WARN_LABELS.items():
+        if k not in explained and stale.get(k):
+            ws.append({"key": f"stale_{k}", "text": f"{lbl} not updating",
+                       "priority": 50, "icon": "warn"})
     ws.sort(key=lambda w: -w["priority"])
     return ws
 
@@ -162,12 +158,12 @@ def publish_warnings(all_ws, hidden):
                       "icon": w["icon"], "hidden": h})
         lines.append(f"- {'(hidden) ' if h else ''}{w['text']}")
     attrs = {
-        "friendly_name": "E-Ink Messages",
-        "icon": "mdi:message-alert",
+        "friendly_name": "E-Ink Warnings",
+        "icon": "mdi:alert",
         "count": len(visible),
         "total": len(all_ws),
         "warnings": items,
-        "lines": "\n".join(lines) if lines else "_No active messages_",
+        "lines": "\n".join(lines) if lines else "_No active warnings_",
         # convenience lists the dashboard's per-message hide buttons key off
         "keys_visible": [w["key"] for w in visible],
         "keys_hidden": [w["key"] for w in all_ws if w["key"] in hidden],

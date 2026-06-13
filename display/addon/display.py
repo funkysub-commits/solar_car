@@ -135,11 +135,12 @@ def main():
               "ezk": read_health(config.ENT_CAN_EZK)}
 
     def current_alerts():
-        """(stale map with device outages merged in, full warning list)."""
+        """(stale map with device outages merged in, full warning list). The
+        user message is NOT a warning here - it goes to the MESSAGE box."""
         stale = compute_stale(last_iso)
         status = device_status(stale, health)
         stale = merge_device_stale(stale, *status)
-        return stale, build_warnings(temps, stale, status, ha_msg,
+        return stale, build_warnings(temps, stale, status,
                                      ha_down=ha_client.ha_unreachable())
 
     def assemble():
@@ -160,17 +161,14 @@ def main():
             _pub_time = now
         return stale, visible
 
-    def sync_hidden(msg_changed):
+    def sync_hidden():
         """Read the authoritative hidden set and rewrite it iff it needs changing:
-        drop keys whose warning is no longer active (so a recurrence shows again),
-        and drop 'user' when the message text just changed (a new message must not
-        stay silenced). Reading immediately before writing keeps this the single
-        writer and avoids clobbering a Hide the dashboard just applied."""
+        drop keys whose warning is no longer active (so a recurrence shows again).
+        Reading immediately before writing keeps this the single writer and
+        avoids clobbering a Hide the dashboard just applied."""
         nonlocal hidden
         cur = read_hidden()
         target = set(cur)
-        if msg_changed:
-            target.discard("user")
         _, all_ws = current_alerts()
         active_keys = {w["key"] for w in all_ws}
         target &= active_keys
@@ -189,14 +187,16 @@ def main():
     clock = datetime.now().strftime("%H:%M")
     powered = ha_get(config.POWER_TOGGLE)[0] != "off"   # default ON if the toggle is absent
     if powered:
-        img = render(speed, speed_unit, temps, soc, voltage, voltage_unit, visible, stale, clock)
+        img = render(speed, speed_unit, temps, soc, voltage, voltage_unit,
+                     visible, stale, ha_msg, clock)
         full_refresh(epd, img)            # clean base frame, then partial mode
         logging.info("initial frame drawn")
     else:
         epd.sleep()                       # already cleared above; just sleep the panel
         logging.info("display starts OFF (HA toggle)")
 
-    last_snaps = region_snaps(speed, speed_unit, temps, soc, voltage, visible, stale, clock)
+    last_snaps = region_snaps(speed, speed_unit, temps, soc, voltage, visible,
+                              stale, ha_msg, clock)
     refresh_count = 0
     last_slow = time.time()
     last_button, _, _ = ha_get(config.REFRESH_BUTTON)
@@ -252,9 +252,8 @@ def main():
                 health["ezk"] = read_health(config.ENT_CAN_EZK)
                 m = read_message(config.ENTITIES["message"])
                 if m is not None:                 # None = fetch failed; keep last
-                    msg_changed = (m != ha_msg)
                     ha_msg = m
-                    sync_hidden(msg_changed)      # single writer of eink_hidden
+                sync_hidden()                     # single writer of eink_hidden
                 last_slow = t0
 
             # manual refresh button forces a full (de-ghosting) refresh
@@ -266,12 +265,14 @@ def main():
             stale, visible = assemble()
             clock = datetime.now().strftime("%H:%M")
 
-            snaps = region_snaps(speed, speed_unit, temps, soc, voltage, visible, stale, clock)
+            snaps = region_snaps(speed, speed_unit, temps, soc, voltage, visible,
+                                 stale, ha_msg, clock)
             changed = [r for r in layout.REGIONS if snaps[r] != last_snaps.get(r)]
             data_changed = any(r in layout.DATA_REGIONS for r in changed)
 
             if data_changed or force or turning_on:
-                img = render(speed, speed_unit, temps, soc, voltage, voltage_unit, visible, stale, clock)
+                img = render(speed, speed_unit, temps, soc, voltage, voltage_unit,
+                             visible, stale, ha_msg, clock)
                 spd_txt = "--" if speed is None else f"{speed:.0f}{speed_unit}"
                 if turning_on or not awake or force or refresh_count >= config.FULL_REFRESH_EVERY:
                     full_refresh(epd, img)        # power-on / wake / de-ghost
@@ -291,7 +292,8 @@ def main():
             elif awake and (t0 - idle_since) >= config.IDLE_SLEEP:
                 # no telemetry change for a while - settle the image and sleep
                 # the panel (e-paper must not be left powered/active when idle)
-                img = render(speed, speed_unit, temps, soc, voltage, voltage_unit, visible, stale, clock)
+                img = render(speed, speed_unit, temps, soc, voltage, voltage_unit,
+                             visible, stale, ha_msg, clock)
                 settle_and_sleep(epd, img)
                 awake = False
                 last_snaps = snaps
