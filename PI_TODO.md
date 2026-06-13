@@ -80,10 +80,14 @@ as work on the PC piles up changes that need the Pi.
 
 ## Still outstanding from before the refactor
 
-- [ ] EZkontrol live decode has **never** been tested on the Pi. With the
-      motor controller wired to the shared 500K bus (EZ-Tune protocol = 101):
-      `candump can0` should show `180117EF`/`180217EF` frames, then check the
-      `sensor.ezkontrol_*` entities update.
+- [x] ~~EZkontrol live decode~~ — verified **on the PC** 2026-06-13 (first
+      time ever): both frames decode at 500k (controller is already on
+      EZ-Tune protocol 101, no change needed). 52.0 V bus matches the
+      battery, gear D2 / contactor on / mode Normal / no errors, life
+      counter in 0x180217EF byte 7 increments 0->F (proves liveness).
+- [ ] EZkontrol live decode on the **Pi** still unconfirmed (same open
+      question as BESTGO — see the zero-RX note above). `candump can0`
+      should show `180117EF`/`180217EF`, then `sensor.ezkontrol_*` updates.
 
 ## E-ink: show network status (future — display code change)
 
