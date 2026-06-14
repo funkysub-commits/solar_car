@@ -52,16 +52,13 @@ as work on the PC piles up changes that need the Pi.
       externally-initiated frames, or a driver/firmware RX bug. (The old
       "forced PC timing still 0 RX" was confounded — battery-only, likely
       bus-off/silent.)
-      **NEXT TEST (resume here):** addon image `local/aarch64-addon-
-      solarcar_canbus:0.7.0`. Stop addon, then run a diag container with
-      can-utils + host net to force PC-exact timing and check RX:
-      `sudo docker run --rm --network host --privileged --entrypoint sh
-      local/aarch64-addon-solarcar_canbus:0.7.0 -c 'ip link set can0 down;
-      ip link set can0 type can tq 117 prop-seg 1 phase-seg1 13 phase-seg2 2
-      sjw 2; ip link set can0 up; sleep 4; cat
-      /sys/class/net/can0/statistics/rx_packets'`. RX>0 ⇒ it was the kernel's
-      brp=2/170-tq auto-timing (fix: pin timing in run.sh). RX=0 ⇒ driver/
-      firmware RX bug (consider the userspace-gs_usb path).
+      **FULL ordered next-session plan + exact commands:**
+      `CANbus_data/DEBUG-pi-rx-plan-20260613.md`. Top two tests:
+      (1) `berr-reporting on` → splits mis-sampling (timing) vs sees-nothing
+      (filter/delivery); (2) userspace gs_usb on the Pi (archived gsusb test)
+      → splits kernel-driver vs firmware/USB. If it's the kernel driver, the
+      fix is ~90% done — `solarcar_can/transport.py` GsUsbTransport is the
+      userspace reader; port it as the addon's Linux path.
       **NOTE: addon was left STOPPED** during this test — restart with
       `ha apps start local_solarcar_canbus` (user declined the auto-restart).
 - [ ] Check HA automations/dashboards for numeric comparisons against

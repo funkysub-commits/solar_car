@@ -1,3 +1,10 @@
+> **SUPERSEDED 2026-06-13.** The "missing common ground" conclusion below is
+> **wrong** — a TX-ACK test (Pi `cansend` gets a clean ACK) proved the adapter
+> is electrically on the bus and RX works at the bit level. The real fault is
+> an asymmetric RX-delivery failure. See `DEBUG-pi-rx-plan-20260613.md` for the
+> corrected analysis and the ordered next-session test plan. The setup/symptom
+> notes below are still accurate and useful.
+
 # Debug capture — BESTGO CAN works on PC, 0 frames on the Pi (2026-06-08)
 
 ## TL;DR
