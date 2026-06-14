@@ -37,15 +37,33 @@ as work on the PC piles up changes that need the Pi.
       the real race configuration. **Termination finding:** with BOTH devices
       connected, the adapter's 120R switch should be **OFF** (the EZkontrol
       and battery terminate the two ends) — verified working that way.
-- [ ] **Live decode on the *Pi* still unconfirmed.** Earlier 2026-06-12 the
-      Pi had can0 up but `rx_packets: 0` with just the battery. Likely
-      **termination**: a single device + adapter needs the adapter's 120R
-      switch **ON** (to be the second terminator); the zero-RX run may have
-      had it off → under-terminated bus → no valid frames. The PC decodes
-      both devices fine at 500k, so battery/controller/decode are all proven.
-      On the Pi: `candump can0` should show frames; if RX stays 0, set
-      adapter termination per the device count (both devices = off, one = on)
-      and check CAN_H/L wiring before suspecting bitrate.
+- [ ] **Pi zero-RX = asymmetric RX failure (2026-06-13). NOT ground, NOT
+      termination, NOT bitrate.** Smoke test (both devices, EZkontrol 20 Hz
+      continuous — no battery-silence confound): Pi `can0` healthy (500k,
+      ERROR-ACTIVE, **0 RX, 0 errors**) but hears nothing, while the same
+      adapter+bus decoded both on the PC minutes earlier.
+      **TX-ACK test overturns the old `DEBUG-pi-can-rx-20260608.md` ground
+      theory:** `cansend can0 100#..` from the Pi → tx_packets 0→1, **0
+      errors, ERROR-ACTIVE**. A clean TX means a device ACKed it AND the Pi
+      read the ACK bit back — so the adapter IS electrically on the bus and
+      its RX works at the bit level. Not common-mode/ground (would be
+      symmetric; TX would fail). So: can transmit-and-get-ACKed but receives
+      0 whole frames = RX-specific. Prime suspects: bit-timing sync to
+      externally-initiated frames, or a driver/firmware RX bug. (The old
+      "forced PC timing still 0 RX" was confounded — battery-only, likely
+      bus-off/silent.)
+      **NEXT TEST (resume here):** addon image `local/aarch64-addon-
+      solarcar_canbus:0.7.0`. Stop addon, then run a diag container with
+      can-utils + host net to force PC-exact timing and check RX:
+      `sudo docker run --rm --network host --privileged --entrypoint sh
+      local/aarch64-addon-solarcar_canbus:0.7.0 -c 'ip link set can0 down;
+      ip link set can0 type can tq 117 prop-seg 1 phase-seg1 13 phase-seg2 2
+      sjw 2; ip link set can0 up; sleep 4; cat
+      /sys/class/net/can0/statistics/rx_packets'`. RX>0 ⇒ it was the kernel's
+      brp=2/170-tq auto-timing (fix: pin timing in run.sh). RX=0 ⇒ driver/
+      firmware RX bug (consider the userspace-gs_usb path).
+      **NOTE: addon was left STOPPED** during this test — restart with
+      `ha apps start local_solarcar_canbus` (user declined the auto-restart).
 - [ ] Check HA automations/dashboards for numeric comparisons against
       `sensor.ezkontrol_op_mode` (now `"Normal"/"Cruise"/"EBS"/"Hold"`,
       was `0/2/3/4`) and update any found.
