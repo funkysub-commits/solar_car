@@ -23,6 +23,6 @@ Minimal Docker containers (not HA add-ons) used in 2026-05/06 to prove
 BESTGO frames decode on the HAOS box before/alongside the real add-on:
 `bestgo_logtest.py` via SocketCAN, plus a userspace-gs_usb variant
 (`bestgo_gsusb_test.py` / `Dockerfile.gsusb`) added while chasing Pi CAN RX
-problems — see `CANbus_data/DEBUG-pi-can-rx-20260608.md` for that journal.
+problems — see `CANbus_data/docs/DEBUG-pi-can-rx-20260608.md` for that journal.
 The production add-on runs on SocketCAN. The decode logic embedded in these
 scripts predates the shared `solarcar_can` package — do not copy from it.

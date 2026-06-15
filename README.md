@@ -41,8 +41,8 @@ What runs on the car vs. what is tooling:
 | `display/addon/` | **Production** — HA add-on: renders the e-ink dashboard from HA sensors. |
 | `display/ha/` | HA dashboard YAML for the e-ink message/warning cards. |
 | `CANbus_data/solarcar_can/` | **The** CAN protocol library (BESTGO + EZkontrol decoders, transports). Single source of truth — edit here, never in the vendored copy. |
-| `CANbus_data/` (root scripts) | Cross-platform CLI dashboards (`monitor.py`, `bestgo_decode.py`, `ezkontrol_decode.py`), `sync_addon.py`, SSH helpers; see `CANbus_data/SETUP.md`. |
-| `CANbus_data/tools/`, `CANbus_data/tests/` | Bus diagnostics; golden-master decoder tests + captured fixtures. |
+| `CANbus_data/` (root scripts) | Cross-platform CLI dashboards (`monitor.py`, `bestgo_decode.py`, `ezkontrol_decode.py`), `sync_addon.py`; see `CANbus_data/README.md`. |
+| `CANbus_data/tools/`, `CANbus_data/tests/` | Bus diagnostics + SSH/deploy helpers (`ha_push.py`/`ha_run.py`); golden-master decoder tests + captured fixtures. |
 | `CANbus_data/specs/` | Vendor protocol PDFs and extracted notes. |
 | `simulator/` | Pushes realistic fake telemetry to HA — drives the display with no hardware. |
 | `mapping/` | Race-route elevation tooling (`fetch_elev.py`, `build_viewer.py` → `viewer.html`). |
@@ -290,7 +290,7 @@ on the Pi it is placed in `/addons/solar-car-canbus/` and installed from
 The frame-decoding logic lives in the shared `CANbus_data/solarcar_can/`
 package — the single source of truth for both protocols, used by this app
 and by the cross-platform CLI dashboards (`CANbus_data/monitor.py`,
-`bestgo_decode.py`, `ezkontrol_decode.py`; see `CANbus_data/SETUP.md`).
+`bestgo_decode.py`, `ezkontrol_decode.py`; see `CANbus_data/README.md`).
 The app folder carries a **vendored copy** of the package (HA builds local
 apps with the app folder as the Docker context): after editing
 `solarcar_can/`, run `python CANbus_data/sync_addon.py` and rebuild the

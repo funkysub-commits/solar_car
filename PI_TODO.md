@@ -53,7 +53,7 @@ as work on the PC piles up changes that need the Pi.
       "forced PC timing still 0 RX" was confounded — battery-only, likely
       bus-off/silent.)
       **FULL ordered next-session plan + exact commands:**
-      `CANbus_data/DEBUG-pi-rx-plan-20260613.md`. Top two tests:
+      `CANbus_data/docs/DEBUG-pi-rx-plan-20260613.md`. Top two tests:
       (1) `berr-reporting on` → splits mis-sampling (timing) vs sees-nothing
       (filter/delivery); (2) userspace gs_usb on the Pi (archived gsusb test)
       → splits kernel-driver vs firmware/USB. If it's the kernel driver, the
@@ -79,7 +79,7 @@ as work on the PC piles up changes that need the Pi.
 - [ ] Pi: plug it into the Pi and start `local_solarcar_canbus` — run.sh
       should bring up can0 and the app should idle without frames. Then
       the CLI tools over SocketCAN (`./can_up.sh`, `python monitor.py`)
-      per CANbus_data/SETUP.md.
+      per CANbus_data/README.md.
 
 ## Deploy + verify e-ink add-on 1.3.0 (Phase 3 refactor + speed/CAN-health rework)
 
@@ -140,7 +140,7 @@ as work on the PC piles up changes that need the Pi.
 
 - [ ] Try the unified CLI tools over SocketCAN: copy `CANbus_data/` to the Pi,
       `pip install -r requirements-pi.txt` in a venv, `./can_up.sh`, then
-      `python monitor.py` (see `CANbus_data/SETUP.md`). The old `rp_files/`
+      `python monitor.py` (see `CANbus_data/README.md`). The old `rp_files/`
       copies these replace were Pi-tested; the unified ones are PC-tested +
       golden-tested but not yet run on the Pi.
 
