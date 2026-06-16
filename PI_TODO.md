@@ -52,15 +52,18 @@ as work on the PC piles up changes that need the Pi.
       externally-initiated frames, or a driver/firmware RX bug. (The old
       "forced PC timing still 0 RX" was confounded — battery-only, likely
       bus-off/silent.)
-      **FULL ordered next-session plan + exact commands:**
-      `CANbus_data/docs/DEBUG-pi-rx-plan-20260613.md`. Top two tests:
-      (1) `berr-reporting on` → splits mis-sampling (timing) vs sees-nothing
-      (filter/delivery); (2) userspace gs_usb on the Pi (archived gsusb test)
-      → splits kernel-driver vs firmware/USB. If it's the kernel driver, the
-      fix is ~90% done — `solarcar_can/transport.py` GsUsbTransport is the
-      userspace reader; port it as the addon's Linux path.
-      **NOTE: addon was left STOPPED** during this test — restart with
-      `ha apps start local_solarcar_canbus` (user declined the auto-restart).
+      **UPDATE 2026-06-15 — software fully RULED OUT; it's electrical.**
+      Userspace gs_usb on the Pi also got 0 frames (clean timeouts, PC-exact
+      timing, continuous traffic) → not the kernel driver, not timing, not a
+      filter. With TX-ACK working + PC working, it's a **Pi-host ground /
+      common-mode OFFSET** (not missing ground). **DECISIVE next test (shop):
+      power the Pi from a battery / USB power bank** (floating, like the
+      laptop) and re-run — RX alive ⇒ confirmed earth-loop. Also multimeter
+      Pi-GND↔bus-CAN_GND for an offset. **FIX = galvanically isolated USB-CAN
+      adapter** (or float/single-point-ground the Pi). Full writeup +
+      reasoning: `CANbus_data/docs/DEBUG-pi-rx-plan-20260613.md` (RESULT
+      2026-06-15). NOTE: gsusb test unbound the kernel driver → `can0` gone
+      until replug/reboot; addon still STOPPED.
 - [ ] Check HA automations/dashboards for numeric comparisons against
       `sensor.ezkontrol_op_mode` (now `"Normal"/"Cruise"/"EBS"/"Hold"`,
       was `0/2/3/4`) and update any found.

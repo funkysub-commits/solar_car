@@ -4,6 +4,54 @@
 blamed a missing common ground; the **TX-ACK test on 2026-06-13 disproves
 it**.
 
+---
+## RESULT 2026-06-15 — software fully ruled out; it's electrical (Pi host)
+
+Ran the plan at the shop with both devices live (continuous traffic):
+
+- **berr-reporting** ctrlmode is **not supported** by this gs_usb device, so
+  that test couldn't run — but it's moot: the controller sits ERROR-ACTIVE
+  with 0 errors on a busy bus for minutes, which already rules out
+  mis-sampling (timing would pile up TEC/REC → error-passive). **Timing/
+  sampling: OUT.**
+- **Userspace gs_usb on the Pi (T2, the big one): 0 frames.** Clean — read
+  stats `timeouts=296, usb_errors=0, shortreads=0`, with PC-identical timing
+  (brp=20, 88.2%) and the EZkontrol transmitting continuously. Bypasses the
+  kernel CAN stack entirely and STILL hears nothing. **Kernel gs_usb driver:
+  OUT. Software: OUT.** (Also kills the std-vs-extended filter idea — userspace
+  would have counted the EZkontrol's extended frames too; it saw zero.)
+
+**Conclusion: Pi-host electrical, almost certainly a ground / common-mode
+OFFSET (not a *missing* ground).** Coherent with all the evidence:
+- PC (floating, battery) + same adapter/wiring/timing → RX works.
+- Pi (earthed wall supply) → RX = 0 both kernel and userspace.
+- Pi TX-ACK works: when the Pi *drives* the bus it's referenced to the Pi's
+  own ground, so it reads its bits + the ACK; when a *device* drives a frame
+  it's referenced to the device's ground, and if the Pi sits offset beyond the
+  transceiver common-mode window, the Pi can't see those frames → 0 RX, 0
+  errors, clean timeouts. Asymmetric exactly as observed.
+
+### Decisive physical tests (shop, hands-on)
+1. **Power the Pi from a battery / USB power bank** (floating, like the
+   laptop) and re-run. RX comes alive ⇒ confirmed ground/earth-loop. Fastest
+   decisive test.
+2. **Multimeter**: DC volts between a Pi GND (GPIO GND / USB shell) and the
+   bus CAN_GND (EZkontrol CN2-22 / battery CAN GND). >~few-hundred mV = smoking
+   gun.
+
+### Fix direction if confirmed
+**Galvanically isolated USB-CAN adapter** (removes the ground-offset
+dependency), or isolate / single-point-ground the Pi's CAN reference, or run
+the Pi floating. No software change needed — the SocketCAN path is fine once
+the analog RX is in range (consistent with the early add-on having worked when
+the grounding happened to be OK / the Pi was powered differently).
+
+### Note
+The userspace test unbinds the kernel gs_usb driver → `can0` disappears until
+a replug/reboot (happens naturally when switching to the power bank).
+
+---
+
 ## Where we are (hard facts)
 
 - Same adapter (CANable2 / STM32G431 **FDCAN**, gs_usb/candleLight, `1d50:606f`,
