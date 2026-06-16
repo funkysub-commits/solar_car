@@ -7,6 +7,13 @@ it**.
 ---
 ## RESULT 2026-06-15 — software fully ruled out; it's electrical (Pi host)
 
+> **PARTLY SUPERSEDED — read SESSION 2 at the bottom first.** The "ground/
+> common-mode offset" conclusion here is undercut by two later facts: the
+> adapter is **galvanically isolated** (so host ground can't couple to the CAN
+> side), and the **car was being switched off mid-session** (so some "0 RX"
+> reads were a quiet bus, not a dead receiver). The software-is-ruled-out part
+> still stands; the electrical conclusion does not.
+
 Ran the plan at the shop with both devices live (continuous traffic):
 
 - **berr-reporting** ctrlmode is **not supported** by this gs_usb device, so
@@ -159,3 +166,53 @@ archived gsusb test. That sidesteps the kernel CAN stack entirely.
 ## Remember
 - Addon left **STOPPED** — `ha apps start local_solarcar_canbus` to restore.
 - Pi at 10.66.76.162; SSH via `ha_run.py` (`HA_PWD` from the Windows registry).
+
+---
+## SESSION 2 (later 2026-06-15) — CONFOUND: car power kept being switched OFF
+
+Big caveat on everything above: **the car was powered off during part of the
+session** (twice, unannounced). EZkontrol only broadcasts telemetry when the
+car is on, so an unknown number of the "0 RX" reads were against a **quiet
+bus**, not a broken receiver. Do not treat "Pi can't receive" as proven.
+
+What we did this session:
+- **Adapter is galvanically ISOLATED** (user confirmed). This rules out the
+  ground/common-mode/earth-loop theories hard — the isolation barrier
+  decouples the CAN side from the Pi's ground entirely. Multimeter GND(bus)↔
+  GND(Pi) ≈ 0 V also (consistent).
+- Termination switch ON, USB blue (USB3) port, splitter cable removed → all
+  still 0 RX. None of these changed anything.
+- Set EZkontrol to **protocol 1 (250 k MCU-to-Meter)** via EZ-Tune, battery
+  unplugged, direct 2-node bus. TX-ACK at 250 k works (controller alive at
+  250 k). RX still 0 (one fluke frame once, then 0 over 6 s).
+- THEN learned the car had been turned off → results suspect.
+
+### The key logical fork (unresolved)
+TX-ACK proving the EZkontrol is "alive + ACKing" does NOT prove it's
+"broadcasting." Two scenarios both fit 0-RX + working-TX-ACK:
+  A) EZkontrol IS broadcasting and the Pi receives the frames (it must be
+     ACKing them, else a lone EZkontrol bus-offs in ~3 s) but DISCARDS them →
+     points at an FDCAN acceptance-filter / firmware quirk on Linux.
+  B) EZkontrol is NOT broadcasting (car off, or protocol-1 not fully applied)
+     → nothing to receive; the Pi receiver may be fine.
+Today's car-off confound makes (B) very live.
+
+### RESUME PLAN (do first, in order)
+1. **Car ON and CONFIRMED on** (tape a note on the key — it kept getting shut
+   off). EZkontrol at 250 k, alone, terminated.
+2. **Back-to-back known-good check (decisive):** move the adapter to the PC,
+   run `python ezkontrol_decode.py -250`.
+   - PC sees frames ⇒ EZkontrol IS broadcasting at 250 k ⇒ scenario A ⇒ real
+     Pi receive-but-discard problem (chase FDCAN filter / firmware; the
+     archived userspace path and a reflash are the levers).
+   - PC sees nothing ⇒ not broadcasting ⇒ power-cycle the EZkontrol / re-check
+     protocol-1; the Pi was never the problem.
+3. Only after the bus is PROVEN live (PC sees it) is a Pi 0-RX meaningful.
+
+### STATE LEFT (for next time)
+- **EZkontrol is at protocol 1 (250 k). MUST set back to 101 (500 k)** before
+  rejoining the real shared bus with the battery.
+- Battery (BESTGO) unplugged from the bus; splitter cable removed; adapter
+  120 Ω termination ON; adapter on the Pi's blue USB-3 port.
+- Kernel gs_usb driver was unbound earlier by the userspace test → can0 may be
+  absent until a replug/reboot. Addon still STOPPED.

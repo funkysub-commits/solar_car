@@ -52,18 +52,22 @@ as work on the PC piles up changes that need the Pi.
       externally-initiated frames, or a driver/firmware RX bug. (The old
       "forced PC timing still 0 RX" was confounded — battery-only, likely
       bus-off/silent.)
-      **UPDATE 2026-06-15 — software fully RULED OUT; it's electrical.**
-      Userspace gs_usb on the Pi also got 0 frames (clean timeouts, PC-exact
-      timing, continuous traffic) → not the kernel driver, not timing, not a
-      filter. With TX-ACK working + PC working, it's a **Pi-host ground /
-      common-mode OFFSET** (not missing ground). **DECISIVE next test (shop):
-      power the Pi from a battery / USB power bank** (floating, like the
-      laptop) and re-run — RX alive ⇒ confirmed earth-loop. Also multimeter
-      Pi-GND↔bus-CAN_GND for an offset. **FIX = galvanically isolated USB-CAN
-      adapter** (or float/single-point-ground the Pi). Full writeup +
-      reasoning: `CANbus_data/docs/DEBUG-pi-rx-plan-20260613.md` (RESULT
-      2026-06-15). NOTE: gsusb test unbound the kernel driver → `can0` gone
-      until replug/reboot; addon still STOPPED.
+      **UPDATE 2026-06-15 (session 2) — DON'T trust today's 0-RX yet; the car
+      power kept getting switched OFF.** EZkontrol only broadcasts when the car
+      is on, so some "0 RX" reads were a QUIET BUS, not a dead receiver. Also:
+      the adapter is **galvanically ISOLATED** → ground/common-mode/earth-loop
+      theories are OUT (the earlier "it's electrical/ground" call is wrong).
+      Termination ON, USB3 port, splitter removed → none changed anything.
+      **RESUME (decisive, do first):** car ON *and confirmed on*, EZkontrol at
+      250k alone → move adapter to the **PC**, run `python ezkontrol_decode.py
+      -250`. PC sees frames ⇒ it IS broadcasting ⇒ real Pi receive-but-discard
+      problem (chase FDCAN filter/firmware). PC sees nothing ⇒ not broadcasting
+      ⇒ Pi was never the problem (power-cycle EZkontrol). Full arc +
+      reasoning: `CANbus_data/docs/DEBUG-pi-rx-plan-20260613.md` (SESSION 2).
+      ⚠️ **EZkontrol is currently at protocol 1 (250k) — set it BACK to 101
+      (500k)** before rejoining the shared bus with the battery. Battery
+      unplugged, splitter removed, adapter term ON. gsusb test unbound the
+      kernel driver → `can0` gone until replug/reboot; addon still STOPPED.
 - [ ] Check HA automations/dashboards for numeric comparisons against
       `sensor.ezkontrol_op_mode` (now `"Normal"/"Cruise"/"EBS"/"Hold"`,
       was `0/2/3/4`) and update any found.
