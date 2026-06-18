@@ -118,19 +118,21 @@ as work on the PC piles up changes that need the Pi.
       into the Phase 3 display refactor (`display/PHASE3_PLAN.md`); until
       then the sensors are visible on the HA dashboard.
 
-## Race prep (a few days before, on a network with internet)
+## Race prep — "update once before, then freeze" (README §8 reworked 2026-06-18)
 
-- [ ] Power the Pi up early and let the HA Supervisor update (or run
-      `ha supervisor update`). A stale Supervisor blocks all app
-      install/update/rebuild operations until it's current (hit this
-      2026-06-11) — running apps are unaffected, but don't discover that
-      during an emergency fix at the track. See README §8 "Supervisor
-      staleness" for details.
-- [ ] After it's current: verify both apps start and push sensors.
-- [ ] During the race: whenever the hotspot is up, keep the Supervisor
-      updated (`ha supervisor info` / `ha supervisor update`, ideally while
-      the car is stopped) so an emergency app fix never has to wait on a
-      Supervisor update first.
+Race rule was REWORKED: the old "keep the Supervisor updated during the race"
+advice is gone — updating a working system mid-race is a risk, and you can't
+rebuild apps without internet anyway. New rule: get current before, freeze at
+the track.
+
+- [ ] A few days before, on solid internet: let the HA Supervisor (the HAOS
+      software, not a person) get current (or `ha supervisor update`), then
+      verify both apps start and push sensors.
+- [ ] At the track: **freeze** — don't update HAOS / Supervisor / apps.
+- [ ] Only exception: if the **e-ink or CANbus app must be rebuilt mid-race**,
+      a stale Supervisor blocks it (*"supervisor needs to be updated first"*),
+      so you'd need `ha supervisor update` first — needs the hotspot up. Doing
+      the pre-race update is what avoids this. See README §8.
 
 ## Optional / nice-to-have on the Pi
 
