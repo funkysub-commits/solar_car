@@ -427,8 +427,10 @@ ha host reboot
 
 ### Supervisor staleness (matters for race day)
 
-If the Pi sits powered off for weeks, the HA Supervisor falls behind its
-latest release. Observed 2026-06-11 after such a gap: a stale Supervisor
+"Supervisor" here means the **Home Assistant Supervisor** — the HAOS
+software component that manages the add-ons (it's not a person / race
+official). If the Pi sits powered off for weeks, that Supervisor falls
+behind its latest release. Observed 2026-06-11 after such a gap: a stale Supervisor
 **blocks all app-store operations** — install, update, rebuild, even
 `ha store reload` fail with *"blocked from execution, supervisor needs to
 be updated first"* — until you run `ha supervisor update` (needs internet,
@@ -453,15 +455,22 @@ What this does and doesn't affect:
   its own update — an extra multi-minute download over a flaky hotspot,
   exactly when you don't want it.
 
-**Race rule: keep the Supervisor updated.** A few days before the race,
-power the Pi up on a network with internet, run `ha supervisor update`, and
-verify both apps. Then *during* the race, whenever the hotspot is up, check
-`ha supervisor info` and update it again if one is offered — a current
-Supervisor means an emergency app fix is just push files → `ha store
-reload` → update, with no Supervisor detour first. (App rebuilds need
-internet for `apk`/`pip` regardless, so the hotspot is a prerequisite for
-any mid-race fix.) Time Supervisor updates for when the car is stopped —
-sensor pushes drop for a few seconds while it restarts.
+**Race rule: update once before, then freeze.** A few days before the race,
+on a network with solid internet, let the Supervisor get current (or run
+`ha supervisor update`) and verify both apps (`solar-car-canbus` and
+`solar_epaper`) start and push sensors. After that, **don't update HAOS, the
+Supervisor, or the apps at the track** — updating a working system mid-race
+only adds risk and restarts. The Supervisor auto-updates itself when online
+anyway, so once it's current there's nothing to do.
+
+> [!NOTE]
+> One exception to "freeze": if you genuinely have to **rebuild or update the
+> e-ink (`solar_epaper`) or CANbus (`solar-car-canbus`) app during the race**,
+> a stale Supervisor will block it (*"supervisor needs to be updated first"*) —
+> so you'd have to run `ha supervisor update` *before* the app fix. Both steps
+> need internet (app rebuilds pull `apk`/`pip`), so this is only possible with
+> the hotspot up. Getting the Supervisor current beforehand is what avoids this
+> detour if that situation ever arises.
 
 Both apps live in `/addons/` on the Raspberry Pi (`/addons/solar_epaper/` and `/addons/solar-car-canbus/`) and install from Settings > Apps > App Store > Local apps. This directory persists across reboots.  
 ## 9. Network setup discussion
