@@ -37,37 +37,26 @@ as work on the PC piles up changes that need the Pi.
       the real race configuration. **Termination finding:** with BOTH devices
       connected, the adapter's 120R switch should be **OFF** (the EZkontrol
       and battery terminate the two ends) — verified working that way.
-- [ ] **Pi zero-RX = asymmetric RX failure (2026-06-13). NOT ground, NOT
-      termination, NOT bitrate.** Smoke test (both devices, EZkontrol 20 Hz
-      continuous — no battery-silence confound): Pi `can0` healthy (500k,
-      ERROR-ACTIVE, **0 RX, 0 errors**) but hears nothing, while the same
-      adapter+bus decoded both on the PC minutes earlier.
-      **TX-ACK test overturns the old `DEBUG-pi-can-rx-20260608.md` ground
-      theory:** `cansend can0 100#..` from the Pi → tx_packets 0→1, **0
-      errors, ERROR-ACTIVE**. A clean TX means a device ACKed it AND the Pi
-      read the ACK bit back — so the adapter IS electrically on the bus and
-      its RX works at the bit level. Not common-mode/ground (would be
-      symmetric; TX would fail). So: can transmit-and-get-ACKed but receives
-      0 whole frames = RX-specific. Prime suspects: bit-timing sync to
-      externally-initiated frames, or a driver/firmware RX bug. (The old
-      "forced PC timing still 0 RX" was confounded — battery-only, likely
-      bus-off/silent.)
-      **UPDATE 2026-06-15 (session 2) — DON'T trust today's 0-RX yet; the car
-      power kept getting switched OFF.** EZkontrol only broadcasts when the car
-      is on, so some "0 RX" reads were a QUIET BUS, not a dead receiver. Also:
-      the adapter is **galvanically ISOLATED** → ground/common-mode/earth-loop
-      theories are OUT (the earlier "it's electrical/ground" call is wrong).
-      Termination ON, USB3 port, splitter removed → none changed anything.
-      **RESUME (decisive, do first):** car ON *and confirmed on*, EZkontrol at
-      250k alone → move adapter to the **PC**, run `python ezkontrol_decode.py
-      -250`. PC sees frames ⇒ it IS broadcasting ⇒ real Pi receive-but-discard
-      problem (chase FDCAN filter/firmware). PC sees nothing ⇒ not broadcasting
-      ⇒ Pi was never the problem (power-cycle EZkontrol). Full arc +
-      reasoning: `CANbus_data/docs/DEBUG-pi-rx-plan-20260613.md` (SESSION 2).
-      ⚠️ **EZkontrol is currently at protocol 1 (250k) — set it BACK to 101
-      (500k)** before rejoining the shared bus with the battery. Battery
-      unplugged, splitter removed, adapter term ON. gsusb test unbound the
-      kernel driver → `can0` gone until replug/reboot; addon still STOPPED.
+- [x] ~~Pi zero-RX root cause~~ — SOLVED 2026-06-18 (full arc:
+      `CANbus_data/docs/DEBUG-pi-rx-plan-20260613.md`). It was a **kernel
+      gs_usb / hardware-timestamp regression** on the HAOS 6.12 kernel for
+      this STM32G431 candleLight adapter: the Pi received+ACKed frames (proven
+      — the lone battery stayed alive only because the Pi was ACKing it) but
+      never delivered them to software. Ruled out: electrical, ground (it's
+      isolated), wiring, termination, bitrate, interfering software, and a
+      clean-replug test. No in-place fix on read-only HAOS.
+- [x] ~~Reflash adapter to slcan firmware~~ — DONE 2026-06-18. The SH-C31G is
+      now on **slcan** (CDC-serial), not gs_usb. Avoids the broken gs_usb path
+      entirely; DSD TECH's documented Linux route.
+- [ ] **Migrate software gs_usb → slcan** — plan:
+      `CANbus_data/docs/SLCAN_MIGRATION_PLAN.md`. Step 0 = validate slcan RX on
+      the Pi (`python3 -c "import can; print(can.Bus(interface='slcan',
+      channel='/dev/ttyACM0', bitrate=500000).recv(timeout=5))"`), then add
+      `SlcanTransport` to transport.py (default), update PC tools, and the
+      add-on (can_reader bus layer → slcan, simplified run.sh, `uart: true`,
+      v0.8.0, +pyserial). gs_usb code kept for reflash-back.
+      ⚠️ **EZkontrol is on protocol 1 (250k) from debugging — set it BACK to
+      101 (500k)** before the real shared bus. Add-on currently STOPPED.
 - [ ] Check HA automations/dashboards for numeric comparisons against
       `sensor.ezkontrol_op_mode` (now `"Normal"/"Cruise"/"EBS"/"Hold"`,
       was `0/2/3/4`) and update any found.
