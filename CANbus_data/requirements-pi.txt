@@ -4,8 +4,8 @@
 #   python3 -m venv ~/canbus-venv
 #   ~/canbus-venv/bin/pip install -r requirements-pi.txt
 #
-# Unlike on the PC, the Pi needs no USB/libusb packages: the
-# SH-C31G is handled by the kernel's gs_usb module and exposed as the
-# SocketCAN interface can0, which python-can talks to directly.
+# The SH-C31G runs slcan firmware and appears as a serial port, so python-can
+# talks to it via its slcan backend (pyserial). No USB/libusb packages needed.
 
 python-can==4.6.1
+pyserial==3.5

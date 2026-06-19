@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Solar Car CANbus reader for Home Assistant.
 
-Reads two devices from ONE shared SocketCAN bus and pushes named sensor
-states to HA via the REST API:
+Reads two devices from ONE shared CAN bus (an SH-C31G on slcan firmware,
+opened as a serial port via python-can) and pushes named sensor states to HA
+via the REST API:
 
   * EZkontrol B48800 motor controller  -- 29-bit extended IDs (0x1801xxxx)
   * BESTGO battery (Lithium Valley BMS) -- 11-bit standard IDs (0x351..0x379)
@@ -17,12 +18,12 @@ to this file is VENDORED from CANbus_data/solarcar_can/ by sync_addon.py
 package has to be carried inside it). Edit the original, then re-sync.
 """
 import os
+import glob
 import time
 import socket
 import struct
 import logging
 import threading
-import subprocess
 
 import requests
 
@@ -35,7 +36,7 @@ logging.basicConfig(level=logging.INFO,
 
 HA_URL = os.environ.get("HA_URL", "http://supervisor/core")
 HA_TOKEN = os.environ.get("HA_TOKEN", "")
-CAN_INTERFACE = os.environ.get("CAN_INTERFACE", "can0")
+CAN_PORT = os.environ.get("CAN_PORT", "")   # slcan serial port; "" = auto-detect
 CAN_BITRATE = os.environ.get("CAN_BITRATE", "500000")
 
 BUS_RETRY_SEC = 10       # how often to retry opening a lost/missing CAN bus
@@ -260,42 +261,35 @@ def network_monitor(stop):
         stop.wait(NET_INTERVAL)
 
 
-def _iface_is_up():
-    """True if CAN_INTERFACE exists and is administratively up (IFF_UP).
-
-    A SocketCAN bind succeeds even on a *down* interface (recv then fails),
-    so we can't rely on can.Bus() raising to detect a dropped link — we have
-    to check IFF_UP ourselves before opening."""
-    try:
-        with open(f"/sys/class/net/{CAN_INTERFACE}/flags") as f:
-            return bool(int(f.read().strip(), 16) & 0x1)   # IFF_UP
-    except OSError:
-        return False   # interface missing (adapter unplugged)
+def find_port():
+    """The slcan adapter's serial port. Uses CAN_PORT if it's set and present,
+    else globs the usual serial paths (preferring the stable by-id symlink).
+    Re-globbing each retry means a replugged adapter is picked up without
+    restarting the add-on. None if nothing is plugged in."""
+    if CAN_PORT and os.path.exists(CAN_PORT):
+        return CAN_PORT
+    for pattern in ("/dev/serial/by-id/*", "/dev/ttyACM*", "/dev/ttyUSB*"):
+        hits = sorted(glob.glob(pattern))
+        if hits:
+            return hits[0]
+    return None
 
 
 def open_bus():
-    """Bring CAN_INTERFACE up if it's down or missing, then open SocketCAN.
+    """Open the slcan adapter (serial) with python-can. Returns a Bus or None.
 
-    The add-on has NET_ADMIN and iproute2, so a downed or replugged adapter
-    heals without restarting the add-on. Returns None if the interface can't
-    be brought up (e.g. adapter physically unplugged) — the caller keeps
-    retrying and reports canadapter_status=0 meanwhile."""
+    The SH-C31G runs slcan firmware and appears as a CDC-serial port, so this
+    is a completely different USB path than the old gs_usb/SocketCAN one (which
+    the HAOS kernel broke). Returns None if the adapter isn't present — the
+    caller keeps retrying and reports canadapter_status=0 meanwhile."""
     import can
-    if not _iface_is_up():
-        try:
-            subprocess.run(["ip", "link", "set", CAN_INTERFACE, "down"],
-                           capture_output=True)
-            subprocess.run(["ip", "link", "set", CAN_INTERFACE, "type", "can",
-                            "bitrate", CAN_BITRATE], check=True, capture_output=True)
-            subprocess.run(["ip", "link", "set", CAN_INTERFACE, "up"],
-                           check=True, capture_output=True)
-        except Exception as e:
-            logging.debug(f"CAN bring-up failed: {e}")
-            return None
+    port = find_port()
+    if not port:
+        return None
     try:
-        return can.interface.Bus(channel=CAN_INTERFACE, interface='socketcan')
+        return can.Bus(interface="slcan", channel=port, bitrate=int(CAN_BITRATE))
     except Exception as e:
-        logging.debug(f"CAN open failed: {e}")
+        logging.debug(f"slcan open failed on {port}: {e}")
         return None
 
 
@@ -340,12 +334,12 @@ def main():
                      name="network-monitor", daemon=True).start()
 
     if live:
-        logging.info(f"Opening SocketCAN {CAN_INTERFACE}")
         bus = open_bus()
         if bus is not None:
-            logging.info("Listening (live: " + ", ".join(d.name for d in live) + ")")
+            logging.info(f"slcan adapter open ({find_port()} @ {CAN_BITRATE} bps); "
+                         "listening (live: " + ", ".join(d.name for d in live) + ")")
         else:
-            logging.error(f"{CAN_INTERFACE} not available; will keep retrying "
+            logging.error("No slcan adapter found; will keep retrying "
                           f"every {BUS_RETRY_SEC}s (canadapter_status=0)")
     else:
         logging.info("All devices in dummy mode; CAN bus not opened")
@@ -357,7 +351,7 @@ def main():
                 bus_retry_at = now + BUS_RETRY_SEC
                 bus = open_bus()
                 if bus is not None:
-                    logging.info(f"{CAN_INTERFACE} recovered; listening again")
+                    logging.info(f"slcan adapter recovered ({find_port()}); listening again")
 
             if bus is not None:
                 try:

@@ -48,13 +48,25 @@ as work on the PC piles up changes that need the Pi.
 - [x] ~~Reflash adapter to slcan firmware~~ — DONE 2026-06-18. The SH-C31G is
       now on **slcan** (CDC-serial), not gs_usb. Avoids the broken gs_usb path
       entirely; DSD TECH's documented Linux route.
-- [ ] **Migrate software gs_usb → slcan** — plan:
-      `CANbus_data/docs/SLCAN_MIGRATION_PLAN.md`. Step 0 = validate slcan RX on
-      the Pi (`python3 -c "import can; print(can.Bus(interface='slcan',
-      channel='/dev/ttyACM0', bitrate=500000).recv(timeout=5))"`), then add
-      `SlcanTransport` to transport.py (default), update PC tools, and the
-      add-on (can_reader bus layer → slcan, simplified run.sh, `uart: true`,
-      v0.8.0, +pyserial). gs_usb code kept for reflash-back.
+- [x] ~~Build the slcan software~~ — DONE 2026-06-19 (commit, not yet
+      deployed). `SlcanTransport` + `find_slcan_port` + `CAN_TRANSPORT`
+      selector (default slcan) in transport.py; PC CLIs unchanged (use the
+      abstraction); add-on **0.8.0** (can_reader opens slcan/serial + auto-
+      detects port, simplified run.sh, `uart: true`, `can_port` option,
+      dropped NET_ADMIN/can_interface, +pyserial). gs_usb/socketcan kept for
+      reflash-back. Compiles, golden tests 7/7, dummy modes OK, transport
+      selector + error paths verified. NOT yet run against real hardware.
+- [ ] **Deploy + validate slcan (in the shop).** Order:
+      1. **Step 0 — validate RX on the Pi:** `python3 -c "import can;
+         print(can.Bus(interface='slcan', channel='/dev/ttyACM0',
+         bitrate=500000).recv(timeout=5))"` — a frame (not None) = the reflash
+         fixed it. (Confirm the port: `ls /dev/ttyACM* /dev/serial/by-id/`.)
+      2. **PC:** `pip install -r requirements.txt` (pulls pyserial), plug the
+         adapter into the laptop, `python monitor.py` — should show
+         `slcan COMx 500 kbps` and decode both devices.
+      3. **Pi add-on:** push `solar-car-canbus/` (incl. vendored `solarcar_can`)
+         → rebuild → `ha apps update local_solarcar_canbus` → start → verify
+         `sensor.bestgo_*`/`sensor.ezkontrol_*` + health sensors update.
       ⚠️ **EZkontrol is on protocol 1 (250k) from debugging — set it BACK to
       101 (500k)** before the real shared bus. Add-on currently STOPPED.
 - [ ] Check HA automations/dashboards for numeric comparisons against

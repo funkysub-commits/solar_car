@@ -1,5 +1,15 @@
 # slcan migration plan (2026-06-18)
 
+> **STATUS: software BUILT 2026-06-19** (not yet hardware-tested). Done:
+> `SlcanTransport` + `find_slcan_port` + `CAN_TRANSPORT` selector (default
+> slcan) in `transport.py`; add-on **0.8.0** (`can_reader.py` opens slcan and
+> auto-detects the serial port, simplified `run.sh`, `config.yaml` gains
+> `uart: true` + a `can_port` option and drops NET_ADMIN/can_interface,
+> Dockerfile/requirements gain `pyserial`); gs_usb + SocketCAN kept for
+> reflash-back; vendored copy re-synced. Verified off-hardware: compiles,
+> golden tests 7/7, dummy modes, transport selector + error paths. **Remaining
+> = the shop steps below (Step 0 validate → PC test → deploy add-on 0.8.0).**
+
 ## Why
 
 Multi-session debugging (`docs/DEBUG-pi-rx-plan-20260613.md`) proved the Pi

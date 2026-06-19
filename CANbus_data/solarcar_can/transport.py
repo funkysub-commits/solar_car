@@ -1,26 +1,29 @@
-"""Uniform CAN frame source over gs_usb (Windows) and SocketCAN (Linux).
+"""Uniform CAN frame source, transport selected by the CAN_TRANSPORT env var.
 
-Why two transports exist:
+  * slcan     -- DEFAULT (since 2026-06). The SH-C31G runs slcan firmware and
+                 enumerates as a CDC-serial port (COMx on Windows,
+                 /dev/ttyACM0 on Linux); python-can's slcan backend speaks the
+                 ASCII slcan protocol over it. We moved to slcan because the
+                 gs_usb path stopped delivering RX on the HAOS 6.12 kernel --
+                 see docs/SLCAN_MIGRATION_PLAN.md and
+                 docs/DEBUG-pi-rx-plan-20260613.md for the full story.
 
-  * On the Raspberry Pi / Linux, the kernel's gs_usb module claims the
-    SH-C31G adapter and exposes it as a SocketCAN network interface (can0).
-    The bitrate is a property of the interface, set when it is brought up
-    (see can_up.sh / the add-on's run.sh).
+  * gsusb     -- SH-C31G on the factory candleLight/gs_usb firmware, via direct
+                 libusb (no SocketCAN). Kept for reflash-back. python-can
+                 4.6.1 can't compute valid timing at this adapter's 170 MHz CAN
+                 clock, so we set the registers explicitly:
+                 sync=1 prop=1 phase1=13 phase2=2 sjw=2 => 17 tq;
+                 brp=20 -> 500000 bps, brp=40 -> 250000 bps.
 
-  * On Windows there is no SocketCAN, and python-can 4.6.1's
-    BitTiming.from_sample_point cannot find a valid (BRP, TSEG) for this
-    adapter's reported 170 MHz CAN clock -- so we talk to gs_usb directly
-    and set the bit-timing registers explicitly:
+  * socketcan -- the kernel gs_usb module exposes the adapter as can0 (Linux).
+                 Kept for reflash-back; the bitrate is set at interface
+                 bring-up (see can_up.sh / the add-on's run.sh).
 
-        sync=1, prop=1, phase1=13, phase2=2, sjw=2
-        => tq=17, sample point = (1+1+13)/17 = 88.2%
-        => brp=20: 170e6 / (20 * 17) = 500000 bps exactly
-        => brp=40: 170e6 / (40 * 17) = 250000 bps exactly
-
-open_transport() picks the right one automatically.
+open_transport() returns the selected transport. All expose
+recv(timeout)/describe()/close() and yield Frame(arbitration_id, data,
+is_extended).
 """
 import os
-import sys
 import time
 from collections import namedtuple
 
@@ -156,18 +159,90 @@ def ensure_socketcan(channel):
         pass
 
 
-def open_transport(bitrate=500_000, channel=None):
-    """Open the right transport for this platform.
+class SlcanTransport:
+    """slcan (serial-line CAN) via python-can. The SH-C31G on slcan firmware
+    enumerates as a CDC-serial port; python-can's slcan backend speaks the
+    ASCII slcan protocol over it. `bitrate` is sent as the slcan S-command
+    (500000 -> S6, 250000 -> S5)."""
 
-    Linux (Pi): SocketCAN on `channel` (default can0, override with the
-    CAN_CHANNEL environment variable). NOTE: the interface's configured
-    bitrate wins there; `bitrate` only applies to the gs_usb path.
-    Everything else (Windows): direct gs_usb at `bitrate`.
+    def __init__(self, port, bitrate):
+        import can
+        try:
+            self.bus = can.Bus(interface="slcan", channel=port, bitrate=bitrate)
+        except Exception as e:
+            raise TransportError(f"Could not open slcan adapter on '{port}': {e}")
+        self.port = port
+        self.bitrate = bitrate
+
+    def describe(self):
+        return f"slcan {self.port} {self.bitrate // 1000} kbps"
+
+    def recv(self, timeout):
+        """Return the next Frame, or None if `timeout` seconds pass."""
+        msg = self.bus.recv(timeout=timeout)
+        if msg is None:
+            return None
+        return Frame(msg.arbitration_id, bytes(msg.data), msg.is_extended_id)
+
+    def close(self):
+        try:
+            self.bus.shutdown()
+        except Exception:
+            pass
+
+
+def find_slcan_port():
+    """Locate the slcan adapter's serial port. Honors the CAN_PORT env var;
+    otherwise scans pyserial's port list, preferring a CANable/STM/USB-serial
+    device, then any /dev/ttyACM* or COM port. Returns None if none found."""
+    port = os.environ.get("CAN_PORT")
+    if port:
+        return port
+    try:
+        from serial.tools import list_ports
+    except ImportError:
+        return None
+    ports = list(list_ports.comports())
+
+    def looks_like_adapter(p):
+        blob = " ".join(filter(None, (
+            p.description, getattr(p, "manufacturer", None),
+            getattr(p, "product", None)))).lower()
+        return any(k in blob for k in
+                   ("canable", "slcan", "stm", "usb serial", "cdc"))
+
+    for p in ports:                       # best: a recognisable adapter
+        if looks_like_adapter(p):
+            return p.device
+    for p in ports:                       # next: any USB-serial / ACM / COM
+        d = p.device
+        if d.startswith("/dev/ttyACM") or d.upper().startswith("COM"):
+            return d
+    return ports[0].device if ports else None
+
+
+def open_transport(bitrate=500_000, channel=None):
+    """Open the CAN transport selected by CAN_TRANSPORT (default 'slcan').
+
+    slcan     -> SlcanTransport on the serial port (CAN_PORT, else auto-detect).
+    gsusb     -> GsUsbTransport (direct libusb) at `bitrate`.
+    socketcan -> SocketCanTransport on `channel` (CAN_CHANNEL, default can0).
     """
-    channel = channel or os.environ.get("CAN_CHANNEL", "can0")
-    if sys.platform.startswith("linux"):
+    transport = os.environ.get("CAN_TRANSPORT", "slcan").lower()
+    if transport == "slcan":
+        port = find_slcan_port()
+        if not port:
+            raise TransportError(
+                "No slcan serial port found. Plug in the SH-C31G (slcan "
+                "firmware), set CAN_PORT, or simulate with the -*_dummy flags.")
+        return SlcanTransport(port, bitrate)
+    if transport == "gsusb":
+        return GsUsbTransport(bitrate)
+    if transport == "socketcan":
+        channel = channel or os.environ.get("CAN_CHANNEL", "can0")
         return SocketCanTransport(channel)
-    return GsUsbTransport(bitrate)
+    raise TransportError(
+        f"Unknown CAN_TRANSPORT '{transport}' (use slcan, gsusb, or socketcan)")
 
 
 class DummyFrameSource:
