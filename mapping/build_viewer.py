@@ -29,6 +29,11 @@ HTML = r"""<!DOCTYPE html>
     padding:4px 10px;cursor:pointer;font:inherit;font-size:13px}
   #tabs button:hover{border-color:var(--accent)}
   #tabs button.active{background:var(--accent);color:#161b22;border-color:var(--accent);font-weight:600}
+  #locate{background:#21262d;color:var(--fg);border:1px solid #30363d;border-radius:6px;
+    padding:4px 10px;cursor:pointer;font:inherit;font-size:13px;white-space:nowrap}
+  #locate:hover{border-color:#4cc9f0}
+  #locate.on{background:#4cc9f0;color:#161b22;border-color:#4cc9f0;font-weight:600}
+  #locate.err{border-color:#f94144;color:#f94144}
   .stats{display:flex;gap:16px;flex-wrap:wrap;margin-left:auto}
   .stat{color:var(--muted)} .stat b{color:var(--fg)}
   #map{flex:1 1 auto;min-height:0}
@@ -45,6 +50,7 @@ HTML = r"""<!DOCTYPE html>
   <header>
     <h1>2026 Solar Car Challenge</h1>
     <div id="tabs"></div>
+    <button id="locate" title="Show this device's location on the map">📍 Locate me</button>
     <div class="stats">
       <span class="stat">Dist <b id="s-dist"></b></span>
       <span class="stat">Range <b id="s-range"></b></span>
@@ -206,6 +212,51 @@ DAYS.forEach((d,i)=>{const b=document.createElement('button');b.textContent=d.da
 if(DAYS.length>1){const b=document.createElement('button');b.textContent='Whole route';
   b.onclick=()=>select('all',b);tabs.appendChild(b);}
 select(0,tabs.firstChild);
+
+// ---- this device's live location (browser geolocation) ----
+// Plots wherever the viewing phone/laptop is, as a blue "This device" dot with
+// an accuracy ring, and keeps it updated. The dot is added straight to the map
+// (not routeLayer) so switching day tabs never clears it. We don't auto-pan -
+// the course stays framed; the button recenters on the dot on demand.
+// Note: browsers only grant geolocation in a secure context (HTTPS, or
+// localhost). Over a plain-http LAN address the button shows "Needs HTTPS".
+let meMarker=null, meAcc=null, meWatch=null;
+const locateBtn=document.getElementById('locate');
+function showMe(lat,lon,acc){
+  const ll=[lat,lon];
+  if(!meMarker){
+    meAcc=L.circle(ll,{radius:acc,color:'#4cc9f0',weight:1,
+      fillColor:'#4cc9f0',fillOpacity:.12}).addTo(map);
+    meMarker=L.circleMarker(ll,{radius:7,color:'#fff',weight:2,
+      fillColor:'#4cc9f0',fillOpacity:1}).bindTooltip('This device').addTo(map);
+  } else { meMarker.setLatLng(ll); meAcc.setLatLng(ll).setRadius(acc); }
+}
+function locFail(err){
+  locateBtn.classList.remove('on'); locateBtn.classList.add('err');
+  const insecure = location.protocol!=='https:'
+    && !['localhost','127.0.0.1'].includes(location.hostname);
+  if(err && err.code===1){ locateBtn.textContent='📍 Location blocked';
+    locateBtn.title='Location permission was denied for this site.'; }
+  else if(insecure){ locateBtn.textContent='📍 Needs HTTPS';
+    locateBtn.title='Browsers only allow location over HTTPS (or localhost). '
+      +'Open Home Assistant via HTTPS to plot this device.'; }
+  else { locateBtn.textContent='📍 No location';
+    locateBtn.title='Could not get a location fix.'; }
+}
+function startLocate(){
+  if(!('geolocation' in navigator)){ locFail(null); return; }
+  if(meWatch!=null) navigator.geolocation.clearWatch(meWatch);
+  meWatch=navigator.geolocation.watchPosition(
+    pos=>{ locateBtn.classList.remove('err'); locateBtn.classList.add('on');
+      locateBtn.textContent='📍 Center on me'; locateBtn.title='Center the map on this device';
+      showMe(pos.coords.latitude,pos.coords.longitude,pos.coords.accuracy||25); },
+    locFail, {enableHighAccuracy:true,maximumAge:5000,timeout:20000});
+}
+locateBtn.onclick=()=>{
+  if(meMarker) map.setView(meMarker.getLatLng(), Math.max(map.getZoom(),13));
+  else startLocate();
+};
+startLocate();   // attempt on load; falls back gracefully if blocked
 </script>
 </body>
 </html>
