@@ -73,11 +73,12 @@ def scenarios(D, A):
         return merged, [w for w in ws if w["key"] not in set(hidden)]
 
     def S(name, speed=22, temps=None, soc=78, voltage=58.4, warnings=None,
-          stale=None, ha_msg="", clock_str="14:32"):
+          stale=None, ha_msg="", clock_str="14:32",
+          header_addr="IP: 192.168.1.50:8123"):
         return name, dict(speed=speed, temps=temps if temps is not None else temps_ok,
                           soc=soc, voltage=voltage, warnings=warnings or [],
                           stale=stale if stale is not None else no_stale,
-                          ha_msg=ha_msg, clock_str=clock_str)
+                          ha_msg=ha_msg, clock_str=clock_str, header_addr=header_addr)
 
     # --- nominal -----------------------------------------------------------
     yield S("normal")
@@ -111,7 +112,7 @@ def scenarios(D, A):
     # --- HA unreachable ----------------------------------------------------
     st = _mkstale(D, D.STALE_KEYS)
     ws = A.build_warnings(temps_ok, st, (False, False, False), ha_down=True)
-    yield S("ha_down", warnings=ws, stale=st)
+    yield S("ha_down", warnings=ws, stale=st, header_addr="Pi Offline")
     # --- inference fallback (health sensors absent) ------------------------
     st, ws = assess(temps_none, _mkstale(D, D.STALE_KEYS), HEALTH_UNKNOWN)
     yield S("can_down_inferred", speed=None, temps=temps_none, soc=None,
@@ -152,7 +153,8 @@ def render_group(group):
     unit = GROUPS[group][1]
     for name, kw in scenarios(D, A):
         img = R.render(kw["speed"], unit, kw["temps"], kw["soc"], kw["voltage"], "V",
-                       kw["warnings"], kw["stale"], kw["ha_msg"], kw["clock_str"])
+                       kw["warnings"], kw["stale"], kw["ha_msg"], kw["clock_str"],
+                       kw["header_addr"])
         digest = hashlib.sha256(img.tobytes()).hexdigest()
         img.save(GOLDEN / f"{group}_{name}.png")
         print(f"{group}/{name}\t{digest}")

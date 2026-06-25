@@ -5,7 +5,7 @@ from PIL import Image, ImageDraw
 import config
 import layout
 from layout import (W, H, HEAD_H, DIV_X, BAT_DIV_Y, MSG_DIV_Y, CONTENT_BOT,
-                    F_TITLE, F_LABEL, F_SPEED, F_UNIT, F_SOC, F_TEMP,
+                    F_TITLE, F_HEAD_IP, F_LABEL, F_SPEED, F_UNIT, F_SOC, F_TEMP,
                     F_SMALL, F_MSG, F_WARN, F_BADGE)
 from units import clamp, to_display_temp
 
@@ -94,6 +94,19 @@ def draw_speedometer(d, speed, unit, stale=False):
     if stale:
         w = d.textlength("SPEED", font=F_LABEL)
         draw_warn_mark(d, cx + w / 2 + 18, 62, 22)
+
+
+def draw_header_address(d, text):
+    """The header connection line - e.g. "IP: 192.168.1.50:8123" or
+    "Pi Offline" - drawn solid in the gap between the title and the clock. It
+    has no partial-refresh region of its own, so it is repainted only as part
+    of a full-screen refresh (see display.py), not on regular per-region
+    updates."""
+    if not text:
+        return
+    txt = _ellipsize(d, text, F_HEAD_IP, layout.HEAD_IP_MAXW)
+    d.text((layout.HEAD_IP_CX, layout.HEAD_IP_CY), txt,
+           font=F_HEAD_IP, fill=0, anchor="mm")
 
 
 def draw_messages(d, ha_msg):
@@ -234,11 +247,11 @@ def draw_warnings_bar(d, warnings):
 
 
 def render(speed, speed_unit, temps, soc, voltage, voltage_unit,
-           warnings, stale, ha_msg, clock_str):
+           warnings, stale, ha_msg, clock_str, header_addr=""):
     """speed/speed_unit pass through from the HA entity untouched. warnings is
     the visible (non-hidden) ordered warning list; ha_msg is the user's
     free-text message (shown in the MESSAGE box, not the warning bar). stale
-    maps value keys -> bool."""
+    maps value keys -> bool. header_addr is the faint IP/offline header line."""
     img = Image.new('1', (W, H), 255)
     d = ImageDraw.Draw(img)
 
@@ -253,6 +266,7 @@ def render(speed, speed_unit, temps, soc, voltage, voltage_unit,
         img.paste(layout.LOGO, (14, 5))
         tx = 14 + layout.LOGO.width + 12
     d.text((tx, 9), config.TITLE, font=F_TITLE, fill=0, anchor="la")
+    draw_header_address(d, header_addr)
     d.text((W - 18, 9), clock_str, font=F_TITLE, fill=0, anchor="ra")
 
     draw_speedometer(d, speed, speed_unit, stale.get("speed", False))

@@ -1,5 +1,5 @@
 name: Solar Car E-Ink Display
-version: "1.4.0"
+version: "1.5.0"
 slug: solar_epaper
 description: Renders a Solar Car telemetry dashboard (speedometer, battery, temperatures) on a Waveshare 7.5" V2 e-ink display
 arch:
@@ -9,6 +9,7 @@ boot: auto
 init: false
 full_access: true
 homeassistant_api: true
+hassio_api: true
 options:
   title: SOLAR STORMS
   speed_max: 40

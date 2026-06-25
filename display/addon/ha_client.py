@@ -51,6 +51,65 @@ def ha_unreachable():
             and time.time() - _first_fail >= _UNREACHABLE_AFTER_SECS)
 
 
+# --- Header IP line ---------------------------------------------------------
+# The Pi's LAN IP rarely changes, so it is cached and only re-queried
+# occasionally; the last good value is kept while a refresh is failing.
+_host_ip = None
+_host_ip_at = 0.0
+_HOST_IP_TTL = 300.0      # re-query at most this often once we have an address
+_HOST_IP_RETRY = 30.0     # but retry this often while we still have none
+
+
+def _query_host_ip():
+    """Ask the Supervisor for the Pi's primary LAN IPv4 (CIDR suffix stripped).
+    None on any failure - Supervisor unreachable, missing hassio_api capability,
+    or no interface with an address."""
+    try:
+        r = requests.get(f"{config.SUPERVISOR_URL}/network/info",
+                         headers={"Authorization": f"Bearer {config.SUPERVISOR_TOKEN}"},
+                         timeout=5)
+        r.raise_for_status()
+        ifaces = (r.json().get("data") or {}).get("interfaces") or []
+    except Exception as e:
+        logging.debug(f"network/info failed: {e}")
+        return None
+    # Prefer the interface Supervisor marks primary, then any connected one,
+    # and take the first IPv4 address it actually has.
+    ifaces.sort(key=lambda i: (not i.get("primary"), not i.get("connected")))
+    for i in ifaces:
+        addrs = ((i.get("ipv4") or {}).get("address")) or []
+        if addrs:
+            return addrs[0].split("/")[0]
+    return None
+
+
+def host_ip():
+    """The Pi's LAN IPv4 address as a string, cached. Returns the last good
+    value while a refresh is failing, or None until one is ever obtained."""
+    global _host_ip, _host_ip_at
+    now = time.time()
+    fresh = _host_ip is not None and (now - _host_ip_at) < _HOST_IP_TTL
+    backoff = _host_ip is None and (now - _host_ip_at) < _HOST_IP_RETRY
+    if fresh or backoff:
+        return _host_ip
+    ip = _query_host_ip()
+    _host_ip_at = now
+    if ip:
+        _host_ip = ip
+    return _host_ip
+
+
+def header_address():
+    """The header connection line: 'IP: <lan-ip>:<port>' when Home Assistant is
+    reachable and the address is known, else 'Pi Offline'. The add-on runs on
+    the Pi, so 'offline' here means the dashboard can't be reached (HA is down
+    or the LAN address is unknown) - not that the panel itself has stopped."""
+    if ha_unreachable():
+        return "Pi Offline"
+    ip = host_ip()
+    return f"IP: {ip}:{config.HA_PORT}" if ip else "Pi Offline"
+
+
 def ha_get(entity):
     """Return (state, attributes, last_reported_iso) for an entity. last_reported
     is preferred over last_updated because it advances on every push, even when

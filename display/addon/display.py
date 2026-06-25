@@ -15,7 +15,7 @@ focused modules, all copied flat next to this file in the container:
   panel.py      Waveshare driver guard, GPIO diagnostics, refresh state ops
 
 Layout
-  Header        : team logo + title + clock
+  Header        : team logo + title + HA IP / "Pi Offline" line + clock
   Left          : analog speedometer gauge (value + unit exactly as the
                   configured HA entity reports them - no conversion here)
   Right-top     : battery icon (state of charge) + pack voltage
@@ -185,10 +185,11 @@ def main():
 
     stale, visible = assemble()
     clock = datetime.now().strftime("%H:%M")
+    header_addr = ha_client.header_address()
     powered = ha_get(config.POWER_TOGGLE)[0] != "off"   # default ON if the toggle is absent
     if powered:
         img = render(speed, speed_unit, temps, soc, voltage, voltage_unit,
-                     visible, stale, ha_msg, clock)
+                     visible, stale, ha_msg, clock, header_addr)
         full_refresh(epd, img)            # clean base frame, then partial mode
         logging.info("initial frame drawn")
     else:
@@ -264,6 +265,7 @@ def main():
 
             stale, visible = assemble()
             clock = datetime.now().strftime("%H:%M")
+            header_addr = ha_client.header_address()
 
             snaps = region_snaps(speed, speed_unit, temps, soc, voltage, visible,
                                  stale, ha_msg, clock)
@@ -272,7 +274,7 @@ def main():
 
             if data_changed or force or turning_on:
                 img = render(speed, speed_unit, temps, soc, voltage, voltage_unit,
-                             visible, stale, ha_msg, clock)
+                             visible, stale, ha_msg, clock, header_addr)
                 spd_txt = "--" if speed is None else f"{speed:.0f}{speed_unit}"
                 if turning_on or not awake or force or refresh_count >= config.FULL_REFRESH_EVERY:
                     full_refresh(epd, img)        # power-on / wake / de-ghost
@@ -293,7 +295,7 @@ def main():
                 # no telemetry change for a while - settle the image and sleep
                 # the panel (e-paper must not be left powered/active when idle)
                 img = render(speed, speed_unit, temps, soc, voltage, voltage_unit,
-                             visible, stale, ha_msg, clock)
+                             visible, stale, ha_msg, clock, header_addr)
                 settle_and_sleep(epd, img)
                 awake = False
                 last_snaps = snaps

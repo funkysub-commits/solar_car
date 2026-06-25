@@ -68,7 +68,10 @@ def region_snaps(speed, speed_unit, temps, soc, voltage, warnings, stale,
                  ha_msg, clock_str):
     """Per-region coarse snapshot - a region is only refreshed when its tuple
     changes. speed/speed_unit come straight from the HA entity. Stale flags are
-    included so a value's "!" mark appearing/clearing triggers a refresh."""
+    included so a value's "!" mark appearing/clearing triggers a refresh.
+
+    The header IP line is deliberately absent: it has no partial-refresh region
+    and repaints only on full-screen refreshes, so it never drives a refresh."""
     return {
         "speed": (None if speed is None else round(speed), speed_unit,
                   stale.get("speed", False)),

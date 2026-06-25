@@ -14,6 +14,15 @@ HA_URL = os.environ.get("HA_URL", "http://supervisor/core").rstrip("/")
 HA_TOKEN = os.environ.get("HA_TOKEN", "")
 TITLE = os.environ.get("TITLE", "SOLAR STORMS")
 
+# The Supervisor API (separate from the HA Core proxy above) is used only to
+# discover the Pi's LAN IP for the header line. SUPERVISOR_TOKEN is injected
+# into every add-on container; reaching /network/info also needs
+# `hassio_api: true` in config.yaml. HA_PORT is the port shown after the IP
+# (Home Assistant's web UI, 8123 by default).
+SUPERVISOR_URL = os.environ.get("SUPERVISOR_URL", "http://supervisor").rstrip("/")
+SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", HA_TOKEN)
+HA_PORT = os.environ.get("HA_PORT", "8123")
+
 # Poll intervals are clamped to sane minimums so a mistyped (e.g. negative)
 # option can't turn the loop into a Home Assistant-hammering busy spin.
 SPEED_POLL = max(0.2, float(os.environ.get("SPEED_POLL", "2.5")))  # seconds between speedometer updates

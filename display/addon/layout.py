@@ -25,6 +25,13 @@ BAT_DIV_Y = 262      # right column: battery above, temperatures below
 MSG_DIV_Y = 300      # left column: speedometer above, message box below
 CONTENT_BOT = 424    # main content ends here; below is the warning bar
 
+# Header IP / "Pi Offline" line: solid text centred in the gap between the
+# title and the clock. It has no partial-refresh region of its own, so it
+# repaints only on full-screen refreshes - not on the regular per-region
+# updates - which keeps it off the high-frequency refresh path.
+HEAD_IP_CX, HEAD_IP_CY = 480, 24
+HEAD_IP_MAXW = 232
+
 # Speedometer (left-top)
 SPEED_CX, SPEED_CY, SPEED_R = 228, 176, 86
 
@@ -82,6 +89,7 @@ def _font(name, size):
 
 
 F_TITLE  = _font("DejaVuSans-Bold.ttf", 28)
+F_HEAD_IP = _font("DejaVuSans.ttf", 18)     # faint header IP / "Pi Offline" line
 F_LABEL  = _font("DejaVuSans-Bold.ttf", 19)
 F_SPEED  = _font("DejaVuSans-Bold.ttf", 54)
 F_UNIT   = _font("DejaVuSans.ttf", 20)
