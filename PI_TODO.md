@@ -37,17 +37,29 @@ as work on the PC piles up changes that need the Pi.
       the real race configuration. **Termination finding:** with BOTH devices
       connected, the adapter's 120R switch should be **OFF** (the EZkontrol
       and battery terminate the two ends) — verified working that way.
-- [x] ~~Pi zero-RX root cause~~ — SOLVED 2026-06-18 (full arc:
-      `CANbus_data/docs/DEBUG-pi-rx-plan-20260613.md`). It was a **kernel
-      gs_usb / hardware-timestamp regression** on the HAOS 6.12 kernel for
-      this STM32G431 candleLight adapter: the Pi received+ACKed frames (proven
-      — the lone battery stayed alive only because the Pi was ACKing it) but
-      never delivered them to software. Ruled out: electrical, ground (it's
-      isolated), wiring, termination, bitrate, interfering software, and a
-      clean-replug test. No in-place fix on read-only HAOS.
+- [ ] **Pi zero-RX root cause — STILL OPEN (gs_usb-regression theory
+      OVERTURNED 2026-06-25).** The 2026-06-18 conclusion was a **kernel
+      gs_usb / hardware-timestamp regression** (full arc:
+      `CANbus_data/docs/DEBUG-pi-rx-plan-20260613.md`). That is now **wrong**:
+      the adapter was reflashed to slcan (a different USB stack that never
+      touches gs_usb) and the Pi **still gets 0 RX** (2026-06-25), so the
+      gs_usb driver cannot be the cause. The fault is host-specific and shared
+      by both USB paths — leading suspects: the **HAOS kernel/USB stack**, the
+      **Pi-4 VL805 USB host controller**, or python-can's slcan backend. Still
+      ruled out: electrical, ground (isolated), wiring, termination, bitrate,
+      software (two independent stacks fail), port contention, undervoltage.
+      ⚠️ The "worked on the Pi 2026-05-30" baseline was **never logged** (no
+      candump/sensor/kernel capture — only a verbal "it's working"; the
+      `uname` turn was interrupted), so even the regression *premise* (older
+      kernel worked) has no data. Full writeup + next experiments (can-utils,
+      powered hub, fresh Pi OS, MCP2515 SPI HAT, 2nd-adapter loopback):
+      **`CANbus_data/docs/DEBUG-pi-rx-slcan-20260624.md`**.
 - [x] ~~Reflash adapter to slcan firmware~~ — DONE 2026-06-18. The SH-C31G is
-      now on **slcan** (CDC-serial), not gs_usb. Avoids the broken gs_usb path
-      entirely; DSD TECH's documented Linux route.
+      now on **slcan** (CDC-serial), not gs_usb; DSD TECH's documented Linux
+      route. **NOTE:** this did *not* fix the Pi — slcan RX on the Pi is also 0
+      (2026-06-25). It sidesteps the gs_usb *driver*, but the real fault is
+      upstream of it (host USB stack / VL805). The reflash is still fine to
+      keep; it just isn't the cure it was expected to be.
 - [x] ~~Build the slcan software~~ — DONE 2026-06-19 (commit, not yet
       deployed). `SlcanTransport` + `find_slcan_port` + `CAN_TRANSPORT`
       selector (default slcan) in transport.py; PC CLIs unchanged (use the
@@ -56,17 +68,57 @@ as work on the PC piles up changes that need the Pi.
       dropped NET_ADMIN/can_interface, +pyserial). gs_usb/socketcan kept for
       reflash-back. Compiles, golden tests 7/7, dummy modes OK, transport
       selector + error paths verified. NOT yet run against real hardware.
-- [ ] **Deploy + validate slcan (in the shop).** Order:
-      1. **Step 0 — validate RX on the Pi:** `python3 -c "import can;
-         print(can.Bus(interface='slcan', channel='/dev/ttyACM0',
-         bitrate=500000).recv(timeout=5))"` — a frame (not None) = the reflash
-         fixed it. (Confirm the port: `ls /dev/ttyACM* /dev/serial/by-id/`.)
-      2. **PC:** `pip install -r requirements.txt` (pulls pyserial), plug the
-         adapter into the laptop, `python monitor.py` — should show
-         `slcan COMx 500 kbps` and decode both devices.
-      3. **Pi add-on:** push `solar-car-canbus/` (incl. vendored `solarcar_can`)
-         → rebuild → `ha apps update local_solarcar_canbus` → start → verify
-         `sensor.bestgo_*`/`sensor.ezkontrol_*` + health sensors update.
+- [x] ~~Step 0 — validate slcan RX on the Pi~~ — DONE 2026-06-25, **FAILED**:
+      `recv(timeout=5)` returned None / 0 frames (incl. on a USB-3 port). Same
+      adapter decoded 86–92 frames on the laptop, so the slcan *software* is
+      good — the **Pi receive path is broken regardless of firmware**.
+- [x] ~~PC slcan test~~ — DONE 2026-06-25: laptop `monitor.py`/BestgoDecoder on
+      `COM5` decoded the battery cleanly (SOC 54%, ~52.4 V, 14 IDs). The slcan
+      0.8.0 code path is validated end-to-end off the Pi.
+- [ ] **Find the Pi zero-RX cause (the real blocker).** slcan deploy is
+      pointless until the Pi can receive at all. Full tree + commands in
+      `CANbus_data/docs/DEBUG-pi-rx-slcan-20260624.md`:
+      - **T0 (do first): fresh SD, latest HAOS, slcan smoke test.** A clean
+        install wipes the debugging cruft (unbound driver, 0.7.0 add-on's
+        uhubctl power-cycling). Install only Advanced SSH & Web Terminal
+        (**Protection Mode OFF** — else no Docker/`/dev`), no CAN add-on;
+        confirm adapter = slcan (`16d0:117e`, `/dev/ttyACM0`); battery-only bus
+        with adapter 120 Ω **ON** (~60 Ω); then a throwaway `python:3.12-slim`
+        container (`--device=/dev/ttyACM0`) running
+        `can.Bus(interface='slcan', ...).recv(timeout=5)`. Frame ⇒ it was
+        cruft → rebuild clean + **image the SD**. None ⇒ T1 (latest ≈ same
+        kernel, so this clears "cruft" but not "kernel").
+        - **PRE-STAGED 2026-06-26** on the clean Pi (`192.168.0.243`, kernel
+          **6.18.33-haos-raspi**, adapter slcan `16d0:117e`→`/dev/ttyACM0`,
+          Protection Mode OFF, no CAN add-on): offline image `slcan-smoketest`
+          (python-can+pyserial baked in) built, and `/config/slcan_smoketest.sh`
+          staged (repo copy: `CANbus_data/tools/slcan_smoketest.sh`). **Dry-run
+          verified** the full path opens the bus + reads cleanly (0 frames, no
+          battery yet). SSH user is non-root `hassio` → the script uses
+          `sudo docker` (works). **At the shop: connect battery (term ON ~60 Ω)
+          → `bash /config/slcan_smoketest.sh`** → prints the BESTGO IDs or 0.
+        - **RAN 2026-06-26: T0 FAILED (confound-free).** Pi = **0 frames**;
+          same adapter moved to the laptop on the same bus/battery = **156
+          frames, all 14 IDs**. Clean install on the newest kernel still gets
+          0 → **cruft + battery ruled out**. Cause is Pi-host-specific on latest
+          HAOS → do **T1 (older HAOS)** next.
+      - **T1: older HAOS** on a spare SD (verify pre-6.12 `uname -r`) — tests
+        the kernel-regression theory. Frame ⇒ kernel; None ⇒ VL805 hardware.
+        - **IN PROGRESS 2026-06-27:** rolled back in-place (`ha os update
+          --version 15.0`) → Pi now on **kernel 6.6.74** (HAOS 15.0, slot B;
+          18.0 kept on slot A as fallback). The downgrade **wiped the Docker
+          image** (rebuilt it) but `/config/slcan_smoketest.sh` survived.
+          **Pending at the shop:** recover the adapter from DFU (`0483:df11` —
+          BOOT-switch gremlin) + connect battery → `bash
+          /config/slcan_smoketest.sh`. Independent LLM review endorsing this +
+          adding usbmon/powered-hub follow-ups: `docs/USB-CAN-RPi4-HAOS-debug-plan.md`.
+      - **T2: powered USB hub** (ordered) — VL805 under-power.
+      - **T3: MCP2515 SPI CAN HAT** — bypasses USB; race-day fallback.
+      Highest-leverage buy: a **2nd USB-CAN adapter** for confound-free loopback.
+- [ ] **Once the Pi can receive:** deploy add-on 0.8.0 — push
+      `solar-car-canbus/` (incl. vendored `solarcar_can`) → rebuild →
+      `ha apps update local_solarcar_canbus` → start → verify
+      `sensor.bestgo_*`/`sensor.ezkontrol_*` + health sensors update.
       ⚠️ **EZkontrol is on protocol 1 (250k) from debugging — set it BACK to
       101 (500k)** before the real shared bus. Add-on currently STOPPED.
 - [ ] Check HA automations/dashboards for numeric comparisons against

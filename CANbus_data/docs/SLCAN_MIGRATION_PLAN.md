@@ -1,14 +1,26 @@
 # slcan migration plan (2026-06-18)
 
-> **STATUS: software BUILT 2026-06-19** (not yet hardware-tested). Done:
+> **⚠️ OUTDATED PREMISE — slcan did NOT fix the Pi (tested 2026-06-25).**
+> Step 0 below was finally run: slcan RX on the Pi = **0 frames**, while the
+> same adapter decodes both devices on a laptop. Because slcan is a different
+> USB stack from gs_usb and *also* fails, the "gs_usb regression" premise this
+> plan is built on is **overturned** — the cause is host-specific and still
+> open. See **`DEBUG-pi-rx-slcan-20260624.md`**. The software changes below
+> were still built and are still valid as a uniform slcan code path (and are
+> the right thing to run once the Pi can receive at all); they just do **not**
+> resolve the zero-RX problem. Read the new doc before acting on this one.
+>
+> **STATUS: software BUILT 2026-06-19** (hardware-tested 2026-06-25 — slcan RX
+> on the Pi FAILED, see above). Done:
 > `SlcanTransport` + `find_slcan_port` + `CAN_TRANSPORT` selector (default
 > slcan) in `transport.py`; add-on **0.8.0** (`can_reader.py` opens slcan and
 > auto-detects the serial port, simplified `run.sh`, `config.yaml` gains
 > `uart: true` + a `can_port` option and drops NET_ADMIN/can_interface,
 > Dockerfile/requirements gain `pyserial`); gs_usb + SocketCAN kept for
 > reflash-back; vendored copy re-synced. Verified off-hardware: compiles,
-> golden tests 7/7, dummy modes, transport selector + error paths. **Remaining
-> = the shop steps below (Step 0 validate → PC test → deploy add-on 0.8.0).**
+> golden tests 7/7, dummy modes, transport selector + error paths. PC slcan
+> path verified on the laptop 2026-06-25 (decodes both devices). **Open: the
+> Pi receives 0 frames over slcan — root cause unresolved (not this plan).**
 
 ## Why
 
@@ -29,6 +41,14 @@ and the Pi add-on. The gs_usb/SocketCAN code is **kept** (not deleted) so the
 adapter can be reflashed back without losing support.
 
 ## Step 0 — VALIDATE slcan RX first (gate; do before any code)
+
+> **RESULT 2026-06-25: FAILED.** Ran exactly this against the live battery —
+> the Pi returned **None / 0 frames** (incl. on a USB-3 port), while the same
+> adapter on the laptop decoded 86–92 frames. slcan does **not** fix the Pi
+> zero-RX. The gate did its job, just after the build instead of before it.
+> Full analysis + the remaining-suspects list + next experiments are in
+> **`DEBUG-pi-rx-slcan-20260624.md`**. Do not deploy the add-on expecting
+> telemetry until the Pi can receive over *some* path.
 
 Before building anything, confirm slcan actually receives on the Pi (the
 whole point). Quick check with python-can's slcan interface against the live
