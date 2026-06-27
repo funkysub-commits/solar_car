@@ -105,6 +105,78 @@ completion handling regardless of which hub does the TT.)
 
 ---
 
+## UPDATE 2026-06-27 (cont.) — gs_usb loopback test ⚠️ RETRACTED (control failed)
+
+> **⚠️ The loopback numbers in this section are INVALID — do not trust them.**
+> A control run of the *same* gs_usb internal-loopback test on the **known-good
+> laptop** (which decodes 156 real frames fine) returned the **same poor result
+> as the Pi: 3 TX-echoes, 0 looped RX**. Since the test fails on a host we KNOW
+> works, the **test itself is broken** — gs_usb `GS_CAN_MODE_LOOP_BACK` doesn't
+> forward looped frames over USB here (or the echo handling is unreliable). So
+> the per-config figures below (Pi "20%", hub "0%", "6.6 no win") are **noise,
+> retracted.** Loopback is a dead end as a battery-free proxy (gs_usb here;
+> slcan `OI` isn't in our firmware build).
+>
+> **What still stands:** the real-frame evidence — Pi 0 / laptop 156 on 6.18
+> (2026-06-26), and 0 RX on 6.12. **Whether 6.6 fixes it is OPEN** — only the
+> real battery on 6.6 (direct) can answer it. The "hub makes it worse" claim is
+> also unproven. The only solid conclusion: the Pi doesn't receive real frames
+> on 6.12/6.18 while the laptop does.
+
+*(Original — now-retracted — loopback writeup follows, kept for the record.)*
+
+Reflashed the adapter back to **candlelight/gs_usb** (`1d50:606f` — the May-30
+firmware) to use gs_usb's robust internal loopback (`GS_CAN_MODE_LOOP_BACK`) for
+a battery-free RX test on 6.6. Measured delivery via SocketCAN hardware loopback
+and interface `rx_packets`/`tx_packets` (the counters that characterized the
+original 6.12 "0 RX"):
+
+| config (6.6, hardware loopback) | sent | delivered (rx≈tx) |
+| --- | --- | --- |
+| **Through the powered hub** (`1-1.1.1`) | 20 | **0** |
+| **Direct** (`1-1.1`), fast burst | 20 | 3 |
+| **Direct, slow-paced (~5 Hz)** | 15 | 3 |
+
+- **Direct on 6.6 delivers ~20% (≈80% loss); slowing the rate didn't help** →
+  not buffer overflow, a fundamentally lossy bulk-IN path.
+- **The powered hub made it WORSE (0%)** → ruled out (the extra
+  full-speed-behind-high-speed layer / GenesysLogic TT degrades it further).
+- **The kernel rollback shows no clear win** — 6.6 is impaired like 6.12/6.18.
+- No USB/xHCI errors logged during the sends → silent loss (the saga signature).
+  `usbmon` is available on 6.6 for a future URB-level trace.
+
+**Caveat — loopback is a pessimistic proxy.** Internal loopback couples TX+RX:
+each send makes BOTH a TX-echo and a looped RX frame on the one bulk-IN endpoint
+(2× load), and TX completion needs that echo (we hit `ENOBUFS` as the TX queue
+backed up). The **real battery is pure RX** — half the bulk-IN load, no TX — so
+it may deliver materially better than the 20% loopback figure. This is likely how
+2026-05-30 worked, so the battery test is **not** a foregone conclusion.
+
+**Conclusion:** the fault is the **Pi USB host (VL805/xHCI) receive path**,
+independent of kernel (6.6/6.12/6.18) and firmware (gs_usb/slcan) — the same
+adapter is flawless on the laptop. The kernel rollback is not the fix.
+
+### Fix options — constrained: the e-ink Waveshare HAT occupies SPI0 + the GPIO header
+A drop-in MCP2515 SPI CAN HAT is **not** straightforward: the e-Paper HAT uses
+SPI0 and the 40-pin header (and `GPIO25`, the MCP2515's usual INT/CS, collides
+with the e-ink DC pin). Realistic options, best first:
+1. **Real battery on 6.6, adapter DIRECT** (shop) — the definitive test; per the
+   pure-RX caveat it genuinely may work. Tool: `tools/canbus_smoketest.sh`
+   (staged at `/config/canbus_smoketest.sh`) → brings up `can0` + python-can
+   socketcan listen.
+2. **VL805 / Pi bootloader EEPROM update** — keeps USB, no GPIO needed; best
+   outcome if it helps (the xHCI setup-timeouts hint at it). "Update bootloader
+   from HA" is HAOS-18.0-only, so do it on 18.0 or boot Raspberry Pi OS once.
+3. **CAN-to-network bridge** (ESP32 + CAN transceiver, or a CANable on a small
+   separate host) pushing telemetry to HA over MQTT/REST — **sidesteps both the
+   USB problem AND the SPI/GPIO conflict**. Adds a component but robust.
+4. **SPI CAN HAT only with effort** — MCP2515/2518 on SPI1 (GPIO16-21) + a GPIO
+   stacking/breakout to clear the e-ink HAT and resolve pin conflicts.
+5. Return to **HAOS 18.0** regardless — the kernel isn't the differentiator
+   (`ha os boot-slot A`, no download).
+
+---
+
 ## What was tested (shop, 2026-06-25)
 
 - Adapter found in **DFU mode** again (`0483:df11`) — the recurring loose
