@@ -23,6 +23,7 @@ logs/
 # Secrets — never commit tokens or env files
 HA_TOKEN.txt
 .env
+prompt-history*.md
 
 # Webcam capture scratch (e-paper display verification)
 .webcam/
