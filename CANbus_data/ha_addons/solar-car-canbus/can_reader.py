@@ -261,35 +261,35 @@ def network_monitor(stop):
         stop.wait(NET_INTERVAL)
 
 
-def find_port():
-    """The slcan adapter's serial port. Uses CAN_PORT if it's set and present,
-    else globs the usual serial paths (preferring the stable by-id symlink).
-    Re-globbing each retry means a replugged adapter is picked up without
-    restarting the add-on. None if nothing is plugged in."""
-    if CAN_PORT and os.path.exists(CAN_PORT):
-        return CAN_PORT
-    for pattern in ("/dev/serial/by-id/*", "/dev/ttyACM*", "/dev/ttyUSB*"):
-        hits = sorted(glob.glob(pattern))
-        if hits:
-            return hits[0]
-    return None
+def can0_ready():
+    """True if can0 exists and isn't down. The SH-C31G on candlelight/gs_usb
+    firmware is exposed by the kernel gs_usb driver as SocketCAN can0; run.sh
+    sets its bitrate and brings it up. Re-checked each retry so a replugged
+    adapter is picked up without restarting the add-on. (CAN links report
+    operstate 'unknown' when UP, so anything but 'down' counts as ready.)"""
+    try:
+        with open("/sys/class/net/can0/operstate") as f:
+            return f.read().strip() != "down"
+    except OSError:
+        return False
 
 
 def open_bus():
-    """Open the slcan adapter (serial) with python-can. Returns a Bus or None.
+    """Open can0 via SocketCAN with python-can. Returns a Bus or None.
 
-    The SH-C31G runs slcan firmware and appears as a CDC-serial port, so this
-    is a completely different USB path than the old gs_usb/SocketCAN one (which
-    the HAOS kernel broke). Returns None if the adapter isn't present — the
-    caller keeps retrying and reports canadapter_status=0 meanwhile."""
+    The SH-C31G runs candlelight/gs_usb firmware; the kernel gs_usb driver
+    exposes it as can0 and run.sh sets the bitrate + brings it up. (The earlier
+    "gs_usb/SocketCAN is broken on HAOS" theory was a sleeping-battery confound
+    -- once the BMS is broadcasting, can0 receives fine, confirmed 2026-06-29.)
+    Returns None if can0 isn't ready -- the caller keeps retrying and reports
+    canadapter_status=0 meanwhile."""
     import can
-    port = find_port()
-    if not port:
+    if not can0_ready():
         return None
     try:
-        return can.Bus(interface="slcan", channel=port, bitrate=int(CAN_BITRATE))
+        return can.Bus(interface="socketcan", channel="can0")
     except Exception as e:
-        logging.debug(f"slcan open failed on {port}: {e}")
+        logging.debug(f"socketcan open failed on can0: {e}")
         return None
 
 
@@ -336,10 +336,10 @@ def main():
     if live:
         bus = open_bus()
         if bus is not None:
-            logging.info(f"slcan adapter open ({find_port()} @ {CAN_BITRATE} bps); "
+            logging.info(f"can0 open (SocketCAN @ {CAN_BITRATE} bps); "
                          "listening (live: " + ", ".join(d.name for d in live) + ")")
         else:
-            logging.error("No slcan adapter found; will keep retrying "
+            logging.error("can0 not ready; will keep retrying "
                           f"every {BUS_RETRY_SEC}s (canadapter_status=0)")
     else:
         logging.info("All devices in dummy mode; CAN bus not opened")
@@ -351,7 +351,7 @@ def main():
                 bus_retry_at = now + BUS_RETRY_SEC
                 bus = open_bus()
                 if bus is not None:
-                    logging.info(f"slcan adapter recovered ({find_port()}); listening again")
+                    logging.info("can0 recovered; listening again")
 
             if bus is not None:
                 try:

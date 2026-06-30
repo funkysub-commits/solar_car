@@ -2,39 +2,34 @@
 
 bashio::log.info "Solar Car CANbus Reader starting"
 
-CAN_PORT="$(bashio::config 'can_port')"
 CAN_BITRATE="$(bashio::config 'can_bitrate')"
 EZKONTROL_DUMMY="$(bashio::config 'ezkontrol_dummy')"
 EZKONTROL_PUSH_INTERVAL="$(bashio::config 'ezkontrol_push_interval')"
 BESTGO_DUMMY="$(bashio::config 'bestgo_dummy')"
 BESTGO_PUSH_INTERVAL="$(bashio::config 'bestgo_push_interval')"
 
-bashio::log.info "Config: port=${CAN_PORT:-auto} bitrate=${CAN_BITRATE}"
+bashio::log.info "Config: bitrate=${CAN_BITRATE}"
 bashio::log.info "EZkontrol: dummy=${EZKONTROL_DUMMY} push=${EZKONTROL_PUSH_INTERVAL}s"
 bashio::log.info "BESTGO:    dummy=${BESTGO_DUMMY} push=${BESTGO_PUSH_INTERVAL}s"
 
-# The SH-C31G runs slcan firmware: it enumerates as a CDC-serial port, NOT a
-# SocketCAN interface, so there's no `ip link` bring-up. can_reader.py opens
-# the port with python-can's slcan backend and auto-detects it if CAN_PORT is
-# blank. We only log what we find here; can_reader re-detects on each retry, so
-# a late/replugged adapter is still picked up without restarting the add-on.
+# The SH-C31G runs candlelight/gs_usb firmware: the kernel gs_usb driver exposes
+# it as SocketCAN can0. Bring the interface up here (needs NET_ADMIN + host
+# network), then can_reader.py opens it with python-can's socketcan backend and
+# keeps retrying if it isn't ready yet (late/replugged adapter).
 if [ "${EZKONTROL_DUMMY}" = "true" ] && [ "${BESTGO_DUMMY}" = "true" ]; then
     bashio::log.info "Both devices in dummy mode -- no adapter needed"
-elif [ -n "${CAN_PORT}" ]; then
-    bashio::log.info "Using configured serial port ${CAN_PORT}"
-else
-    found=""
-    for p in /dev/serial/by-id/* /dev/ttyACM0 /dev/ttyACM1 /dev/ttyUSB0; do
-        if [ -e "$p" ]; then found="$p"; break; fi
-    done
-    if [ -n "${found}" ]; then
-        bashio::log.info "Detected slcan adapter at ${found}"
+elif [ -d /sys/class/net/can0 ]; then
+    ip link set can0 down 2>/dev/null
+    if ip link set can0 type can bitrate "${CAN_BITRATE}" && ip link set can0 up; then
+        bashio::log.info "can0 up @ ${CAN_BITRATE} bps (SocketCAN)"
     else
-        bashio::log.warning "No serial CAN adapter found (/dev/ttyACM*). Starting anyway -- canadapter_status will be 0 and can_reader will keep retrying."
+        bashio::log.warning "can0 bring-up FAILED; can_reader will retry (canadapter_status=0)"
     fi
+else
+    bashio::log.warning "can0 not present (adapter unplugged / in DFU / gs_usb not bound). can_reader will retry."
 fi
 
-export CAN_PORT CAN_BITRATE
+export CAN_BITRATE
 export EZKONTROL_DUMMY EZKONTROL_PUSH_INTERVAL
 export BESTGO_DUMMY BESTGO_PUSH_INTERVAL
 export HA_URL="http://supervisor/core"

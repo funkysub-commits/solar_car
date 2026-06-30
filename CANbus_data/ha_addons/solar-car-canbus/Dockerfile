@@ -1,10 +1,10 @@
 ARG BUILD_FROM
 FROM $BUILD_FROM
 
-# slcan uses a serial port (pyserial), not SocketCAN, so iproute2/can-utils
-# aren't needed; can-utils kept only as a handy on-box debug tool.
-RUN apk add --no-cache can-utils \
-    && pip install --no-cache-dir python-can pyserial requests
+# candlelight/gs_usb -> kernel SocketCAN can0: need iproute2 (ip link) to bring
+# the interface up in run.sh; can-utils for on-box debug (candump).
+RUN apk add --no-cache iproute2 can-utils \
+    && pip install --no-cache-dir python-can requests
 
 COPY run.sh can_reader.py /
 COPY solarcar_can /solarcar_can
