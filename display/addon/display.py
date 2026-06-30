@@ -185,11 +185,12 @@ def main():
 
     stale, visible = assemble()
     clock = datetime.now().strftime("%H:%M")
-    header_addr = ha_client.header_address()
+    ha_client.refresh_network(force=True)               # first frame has the addresses
+    header_lines = ha_client.connection_lines()
     powered = ha_get(config.POWER_TOGGLE)[0] != "off"   # default ON if the toggle is absent
     if powered:
         img = render(speed, speed_unit, temps, soc, voltage, voltage_unit,
-                     visible, stale, ha_msg, clock, header_addr)
+                     visible, stale, ha_msg, clock, header_lines)
         full_refresh(epd, img)            # clean base frame, then partial mode
         logging.info("initial frame drawn")
     else:
@@ -255,6 +256,7 @@ def main():
                 if m is not None:                 # None = fetch failed; keep last
                     ha_msg = m
                 sync_hidden()                     # single writer of eink_hidden
+                ha_client.refresh_network()       # router/hotspot IPs, TTL-gated, off-loop
                 last_slow = t0
 
             # manual refresh button forces a full (de-ghosting) refresh
@@ -265,7 +267,7 @@ def main():
 
             stale, visible = assemble()
             clock = datetime.now().strftime("%H:%M")
-            header_addr = ha_client.header_address()
+            header_lines = ha_client.connection_lines()
 
             snaps = region_snaps(speed, speed_unit, temps, soc, voltage, visible,
                                  stale, ha_msg, clock)
@@ -274,7 +276,7 @@ def main():
 
             if data_changed or force or turning_on:
                 img = render(speed, speed_unit, temps, soc, voltage, voltage_unit,
-                             visible, stale, ha_msg, clock, header_addr)
+                             visible, stale, ha_msg, clock, header_lines)
                 spd_txt = "--" if speed is None else f"{speed:.0f}{speed_unit}"
                 if turning_on or not awake or force or refresh_count >= config.FULL_REFRESH_EVERY:
                     full_refresh(epd, img)        # power-on / wake / de-ghost
@@ -295,7 +297,7 @@ def main():
                 # no telemetry change for a while - settle the image and sleep
                 # the panel (e-paper must not be left powered/active when idle)
                 img = render(speed, speed_unit, temps, soc, voltage, voltage_unit,
-                             visible, stale, ha_msg, clock, header_addr)
+                             visible, stale, ha_msg, clock, header_lines)
                 settle_and_sleep(epd, img)
                 awake = False
                 last_snaps = snaps

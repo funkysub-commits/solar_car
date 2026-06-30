@@ -5,8 +5,8 @@ from PIL import Image, ImageDraw
 import config
 import layout
 from layout import (W, H, HEAD_H, DIV_X, BAT_DIV_Y, MSG_DIV_Y, CONTENT_BOT,
-                    F_TITLE, F_HEAD_IP, F_LABEL, F_SPEED, F_UNIT, F_SOC, F_TEMP,
-                    F_SMALL, F_MSG, F_WARN, F_BADGE)
+                    F_TITLE, F_HEAD_LABEL, F_HEAD_NET, F_LABEL, F_SPEED, F_UNIT,
+                    F_SOC, F_TEMP, F_SMALL, F_MSG, F_WARN, F_BADGE)
 from units import clamp, to_display_temp
 
 
@@ -96,17 +96,40 @@ def draw_speedometer(d, speed, unit, stale=False):
         draw_warn_mark(d, cx + w / 2 + 18, 62, 22)
 
 
-def draw_header_address(d, text):
-    """The header connection line - e.g. "IP: 192.168.1.50:8123" or
-    "Pi Offline" - drawn solid in the gap between the title and the clock. It
-    has no partial-refresh region of its own, so it is repainted only as part
-    of a full-screen refresh (see display.py), not on regular per-region
-    updates."""
-    if not text:
+def draw_header_net(d, lines):
+    """The header connection block - an "IP:" heading and up to two stacked rows
+    (e.g. "Router: 192.168.1.50:8123" / "Hotspot: 203.0.113.7:8123"), or a lone
+    "Pi Offline" - drawn in the gap between the title and the clock. lines is the
+    list of (label, value) tuples from ha_client.connection_lines(). It has no
+    partial-refresh region of its own, so it repaints only as part of a
+    full-screen refresh (see display.py), not on regular per-region updates."""
+    if not lines:
         return
-    txt = _ellipsize(d, text, F_HEAD_IP, layout.HEAD_IP_MAXW)
-    d.text((layout.HEAD_IP_CX, layout.HEAD_IP_CY), txt,
-           font=F_HEAD_IP, fill=0, anchor="mm")
+    # A lone label-less row is the offline / single-message fallback: centre it
+    # on its own, with no "IP:" heading in front.
+    if len(lines) == 1 and not lines[0][0]:
+        d.text((layout.HEAD_NET_CX, layout.HEAD_NET_CY), lines[0][1],
+               font=F_HEAD_LABEL, fill=0, anchor="mm")
+        return
+
+    head = "IP:"
+    head_w = d.textlength(head, font=F_HEAD_LABEL)
+    gap = 6
+    avail = layout.HEAD_NET_MAXW - head_w - gap
+    rows = [f"{lab}: {val}" if lab else val for lab, val in lines[:2]]
+    rows = [_ellipsize(d, t, F_HEAD_NET, avail) for t in rows]
+    rows_w = max(d.textlength(t, font=F_HEAD_NET) for t in rows)
+
+    # Centre the heading + rows block as a whole within the header gap.
+    left = layout.HEAD_NET_CX - (head_w + gap + rows_w) / 2
+    d.text((left, layout.HEAD_NET_CY), head, font=F_HEAD_LABEL, fill=0, anchor="lm")
+    rx = left + head_w + gap
+    if len(rows) == 1:
+        d.text((rx, layout.HEAD_NET_CY), rows[0], font=F_HEAD_NET, fill=0, anchor="lm")
+    else:
+        h = layout.HEAD_NET_ROW_H
+        for t, dy in zip(rows, (-h / 2, h / 2)):
+            d.text((rx, layout.HEAD_NET_CY + dy), t, font=F_HEAD_NET, fill=0, anchor="lm")
 
 
 def draw_messages(d, ha_msg):
@@ -247,11 +270,12 @@ def draw_warnings_bar(d, warnings):
 
 
 def render(speed, speed_unit, temps, soc, voltage, voltage_unit,
-           warnings, stale, ha_msg, clock_str, header_addr=""):
+           warnings, stale, ha_msg, clock_str, header_lines=None):
     """speed/speed_unit pass through from the HA entity untouched. warnings is
     the visible (non-hidden) ordered warning list; ha_msg is the user's
     free-text message (shown in the MESSAGE box, not the warning bar). stale
-    maps value keys -> bool. header_addr is the faint IP/offline header line."""
+    maps value keys -> bool. header_lines is the (label, value) connection-row
+    list for the header block (ha_client.connection_lines())."""
     img = Image.new('1', (W, H), 255)
     d = ImageDraw.Draw(img)
 
@@ -266,7 +290,7 @@ def render(speed, speed_unit, temps, soc, voltage, voltage_unit,
         img.paste(layout.LOGO, (14, 5))
         tx = 14 + layout.LOGO.width + 12
     d.text((tx, 9), config.TITLE, font=F_TITLE, fill=0, anchor="la")
-    draw_header_address(d, header_addr)
+    draw_header_net(d, header_lines)
     d.text((W - 18, 9), clock_str, font=F_TITLE, fill=0, anchor="ra")
 
     draw_speedometer(d, speed, speed_unit, stale.get("speed", False))

@@ -7,6 +7,7 @@ Connection health is tracked across every request so the add-on can tell
 updating" - two very different failures that would otherwise look identical
 on the panel and in the logs."""
 import logging
+import threading
 import time
 from datetime import datetime, timezone
 
@@ -51,19 +52,40 @@ def ha_unreachable():
             and time.time() - _first_fail >= _UNREACHABLE_AFTER_SECS)
 
 
-# --- Header IP line ---------------------------------------------------------
-# The Pi's LAN IP rarely changes, so it is cached and only re-queried
-# occasionally; the last good value is kept while a refresh is failing.
-_host_ip = None
-_host_ip_at = 0.0
-_HOST_IP_TTL = 300.0      # re-query at most this often once we have an address
-_HOST_IP_RETRY = 30.0     # but retry this often while we still have none
+# --- Header connection block ------------------------------------------------
+# Two ways the crew might reach the dashboard during the race:
+#   * Router  - an on-car Ethernet router plugged into the Pi (no internet),
+#               giving a stable LAN address that supports several people nearby.
+#               This is the Pi's wired (eth) IPv4.
+#   * Hotspot - a phone's hotspot the Pi joins for cell coverage; its *public*
+#               IPv4 (api.ipify.org) is what someone far down the course would
+#               aim at. (Whether that public IP is actually reachable depends on
+#               the carrier - most use CGNAT - see connection_lines()/the README
+#               note; a VPN/Nabu Casa overlay is the robust answer.)
+# Either link may be missing, so the Wi-Fi LAN address is kept as a local
+# fallback and there is always at least one row to show.
+#
+# All three values are cached and refreshed off the hot loop (refresh_network()
+# spawns a short-lived thread), so the per-loop draw never blocks on the
+# network. The last good value is kept while a refresh is failing.
+_router_ip = None         # on-car Ethernet router LAN IPv4
+_wifi_ip = None           # wireless (hotspot) LAN IPv4 - local fallback
+_global_ip = None         # public IPv4 as seen from the internet
+_net_at = 0.0
+_net_lock = threading.Lock()
+_net_refreshing = False
+_NET_TTL = 240.0          # refresh the addresses at most this often ("once in a while")
+_IPIFY_URL = "https://api.ipify.org?format=json"
+
+# Supervisor's own docker network - never a real connect address.
+_INTERNAL_PREFIXES = ("172.30.", "172.17.", "127.")
 
 
-def _query_host_ip():
-    """Ask the Supervisor for the Pi's primary LAN IPv4 (CIDR suffix stripped).
-    None on any failure - Supervisor unreachable, missing hassio_api capability,
-    or no interface with an address."""
+def _query_interfaces():
+    """(ethernet_ip, wireless_ip) from Supervisor /network/info, CIDR suffix
+    stripped; each is None when that kind of link currently has no IPv4.
+    Returns None (not a tuple) when the request itself fails, so the caller can
+    tell 'link is down' apart from 'couldn't ask' and keep the last good value."""
     try:
         r = requests.get(f"{config.SUPERVISOR_URL}/network/info",
                          headers={"Authorization": f"Bearer {config.SUPERVISOR_TOKEN}"},
@@ -73,41 +95,92 @@ def _query_host_ip():
     except Exception as e:
         logging.debug(f"network/info failed: {e}")
         return None
-    # Prefer the interface Supervisor marks primary, then any connected one,
-    # and take the first IPv4 address it actually has.
+    # primary/connected first so we pick the live link when several exist
     ifaces.sort(key=lambda i: (not i.get("primary"), not i.get("connected")))
+    eth = wifi = None
     for i in ifaces:
+        name = (i.get("interface") or "")
+        typ = (i.get("type") or "").lower()
         addrs = ((i.get("ipv4") or {}).get("address")) or []
-        if addrs:
-            return addrs[0].split("/")[0]
-    return None
+        ip = next((a.split("/")[0] for a in addrs
+                   if not a.startswith(_INTERNAL_PREFIXES)), None)
+        if not ip:
+            continue
+        if (typ == "wireless" or name.startswith(("wlan", "wl"))):
+            if wifi is None:
+                wifi = ip
+        elif eth is None:                       # ethernet, or any other wired link
+            eth = ip
+    return eth, wifi
 
 
-def host_ip():
-    """The Pi's LAN IPv4 address as a string, cached. Returns the last good
-    value while a refresh is failing, or None until one is ever obtained."""
-    global _host_ip, _host_ip_at
+def _query_global_ip():
+    """The Pi's public IPv4 via api.ipify.org, or None when offline. A live
+    probe: None means 'no internet right now', which is exactly when we should
+    stop advertising a (now unreachable) public address."""
+    try:
+        r = requests.get(_IPIFY_URL, timeout=(4, 6))
+        r.raise_for_status()
+        return (r.json() or {}).get("ip") or None
+    except Exception as e:
+        logging.debug(f"ipify lookup failed: {e}")
+        return None
+
+
+def _do_refresh():
+    global _router_ip, _wifi_ip, _global_ip, _net_refreshing
+    try:
+        res = _query_interfaces()
+        if res is not None:                     # reached Supervisor - trust it,
+            _router_ip, _wifi_ip = res          # even to clear an unplugged link
+        _global_ip = _query_global_ip()         # live; None drops a stale public IP
+    finally:
+        with _net_lock:
+            _net_refreshing = False
+
+
+def refresh_network(force=False):
+    """Refresh the cached Router/Wi-Fi/Hotspot addresses, at most once per
+    _NET_TTL. Runs in a background thread so the draw loop never blocks on the
+    (possibly slow, possibly offline) lookups; pass force=True at startup to do
+    one inline fetch so the very first frame already has the addresses."""
+    global _net_at, _net_refreshing
     now = time.time()
-    fresh = _host_ip is not None and (now - _host_ip_at) < _HOST_IP_TTL
-    backoff = _host_ip is None and (now - _host_ip_at) < _HOST_IP_RETRY
-    if fresh or backoff:
-        return _host_ip
-    ip = _query_host_ip()
-    _host_ip_at = now
-    if ip:
-        _host_ip = ip
-    return _host_ip
+    with _net_lock:
+        if not force and (now - _net_at) < _NET_TTL:
+            return
+        if _net_refreshing:
+            return
+        _net_refreshing = True
+        _net_at = now
+    if force:
+        _do_refresh()
+    else:
+        threading.Thread(target=_do_refresh, name="net-refresh", daemon=True).start()
 
 
-def header_address():
-    """The header connection line: 'IP: <lan-ip>:<port>' when Home Assistant is
-    reachable and the address is known, else 'Pi Offline'. The add-on runs on
-    the Pi, so 'offline' here means the dashboard can't be reached (HA is down
-    or the LAN address is unknown) - not that the panel itself has stopped."""
+def connection_lines():
+    """The header connection rows as a list of (label, value) tuples, newest
+    cached values. Normally up to two rows - the on-car LAN address (labelled
+    'Router', or 'Wi-Fi' when only the hotspot link is up) and the public
+    'Hotspot' address - so there is always at least one way to connect shown.
+    Falls back to a single ('', 'Pi Offline') row when Home Assistant is
+    unreachable or no address is known at all."""
     if ha_unreachable():
-        return "Pi Offline"
-    ip = host_ip()
-    return f"IP: {ip}:{config.HA_PORT}" if ip else "Pi Offline"
+        return [("", "Pi Offline")]
+    port = config.HA_PORT
+    rows = []
+    # Local row: prefer the wired on-car router; fall back to the hotspot's own
+    # LAN address so people right next to the car can still connect.
+    if _router_ip:
+        rows.append(("Router", f"{_router_ip}:{port}"))
+    elif _wifi_ip:
+        rows.append(("Wi-Fi", f"{_wifi_ip}:{port}"))
+    # Remote row: the public address reachable over the phone hotspot, for crew
+    # far down the course.
+    if _global_ip:
+        rows.append(("Hotspot", f"{_global_ip}:{port}"))
+    return rows or [("", "Pi Offline")]
 
 
 def ha_get(entity):
