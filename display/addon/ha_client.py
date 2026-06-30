@@ -53,29 +53,26 @@ def ha_unreachable():
 
 
 # --- Header connection block ------------------------------------------------
-# Two ways the crew might reach the dashboard during the race:
-#   * Router  - an on-car Ethernet router plugged into the Pi (no internet),
-#               giving a stable LAN address that supports several people nearby.
-#               This is the Pi's wired (eth) IPv4.
-#   * Hotspot - a phone's hotspot the Pi joins for cell coverage; its *public*
-#               IPv4 (api.ipify.org) is what someone far down the course would
-#               aim at. (Whether that public IP is actually reachable depends on
-#               the carrier - most use CGNAT - see connection_lines()/the README
-#               note; a VPN/Nabu Casa overlay is the robust answer.)
-# Either link may be missing, so the Wi-Fi LAN address is kept as a local
-# fallback and there is always at least one row to show.
+# Two networks the crew might join to reach the dashboard during the race:
+#   * Router  - an on-car Ethernet router plugged into the Pi (no internet):
+#               a stable LAN address that supports several people right by the
+#               car, used as the backup when out of cell range. The Pi's wired
+#               (eth) IPv4.
+#   * Hotspot - a phone's hotspot the Pi joins for cell coverage: its LAN
+#               address, for people who connect to that hotspot and so also get
+#               an internet connection. The Pi's wireless (wlan) IPv4.
+# Both are local addresses on their respective networks; either link may be
+# missing, so there is always at least one row to show (or "Pi Offline").
 #
-# All three values are cached and refreshed off the hot loop (refresh_network()
-# spawns a short-lived thread), so the per-loop draw never blocks on the
-# network. The last good value is kept while a refresh is failing.
-_router_ip = None         # on-car Ethernet router LAN IPv4
-_wifi_ip = None           # wireless (hotspot) LAN IPv4 - local fallback
-_global_ip = None         # public IPv4 as seen from the internet
+# The addresses are cached and refreshed off the hot loop (refresh_network()
+# spawns a short-lived thread), so the per-loop draw never blocks; the last
+# good value is kept while a refresh is failing.
+_router_ip = None         # on-car Ethernet router LAN IPv4 (no internet)
+_wifi_ip = None           # phone-hotspot LAN IPv4 (Wi-Fi, has internet)
 _net_at = 0.0
 _net_lock = threading.Lock()
 _net_refreshing = False
 _NET_TTL = 240.0          # refresh the addresses at most this often ("once in a while")
-_IPIFY_URL = "https://api.ipify.org?format=json"
 
 # Supervisor's own docker network - never a real connect address.
 _INTERNAL_PREFIXES = ("172.30.", "172.17.", "127.")
@@ -114,36 +111,22 @@ def _query_interfaces():
     return eth, wifi
 
 
-def _query_global_ip():
-    """The Pi's public IPv4 via api.ipify.org, or None when offline. A live
-    probe: None means 'no internet right now', which is exactly when we should
-    stop advertising a (now unreachable) public address."""
-    try:
-        r = requests.get(_IPIFY_URL, timeout=(4, 6))
-        r.raise_for_status()
-        return (r.json() or {}).get("ip") or None
-    except Exception as e:
-        logging.debug(f"ipify lookup failed: {e}")
-        return None
-
-
 def _do_refresh():
-    global _router_ip, _wifi_ip, _global_ip, _net_refreshing
+    global _router_ip, _wifi_ip, _net_refreshing
     try:
         res = _query_interfaces()
         if res is not None:                     # reached Supervisor - trust it,
             _router_ip, _wifi_ip = res          # even to clear an unplugged link
-        _global_ip = _query_global_ip()         # live; None drops a stale public IP
     finally:
         with _net_lock:
             _net_refreshing = False
 
 
 def refresh_network(force=False):
-    """Refresh the cached Router/Wi-Fi/Hotspot addresses, at most once per
+    """Refresh the cached Router/Hotspot LAN addresses, at most once per
     _NET_TTL. Runs in a background thread so the draw loop never blocks on the
-    (possibly slow, possibly offline) lookups; pass force=True at startup to do
-    one inline fetch so the very first frame already has the addresses."""
+    Supervisor lookup; pass force=True at startup to do one inline fetch so the
+    very first frame already has the addresses."""
     global _net_at, _net_refreshing
     now = time.time()
     with _net_lock:
@@ -160,26 +143,21 @@ def refresh_network(force=False):
 
 
 def connection_lines():
-    """The header connection rows as a list of (label, value) tuples, newest
-    cached values. Normally up to two rows - the on-car LAN address (labelled
-    'Router', or 'Wi-Fi' when only the hotspot link is up) and the public
-    'Hotspot' address - so there is always at least one way to connect shown.
-    Falls back to a single ('', 'Pi Offline') row when Home Assistant is
-    unreachable or no address is known at all."""
+    """The header connection rows as a list of (label, value) tuples from the
+    newest cached addresses - up to two: 'Router' (the on-car Ethernet router
+    LAN IP, for crew by the car, no internet) and 'Hotspot' (the Pi's LAN IP on
+    the phone hotspot, for people who join that hotspot and so also get an
+    internet connection). Either may be absent; falls back to a single
+    ('', 'Pi Offline') row when Home Assistant is unreachable or no address is
+    known at all."""
     if ha_unreachable():
         return [("", "Pi Offline")]
     port = config.HA_PORT
     rows = []
-    # Local row: prefer the wired on-car router; fall back to the hotspot's own
-    # LAN address so people right next to the car can still connect.
     if _router_ip:
         rows.append(("Router", f"{_router_ip}:{port}"))
-    elif _wifi_ip:
-        rows.append(("Wi-Fi", f"{_wifi_ip}:{port}"))
-    # Remote row: the public address reachable over the phone hotspot, for crew
-    # far down the course.
-    if _global_ip:
-        rows.append(("Hotspot", f"{_global_ip}:{port}"))
+    if _wifi_ip:
+        rows.append(("Hotspot", f"{_wifi_ip}:{port}"))
     return rows or [("", "Pi Offline")]
 
 
