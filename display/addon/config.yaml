@@ -1,5 +1,5 @@
 name: Solar Car E-Ink Display
-version: "1.6.3"
+version: "1.6.4"
 slug: solar_epaper
 description: Renders a Solar Car telemetry dashboard (speedometer, battery, temperatures) on a Waveshare 7.5" V2 e-ink display
 arch:
@@ -28,6 +28,7 @@ options:
   ent_soc: sensor.bestgo_soc
   ent_voltage: sensor.bestgo_pack_voltage
   ent_message: input_text.eink_message
+  ent_charging: binary_sensor.bestgo_charging
   ent_power: input_boolean.eink_display
   ent_can_bus: sensor.canadapter_status
   ent_can_battery: sensor.bestgo_status
@@ -50,6 +51,7 @@ schema:
   ent_soc: str
   ent_voltage: str
   ent_message: str
+  ent_charging: str
   ent_power: str
   ent_can_bus: str
   ent_can_battery: str

@@ -281,6 +281,20 @@ def read_health(entity):
     return None
 
 
+_CHARGING_TRUE = {"on", "true", "charging", "charge", "yes", "1", "up"}
+
+
+def read_charging(entity):
+    """Whether the pack is charging - drives the lightning bolt on the battery
+    icon. True only for a clearly-charging state; anything unknown/unavailable/
+    missing or a fetch failure reads as False (no bolt), so a hiccup never
+    flashes a spurious charging mark."""
+    state, _, _ = ha_get(entity)
+    if state in (None, "", "unknown", "unavailable"):
+        return False
+    return str(state).strip().lower() in _CHARGING_TRUE
+
+
 def read_hidden():
     """Return the set of warning keys the user has chosen to hide (read from the
     comma-separated input_text.eink_hidden helper)."""

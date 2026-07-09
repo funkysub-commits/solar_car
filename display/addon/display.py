@@ -69,8 +69,8 @@ import panel
 import ha_client
 from alerts import (build_warnings, compute_stale, device_status, fit_hidden,
                     merge_device_stale, publish_warnings)
-from ha_client import (ha_get, read_health, read_hidden, read_message,
-                       read_number, read_temp_c, set_hidden)
+from ha_client import (ha_get, read_charging, read_health, read_hidden,
+                       read_message, read_number, read_temp_c, set_hidden)
 from panel import full_refresh, push_region, region_snaps, settle_and_sleep
 from render import render, render_splash
 
@@ -125,6 +125,7 @@ def main():
         last_iso["voltage"] = lu
     if not voltage_unit:
         voltage_unit = "V"
+    charging = read_charging(config.ENTITIES["charging"])
     ha_msg = read_message(config.ENTITIES["message"]) or ""
     hidden = read_hidden()
     # CAN connectivity, from the CANbus app's health sensors. Tri-state per
@@ -190,7 +191,7 @@ def main():
     powered = ha_get(config.POWER_TOGGLE)[0] != "off"   # default ON if the toggle is absent
     if powered:
         img = render(speed, speed_unit, temps, soc, voltage, voltage_unit,
-                     visible, stale, ha_msg, clock, header_lines)
+                     visible, stale, ha_msg, clock, header_lines, charging)
         full_refresh(epd, img)            # clean base frame, then partial mode
         logging.info("initial frame drawn")
     else:
@@ -198,7 +199,7 @@ def main():
         logging.info("display starts OFF (HA toggle)")
 
     last_snaps = region_snaps(speed, speed_unit, temps, soc, voltage, visible,
-                              stale, ha_msg, clock)
+                              stale, ha_msg, clock, charging)
     refresh_count = 0
     last_slow = time.time()
     last_button, _, _ = ha_get(config.REFRESH_BUTTON)
@@ -249,6 +250,7 @@ def main():
                     voltage, voltage_unit = vv, (vu or voltage_unit)
                 if lu is not None:
                     last_iso["voltage"] = lu
+                charging = read_charging(config.ENTITIES["charging"])
                 health["bus"] = read_health(config.ENT_CAN_BUS)
                 health["batt"] = read_health(config.ENT_CAN_BATT)
                 health["ezk"] = read_health(config.ENT_CAN_EZK)
@@ -270,13 +272,13 @@ def main():
             header_lines = ha_client.connection_lines()
 
             snaps = region_snaps(speed, speed_unit, temps, soc, voltage, visible,
-                                 stale, ha_msg, clock)
+                                 stale, ha_msg, clock, charging)
             changed = [r for r in layout.REGIONS if snaps[r] != last_snaps.get(r)]
             data_changed = any(r in layout.DATA_REGIONS for r in changed)
 
             if data_changed or force or turning_on:
                 img = render(speed, speed_unit, temps, soc, voltage, voltage_unit,
-                             visible, stale, ha_msg, clock, header_lines)
+                             visible, stale, ha_msg, clock, header_lines, charging)
                 spd_txt = "--" if speed is None else f"{speed:.0f}{speed_unit}"
                 if turning_on or not awake or force or refresh_count >= config.FULL_REFRESH_EVERY:
                     full_refresh(epd, img)        # power-on / wake / de-ghost
@@ -297,7 +299,7 @@ def main():
                 # no telemetry change for a while - settle the image and sleep
                 # the panel (e-paper must not be left powered/active when idle)
                 img = render(speed, speed_unit, temps, soc, voltage, voltage_unit,
-                             visible, stale, ha_msg, clock, header_lines)
+                             visible, stale, ha_msg, clock, header_lines, charging)
                 settle_and_sleep(epd, img)
                 awake = False
                 last_snaps = snaps

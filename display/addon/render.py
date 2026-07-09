@@ -148,7 +148,20 @@ def draw_messages(d, ha_msg):
         y += layout.MSG_LINE_H
 
 
-def draw_battery(d, soc, voltage, vunit, stale_soc=False, stale_v=False):
+def draw_charge_bolt(d, cx, cy, h):
+    """A lightning bolt centred at (cx, cy), h pixels tall - drawn on the battery
+    icon while the pack is charging. Filled white with a black outline so it
+    stays visible over both the black SoC fill and the white empty area."""
+    w = h * 0.58
+    pts = [(0.12, -0.50), (-0.34, 0.08), (-0.05, 0.08),
+           (-0.16, 0.50), (0.34, -0.08), (0.05, -0.08)]
+    poly = [(cx + px * w, cy + py * h) for px, py in pts]
+    d.polygon(poly, fill=255)
+    d.line(poly + [poly[0]], fill=0, width=3, joint="curve")
+
+
+def draw_battery(d, soc, voltage, vunit, stale_soc=False, stale_v=False,
+                 charging=False):
     x = layout.BATT_X
     d.text((x, 60), "BATTERY", font=F_LABEL, fill=0, anchor="la")
 
@@ -165,6 +178,9 @@ def draw_battery(d, soc, voltage, vunit, stale_soc=False, stale_v=False):
         fw = int(inner_w * clamp(soc, 0, 100) / 100.0)
         if fw > 0:
             d.rectangle((bx0 + pad, by0 + pad, bx0 + pad + fw, by1 - pad), fill=0)
+
+    if charging:
+        draw_charge_bolt(d, (bx0 + bx1) / 2, (by0 + by1) / 2, (by1 - by0) * 0.82)
 
     soc_txt = "--" if soc is None else f"{soc:.0f}%"
     d.text((x, layout.BATT_SOC_Y), soc_txt, font=F_SOC, fill=0, anchor="lm")
@@ -271,7 +287,7 @@ def draw_warnings_bar(d, warnings):
 
 
 def render(speed, speed_unit, temps, soc, voltage, voltage_unit,
-           warnings, stale, ha_msg, clock_str, header_lines=None):
+           warnings, stale, ha_msg, clock_str, header_lines=None, charging=False):
     """speed/speed_unit pass through from the HA entity untouched. warnings is
     the visible (non-hidden) ordered warning list; ha_msg is the user's
     free-text message (shown in the MESSAGE box, not the warning bar). stale
@@ -297,7 +313,7 @@ def render(speed, speed_unit, temps, soc, voltage, voltage_unit,
     draw_speedometer(d, speed, speed_unit, stale.get("speed", False))
     draw_messages(d, ha_msg)
     draw_battery(d, soc, voltage, voltage_unit,
-                 stale.get("soc", False), stale.get("voltage", False))
+                 stale.get("soc", False), stale.get("voltage", False), charging)
     draw_temps(d, temps, stale)
     draw_warnings_bar(d, warnings)
     return img

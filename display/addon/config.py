@@ -68,6 +68,10 @@ ENTITIES = {
     "soc":     os.environ.get("ENT_SOC",     "sensor.bestgo_soc"),
     "voltage": os.environ.get("ENT_VOLTAGE", "sensor.bestgo_pack_voltage"),
     "message": os.environ.get("ENT_MESSAGE", "input_text.eink_message"),
+    # Battery charging state: when "on"/"charging"/true a lightning bolt is drawn
+    # over the battery icon. Point this at a binary_sensor (or any on/off-ish
+    # entity) that is on while the pack is charging.
+    "charging": os.environ.get("ENT_CHARGING", "binary_sensor.bestgo_charging"),
 }
 REFRESH_BUTTON = "input_button.eink_refresh"
 POWER_TOGGLE = os.environ.get("ENT_POWER", "input_boolean.eink_display")
