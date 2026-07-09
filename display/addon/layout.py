@@ -105,11 +105,17 @@ F_MSG    = _font("DejaVuSans.ttf", 19)
 F_WARN   = _font("DejaVuSans-Bold.ttf", 20)
 F_BADGE  = _font("DejaVuSans-Bold.ttf", 16)
 
+# Shutdown splash (render_splash): a big centred "POWERED OFF" screen shown once
+# when the add-on stops, then the panel deep-sleeps holding it.
+F_SPLASH     = _font("DejaVuSans-Bold.ttf", 58)
+F_SPLASH_SUB = _font("DejaVuSans.ttf", 24)
+
 LOGO_H = 40
+SPLASH_LOGO_H = 120
 
 
-def _load_logo():
-    """Load the team logo as a bold 1-bit silhouette for the header - anything
+def _load_logo(h=LOGO_H):
+    """Load the team logo as a bold 1-bit silhouette h pixels tall - anything
     that is not near-white background becomes solid black, so it stays visible
     on the e-ink panel (a plain threshold would drop the light-coloured sun)."""
     try:
@@ -117,8 +123,8 @@ def _load_logo():
         bg = Image.new("RGBA", src.size, (255, 255, 255, 255))
         bg.alpha_composite(src)
         gray = bg.convert("L")
-        w = max(1, round(gray.width * LOGO_H / gray.height))
-        gray = gray.resize((w, LOGO_H), Image.LANCZOS)
+        w = max(1, round(gray.width * h / gray.height))
+        gray = gray.resize((w, h), Image.LANCZOS)
         return gray.point(lambda p: 0 if p < 242 else 255).convert("1", dither=Image.Dither.NONE)
     except Exception as e:
         logging.warning(f"logo load failed: {e}")
@@ -126,3 +132,4 @@ def _load_logo():
 
 
 LOGO = _load_logo()
+SPLASH_LOGO = _load_logo(SPLASH_LOGO_H)

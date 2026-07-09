@@ -72,7 +72,7 @@ from alerts import (build_warnings, compute_stale, device_status, fit_hidden,
 from ha_client import (ha_get, read_health, read_hidden, read_message,
                        read_number, read_temp_c, set_hidden)
 from panel import full_refresh, push_region, region_snaps, settle_and_sleep
-from render import render
+from render import render, render_splash
 
 
 def fmt_temps(temps):
@@ -309,12 +309,23 @@ def main():
     except Exception as e:
         logging.error(f"loop crashed: {e}")
     finally:
-        logging.info("stopping - panel to sleep")
+        # On shutdown, leave the panel in a clean, intended state and deep-slept,
+        # so it isn't caught mid-refresh (showing a garbled frame) when the Pi
+        # cuts power. If the display was on, settle to a "POWERED OFF" splash;
+        # if it was toggled off via HA, just leave it blank.
         try:
-            if awake:
+            if powered:
+                settle_and_sleep(epd, render_splash())
+                logging.info("stopping - shutdown splash shown, panel asleep")
+            else:
                 epd.sleep()
-        except Exception:
-            pass
+                logging.info("stopping - display was off, panel asleep")
+        except Exception as e:
+            logging.error(f"shutdown handling failed: {e}")
+            try:
+                epd.sleep()
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":
