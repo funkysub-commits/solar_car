@@ -4,8 +4,19 @@ Everything that touches the physical panel lives here."""
 import logging
 import sys
 
+from PIL import Image
+
 import layout
 from units import to_display_temp
+
+# The panel is mounted upside-down relative to the rendered frame, so every
+# buffer sent to the hardware is rotated 180 degrees at the push layer. Doing it
+# here (rather than in render.py) keeps the layout/region geometry in natural
+# reading coordinates while both full and partial refreshes stay consistent.
+# For a 180 flip, logical point (x, y) maps to panel point (W-1-x, H-1-y), so a
+# region box (x0, y0, x1, y1) maps to (W-x1, H-y1, W-x0, H-y0). All region x
+# coordinates and W are multiples of 8, so the flipped columns stay byte-aligned.
+FLIP_180 = True
 
 # The Waveshare driver only exists on the Raspberry Pi. Import it lazily so the
 # rendering code can be imported and unit-tested on a PC. Note the driver
@@ -98,17 +109,28 @@ def region_buffer(region_img):
     return list(buf)
 
 
+def _oriented(img):
+    """The full frame as the panel should receive it (180-flipped when the
+    display is mounted upside-down)."""
+    return img.transpose(Image.ROTATE_180) if FLIP_180 else img
+
+
 def push_region(epd, img, name):
-    """Partial-refresh just one region of the full frame onto the panel."""
+    """Partial-refresh just one region of the full frame onto the panel. When the
+    panel is flipped, both the region's tile and its panel coordinates rotate."""
     x0, y0, x1, y1 = layout.REGIONS[name]
-    epd.display_Partial(region_buffer(img.crop((x0, y0, x1, y1))), x0, y0, x1, y1)
+    tile = img.crop((x0, y0, x1, y1))
+    if FLIP_180:
+        tile = tile.transpose(Image.ROTATE_180)
+        x0, y0, x1, y1 = layout.W - x1, layout.H - y1, layout.W - x0, layout.H - y0
+    epd.display_Partial(region_buffer(tile), x0, y0, x1, y1)
 
 
 def full_refresh(epd, img):
     """Fast full-screen refresh (~2s) that clears partial-mode ghosting, then
     return to flash-free partial mode. Also wakes the panel from deep sleep."""
     epd.init_fast()
-    epd.display(epd.getbuffer(img))
+    epd.display(epd.getbuffer(_oriented(img)))
     epd.init_part()
 
 
@@ -116,5 +138,5 @@ def settle_and_sleep(epd, img):
     """Clear ghosting with one clean full refresh, then deep-sleep the panel.
     The image stays visible with no power; the panel must not be left active."""
     epd.init_fast()
-    epd.display(epd.getbuffer(img))
+    epd.display(epd.getbuffer(_oriented(img)))
     epd.sleep()
