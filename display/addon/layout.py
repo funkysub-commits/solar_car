@@ -127,13 +127,14 @@ F_MSG    = _font("DejaVuSans.ttf", 19)
 F_WARN   = _font("DejaVuSans-Bold.ttf", 20)
 F_BADGE  = _font("DejaVuSans-Bold.ttf", 16)
 
-# Shutdown splash (render_splash): a big centred "POWERED OFF" screen shown once
-# when the add-on stops, then the panel deep-sleeps holding it.
-F_SPLASH     = _font("DejaVuSans-Bold.ttf", 58)
-F_SPLASH_SUB = _font("DejaVuSans.ttf", 24)
+# Shutdown splash (render_splash): the big logo plus one "Powered Off" line,
+# shown once when the add-on stops, then the panel deep-sleeps holding it.
+F_SPLASH = _font("DejaVuSans-Bold.ttf", 58)
 
 LOGO_H = 40
-SPLASH_LOGO_H = 120
+# The shutdown splash is just the logo, as large as fits above the "Powered Off"
+# line. The logo is wider than tall, so height is the binding constraint.
+SPLASH_LOGO_H = 330
 
 
 def _load_logo(h=LOGO_H):

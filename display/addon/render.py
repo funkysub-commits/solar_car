@@ -7,7 +7,7 @@ import layout
 from layout import (W, H, HEAD_H, DIV_X, BAT_DIV_Y, MSG_DIV_Y, CONTENT_BOT,
                     F_TITLE, F_HEAD_LABEL, F_HEAD_NET, F_LABEL, F_SPEED, F_ODO,
                     F_UNIT, F_SOC, F_TEMP, F_SMALL, F_MSG, F_WARN, F_BADGE,
-                    F_SPLASH, F_SPLASH_SUB)
+                    F_SPLASH)
 from units import clamp, to_display_temp
 
 
@@ -369,27 +369,24 @@ def render(speed, speed_unit, temps, soc, voltage, voltage_unit,
     return img
 
 
-def render_splash(title=None, subtitle="Safe to unplug"):
-    """A clean full-screen 'powered off' frame drawn once when the add-on stops,
-    after which the panel is deep-slept so it holds this image with no power (and
-    so it isn't left mid-refresh when the Pi cuts power). Routed through the same
-    panel push as the dashboard, so the 180-degree flip applies here too."""
-    title = config.TITLE if title is None else title
+def render_splash(text="Powered Off"):
+    """A clean full-screen frame drawn once when the add-on stops, after which the
+    panel is deep-slept so it holds this image with no power (and so it isn't left
+    mid-refresh when the Pi cuts power). Just the team logo, as large as fits, with
+    one line underneath. Routed through the same panel push as the dashboard, so
+    the 180-degree flip applies here too."""
     img = Image.new('1', (W, H), 255)
     d = ImageDraw.Draw(img)
     d.rectangle((1, 1, W - 2, H - 2), outline=0, width=2)
 
     cx = W // 2
-    y = 96
-    if layout.SPLASH_LOGO is not None:
-        lg = layout.SPLASH_LOGO
+    gap = 14
+    lg = layout.SPLASH_LOGO
+    logo_h = lg.height if lg is not None else 0
+    # centre the logo + gap + caption stack as a whole
+    text_h = d.textbbox((0, 0), text, font=F_SPLASH, anchor="la")[3]
+    y = (H - (logo_h + gap + text_h)) // 2
+    if lg is not None:
         img.paste(lg, (cx - lg.width // 2, y))
-        y += lg.height + 18
-    else:
-        y += 40
-    d.text((cx, y), title, font=F_TITLE, fill=0, anchor="ma")
-    y += 58
-    d.text((cx, y), "POWERED OFF", font=F_SPLASH, fill=0, anchor="ma")
-    y += 78
-    d.text((cx, y), subtitle, font=F_SPLASH_SUB, fill=0, anchor="ma")
+    d.text((cx, y + logo_h + gap), text, font=F_SPLASH, fill=0, anchor="ma")
     return img
