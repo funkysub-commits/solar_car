@@ -109,11 +109,13 @@ def build_warnings(temps, stale, status, ha_down=False, aux_down=False):
     if adapter_down:
         ws.append({"key": "can_adapter", "text": "CAN adapter disconnected",
                    "priority": 100, "icon": "warn"})
+    # The keys stay can_bestgo / can_ezk - the HA dashboard's per-warning hide
+    # buttons key off them, so renaming would un-hide whatever the user had hid.
     if batt_down:
-        ws.append({"key": "can_bestgo", "text": "BESTGO disconnected",
+        ws.append({"key": "can_bestgo", "text": "Battery disconnected",
                    "priority": 96, "icon": "warn"})
     if ezk_down:
-        ws.append({"key": "can_ezk", "text": "EZkontrol disconnected",
+        ws.append({"key": "can_ezk", "text": "Motor disconnected",
                    "priority": 95, "icon": "warn"})
     # aux battery - only ever passed True while config.AUX_ENABLED
     if aux_down:

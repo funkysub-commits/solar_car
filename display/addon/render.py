@@ -114,7 +114,7 @@ def draw_odometer(d, dist, unit):
     Mirrors the speedometer's LABEL / value / unit stack. dist and unit come
     straight from the Home Assistant entity - no conversion here."""
     cx = layout.ODO_CX
-    d.text((cx, layout.ODO_LABEL_Y), "ODOMETER", font=F_LABEL, fill=0, anchor="ma")
+    d.text((cx, layout.ODO_LABEL_Y), "DISTANCE", font=F_LABEL, fill=0, anchor="ma")
 
     d.rectangle((cx - layout.ODO_BOX_HALF_W, layout.ODO_BOX_Y0,
                  cx + layout.ODO_BOX_HALF_W, layout.ODO_BOX_Y1),

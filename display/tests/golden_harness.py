@@ -111,8 +111,8 @@ def scenarios(D, A):
     st = _mkstale(D, ("t_pi",))
     overflow_ws = A.build_warnings({**temps_hot2, "t_pi": 95.0}, st,
                                    (False, False, False)) + [
-        {"key": "x", "text": "EZkontrol disconnected", "priority": 95, "icon": "warn"},
-        {"key": "y", "text": "BESTGO disconnected", "priority": 96, "icon": "warn"},
+        {"key": "x", "text": "Motor disconnected", "priority": 95, "icon": "warn"},
+        {"key": "y", "text": "Battery disconnected", "priority": 96, "icon": "warn"},
         {"key": "z", "text": "CAN adapter disconnected", "priority": 100, "icon": "warn"}]
     overflow_ws.sort(key=lambda w: -w["priority"])
     # no device is down, so nothing is marked - a stale-but-connected t_pi

@@ -19,7 +19,7 @@ Layout
   Left-top      : analog speedometer gauge (value exactly as the configured HA
                   entity reports it - no numeric conversion here; the unit label
                   can be relabelled with the speed_unit option), beside a boxed
-                  ODOMETER readout of the total distance travelled
+                  DISTANCE readout of the total distance travelled (ent_odometer)
   Right-top     : battery icon (state of charge, + a lightning bolt while
                   charging) + pack voltage + a small "AUX nn%" 12V reading
   Right-bottom  : four vertical temperature bar graphs (motor / EZkontrol / battery / Pi)
