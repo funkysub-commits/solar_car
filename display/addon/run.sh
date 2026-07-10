@@ -8,6 +8,10 @@ export HA_TOKEN="${SUPERVISOR_TOKEN}"
 
 export TITLE="$(bashio::config 'title')"
 export SPEED_MAX="$(bashio::config 'speed_max')"
+# optional: relabels the gauge unit only (e.g. "mph"); empty = use HA's unit
+export SPEED_UNIT="$(bashio::config 'speed_unit' '')"
+# optional: written into the MESSAGE box once at start-up (empty clears it)
+export STARTUP_MESSAGE="$(bashio::config 'startup_message' '')"
 export TEMP_UNIT="$(bashio::config 'temp_unit')"
 export TEMP_MAX="$(bashio::config 'temp_max')"
 export TEMP_WARN="$(bashio::config 'temp_warn')"
@@ -24,6 +28,7 @@ export ENT_SOC="$(bashio::config 'ent_soc')"
 export ENT_VOLTAGE="$(bashio::config 'ent_voltage')"
 export ENT_MESSAGE="$(bashio::config 'ent_message')"
 export ENT_CHARGING="$(bashio::config 'ent_charging')"
+export ENT_AUX_SOC="$(bashio::config 'ent_aux_soc')"
 export ENT_POWER="$(bashio::config 'ent_power')"
 export ENT_CAN_BUS="$(bashio::config 'ent_can_bus')"
 export ENT_CAN_BATT="$(bashio::config 'ent_can_battery')"

@@ -10,16 +10,6 @@ import config
 import ha_client
 import units
 
-# Friendly labels for the "<thing> not updating" stale warnings.
-STALE_WARN_LABELS = {
-    "speed":   "Speed",
-    "t_motor": "Motor temp",
-    "t_ezk":   "EZkontrol temp",
-    "t_batt":  "Battery temp",
-    "t_pi":    "Pi temp",
-    "soc":     "Battery SOC",
-    "voltage": "Pack voltage",
-}
 # Labels for the high-temperature warnings.
 TEMP_WARN_LABELS = {
     "t_motor": "Motor",
@@ -31,7 +21,11 @@ TEMP_WARN_LABELS = {
 
 def compute_stale(last_iso):
     """Map each displayed value to True when its entity has stopped updating.
-    Based on last_reported age, so a steady-but-fresh value is NOT stale."""
+    Based on last_reported age, so a steady-but-fresh value is NOT stale.
+
+    This is an INTERNAL signal only: it feeds the CAN-device inference in
+    device_status() and suppresses "high temp" warnings raised off a frozen
+    reading. It deliberately no longer reaches the screen - see device_marks()."""
     return {k: (last_iso.get(k) is None
                 or ha_client.entity_age_seconds(last_iso.get(k)) > config.STALE_AGE)
             for k in config.STALE_KEYS}
@@ -76,6 +70,16 @@ def merge_device_stale(stale, adapter_down, batt_down, ezk_down):
     return out
 
 
+def device_marks(adapter_down, batt_down, ezk_down):
+    """The "!" marks actually drawn on screen: ONLY values fed by a CAN device
+    that is off the bus. A value that has merely stopped *changing* - a parked
+    car's speed, a settled temperature - is never marked, because a steady
+    reading is normal and marking it would cry wolf. A real dropout still shows,
+    since a disconnected device marks every value it feeds."""
+    return merge_device_stale({k: False for k in config.STALE_KEYS},
+                              adapter_down, batt_down, ezk_down)
+
+
 def build_warnings(temps, stale, status, ha_down=False):
     """Build the ordered list of active WARNINGS (highest priority first). The
     plain user message is NOT a warning - it lives in its own message box - so
@@ -97,20 +101,16 @@ def build_warnings(temps, stale, status, ha_down=False):
                  "priority": 110, "icon": "warn"}]
     adapter_down, batt_down, ezk_down = status
     ws = []
-    explained = set()      # keys whose staleness a device warning already explains
     # Three INDEPENDENT device warnings; the adapter takes priority.
     if adapter_down:
         ws.append({"key": "can_adapter", "text": "CAN adapter disconnected",
                    "priority": 100, "icon": "warn"})
-        explained.update(config.CAN_KEYS)
     if batt_down:
         ws.append({"key": "can_bestgo", "text": "BESTGO disconnected",
                    "priority": 96, "icon": "warn"})
-        explained.update(config.BATT_KEYS)
     if ezk_down:
         ws.append({"key": "can_ezk", "text": "EZkontrol disconnected",
                    "priority": 95, "icon": "warn"})
-        explained.update(config.EZK_KEYS)
     # high temps (live readings only) - capped below the device warnings
     for k, lbl in TEMP_WARN_LABELS.items():
         if stale.get(k):
@@ -123,12 +123,10 @@ def build_warnings(temps, stale, status, ha_down=False):
             ws.append({"key": f"temp_{k}",
                        "text": f"High temp: {lbl} {v:.0f}°{config.TEMP_UNIT}",
                        "priority": 70 + min(20, v - config.TEMP_WARN), "icon": "warn"})
-    # any remaining stalled sensor a device warning doesn't already explain
-    # (e.g. the Pi's own temperature)
-    for k, lbl in STALE_WARN_LABELS.items():
-        if k not in explained and stale.get(k):
-            ws.append({"key": f"stale_{k}", "text": f"{lbl} not updating",
-                       "priority": 50, "icon": "warn"})
+    # NOTE: there is deliberately no "<value> not updating" warning. A value that
+    # stops changing is expected (a stopped car, a settled temperature); only a
+    # device that is actually off the bus is worth warning about, and that is
+    # already covered by the three device warnings above.
     ws.sort(key=lambda w: -w["priority"])
     return ws
 

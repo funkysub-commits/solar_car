@@ -65,22 +65,25 @@ def scenarios(D, A):
     HEALTH_UNKNOWN = {"bus": None, "batt": None, "ezk": None}   # sensors absent
 
     def assess(temps, stale, health, hidden=()):
-        """Mirror the main loop: status -> merged stale -> warnings (no message;
-        that's separate now). Returns (merged stale, visible warning list)."""
+        """Mirror the main loop: status -> merged stale (internal, for the
+        high-temp guard) -> warnings, and the on-screen "!" marks, which come
+        from device_marks() so a merely-unchanging value is never marked.
+        Returns (marks, visible warning list)."""
         status = A.device_status(stale, health)
         merged = A.merge_device_stale(stale, *status)
         ws = A.build_warnings(temps, merged, status)
-        return merged, [w for w in ws if w["key"] not in set(hidden)]
+        return A.device_marks(*status), [w for w in ws if w["key"] not in set(hidden)]
 
     def S(name, speed=22, temps=None, soc=78, voltage=58.4, warnings=None,
           stale=None, ha_msg="", clock_str="14:32",
           header_lines=(("Router", "192.168.1.50:8123"),
-                        ("Hotspot", "203.0.113.7:8123")), charging=False):
+                        ("Hotspot", "203.0.113.7:8123")), charging=False, aux_soc=87):
         return name, dict(speed=speed, temps=temps if temps is not None else temps_ok,
                           soc=soc, voltage=voltage, warnings=warnings or [],
                           stale=stale if stale is not None else no_stale,
                           ha_msg=ha_msg, clock_str=clock_str,
-                          header_lines=list(header_lines), charging=charging)
+                          header_lines=list(header_lines), charging=charging,
+                          aux_soc=aux_soc)
 
     # --- nominal -----------------------------------------------------------
     yield S("normal")
@@ -110,11 +113,16 @@ def scenarios(D, A):
         {"key": "y", "text": "BESTGO disconnected", "priority": 96, "icon": "warn"},
         {"key": "z", "text": "CAN adapter disconnected", "priority": 100, "icon": "warn"}]
     overflow_ws.sort(key=lambda w: -w["priority"])
-    yield S("overflow", warnings=overflow_ws, stale=st)
+    # no device is down, so nothing is marked - a stale-but-connected t_pi
+    # no longer earns a "!" (it only suppresses its own high-temp warning above)
+    yield S("overflow", warnings=overflow_ws, stale=A.device_marks(False, False, False))
     # --- HA unreachable ----------------------------------------------------
+    # every value stale + health unknown => the adapter is inferred down, which
+    # is what marks the CAN values (the Pi temp stays unmarked).
     st = _mkstale(D, D.STALE_KEYS)
     ws = A.build_warnings(temps_ok, st, (False, False, False), ha_down=True)
-    yield S("ha_down", warnings=ws, stale=st, header_lines=[("", "Pi Offline")])
+    yield S("ha_down", warnings=ws, stale=A.device_marks(True, False, False),
+            header_lines=[("", "Pi Offline")])
     # --- inference fallback (health sensors absent) ------------------------
     st, ws = assess(temps_none, _mkstale(D, D.STALE_KEYS), HEALTH_UNKNOWN)
     yield S("can_down_inferred", speed=None, temps=temps_none, soc=None,
@@ -128,6 +136,8 @@ def scenarios(D, A):
     yield S("soc_100", soc=100, voltage=None, clock_str="09:05")
     # --- charging: lightning bolt over the battery icon --------------------
     yield S("charging", speed=0, soc=64, charging=True)
+    # --- aux battery: placeholder entity absent -> "AUX --" ----------------
+    yield S("aux_missing", aux_soc=None)
 
 
 def render_group(group):
@@ -158,7 +168,7 @@ def render_group(group):
     for name, kw in scenarios(D, A):
         img = R.render(kw["speed"], unit, kw["temps"], kw["soc"], kw["voltage"], "V",
                        kw["warnings"], kw["stale"], kw["ha_msg"], kw["clock_str"],
-                       kw["header_lines"], kw["charging"])
+                       kw["header_lines"], kw["charging"], kw["aux_soc"])
         digest = hashlib.sha256(img.tobytes()).hexdigest()
         img.save(GOLDEN / f"{group}_{name}.png")
         print(f"{group}/{name}\t{digest}")

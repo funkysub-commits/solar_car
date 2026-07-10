@@ -30,10 +30,17 @@ SLOW_POLL = max(1.0, float(os.environ.get("SLOW_POLL", "6")))      # seconds bet
 FULL_REFRESH_EVERY = int(os.environ.get("FULL_REFRESH_EVERY", "90"))  # partial pushes between de-ghost full refreshes
 IDLE_SLEEP = float(os.environ.get("IDLE_SLEEP", "180"))      # seconds of no change before the panel deep-sleeps
 
-# Speed: shown exactly as the source entity reports it - value AND unit come
-# from Home Assistant (no conversion in the add-on). Point ent_speed at a
-# sensor in the unit you want on the gauge and set speed_max to match.
+# Speed: the VALUE is shown exactly as the source entity reports it - the add-on
+# does no numeric conversion. Point ent_speed at a sensor in the unit you want on
+# the gauge and set speed_max to match.
 SPEED_MAX = float(os.environ.get("SPEED_MAX", "40"))         # speedometer full-scale, in the entity's unit
+# Relabel the gauge's unit text only (e.g. show "mph" where the entity reports
+# "rpm"). Purely cosmetic - the number is untouched - so set it only when the
+# entity already reports the value in the unit you want to name. Empty = use
+# whatever unit Home Assistant reports.
+SPEED_UNIT = os.environ.get("SPEED_UNIT", "").strip()
+if SPEED_UNIT.lower() in ("null", "none"):   # bashio yields "null" for an unset option
+    SPEED_UNIT = ""
 
 # Temperatures: read internally as degrees Celsius, displayed in TEMP_UNIT.
 # TEMP_MAX and TEMP_WARN are interpreted in the *display* unit (so for "F" the
@@ -45,13 +52,23 @@ TEMP_MAX = float(os.environ.get("TEMP_MAX", "80"))           # temperature bar f
 TEMP_WARN = float(os.environ.get("TEMP_WARN", "65"))         # temperature warning threshold, in TEMP_UNIT
 
 # Source-data freshness: an entity whose last_reported has not advanced within
-# STALE_AGE seconds is treated as "not updating" (gets a "!" mark). When *every*
-# CAN-fed entity is stale, the "CAN bus not connected" warning is raised.
+# STALE_AGE seconds is treated as "not updating". This is an internal signal
+# only - it never puts a "!" on screen or raises a warning by itself, because a
+# value that stops changing is normal (a parked car, a settled temperature). It
+# is used to infer which CAN device is off the bus when the health sensors say
+# nothing, and to stop a frozen reading raising a "high temp" warning.
 STALE_AGE = float(os.environ.get("STALE_AGE", "60"))
 
 # Re-publish sensor.eink_warnings at least this often (seconds) even when the
 # warning list is unchanged, so it self-heals after a Home Assistant restart.
 PUBLISH_EVERY = float(os.environ.get("PUBLISH_EVERY", "30"))
+
+# Written into the message helper once, at start-up, so the MESSAGE box always
+# begins from a known state instead of whatever was left there last run. Empty
+# clears the box on boot.
+STARTUP_MESSAGE = os.environ.get("STARTUP_MESSAGE", "")
+if STARTUP_MESSAGE.strip().lower() in ("null", "none"):   # unset bashio option
+    STARTUP_MESSAGE = ""
 
 LOGO_PATH = os.environ.get("LOGO_PATH", "/logo.png")
 FONT_DIR = os.environ.get("FONT_DIR", "/usr/share/fonts/dejavu")
@@ -72,6 +89,10 @@ ENTITIES = {
     # over the battery icon. Point this at a binary_sensor (or any on/off-ish
     # entity) that is on while the pack is charging.
     "charging": os.environ.get("ENT_CHARGING", "binary_sensor.bestgo_charging"),
+    # Auxiliary (12V) battery state of charge, shown as a small "AUX nn%" above
+    # the right of the main battery bar. Placeholder entity until the real one
+    # exists; reads "--" while it is missing/unavailable.
+    "aux_soc": os.environ.get("ENT_AUX_SOC", "sensor.aux_battery_soc"),
 }
 REFRESH_BUTTON = "input_button.eink_refresh"
 POWER_TOGGLE = os.environ.get("ENT_POWER", "input_boolean.eink_display")

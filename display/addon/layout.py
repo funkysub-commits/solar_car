@@ -51,6 +51,10 @@ BATT_BOX_Y0, BATT_BOX_Y1 = 90, 168
 BATT_BOX_W = 232
 BATT_SOC_Y = 222
 BATT_VOLT_Y = 234
+# Aux (12V) battery percentage: small text on the "BATTERY" heading row, right
+# aligned above the right end of the battery bar. Inside the "batt" refresh
+# region, so it repaints with the rest of the battery block.
+AUX_X, AUX_Y = W - 20, 62
 
 # Temperature bars (right-bottom)
 TEMP_TOP_Y, TEMP_BASE_Y = 326, 398

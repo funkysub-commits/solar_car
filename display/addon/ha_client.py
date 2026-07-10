@@ -264,15 +264,17 @@ _HEALTH_FALSE = {"off", "false", "disconnected", "not connected", "error",
 def read_health(entity):
     """Tri-state read of a connectivity/health entity: True = healthy,
     False = down, None = unknown. None tells the caller to fall back to
-    inferring the same fact from sensor staleness. Unknown covers: the entity
-    missing/unavailable, an unrecognised state, OR the health sensor itself
-    having gone stale (its publisher - the CANbus app - stopped), since a
-    frozen '1' would otherwise mask a real outage."""
-    state, _, lu = ha_get(entity)
+    inferring the same fact from sensor staleness, and covers only a genuinely
+    unknowable state: the entity missing/unavailable, or a state we can't parse.
+
+    An explicit reading is TRUSTED regardless of the entity's timestamp. The
+    CANbus app re-pushes these sensors on a heartbeat with an unchanged state
+    and unchanged attributes, and Home Assistant does not advance last_updated
+    in that case - so an age check here read a healthy, steadily-republished
+    '1' as "stale" and inferred a CAN adapter outage that wasn't happening."""
+    state, _, _ = ha_get(entity)
     if state in (None, "", "unknown", "unavailable"):
         return None
-    if entity_age_seconds(lu) > config.STALE_AGE:
-        return None                      # health signal itself is stale
     s = str(state).strip().lower()
     if s in _HEALTH_TRUE:
         return True
@@ -293,6 +295,17 @@ def read_charging(entity):
     if state in (None, "", "unknown", "unavailable"):
         return False
     return str(state).strip().lower() in _CHARGING_TRUE
+
+
+def set_message(entity, text):
+    """Write the free-text message helper (input_text.set_value). Called once at
+    start-up to reset the MESSAGE box to the configured startup_message, so a
+    note left over from the previous run doesn't linger on the panel. input_text
+    caps its value at 255 chars, so a longer message is truncated rather than
+    rejected outright."""
+    value = str(text)[:255]
+    ha_call_service(entity.split(".", 1)[0], "set_value",
+                    {"entity_id": entity, "value": value})
 
 
 def read_hidden():

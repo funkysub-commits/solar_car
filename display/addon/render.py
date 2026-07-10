@@ -161,9 +161,13 @@ def draw_charge_bolt(d, cx, cy, h):
 
 
 def draw_battery(d, soc, voltage, vunit, stale_soc=False, stale_v=False,
-                 charging=False):
+                 charging=False, aux_soc=None):
     x = layout.BATT_X
     d.text((x, 60), "BATTERY", font=F_LABEL, fill=0, anchor="la")
+
+    # Aux (12V) battery percentage, small, on the heading row at the far right.
+    aux_txt = "AUX --" if aux_soc is None else f"AUX {aux_soc:.0f}%"
+    d.text((layout.AUX_X, layout.AUX_Y), aux_txt, font=F_SMALL, fill=0, anchor="ra")
 
     bx0, by0 = x, layout.BATT_BOX_Y0
     bx1, by1 = x + layout.BATT_BOX_W, layout.BATT_BOX_Y1
@@ -219,7 +223,9 @@ def draw_temps(d, temps, stale):
         d.text((cx, top_y - 6), vtxt, font=F_TEMP, fill=0, anchor="md")
         d.text((cx, base_y + 7), lbl, font=F_SMALL, fill=0, anchor="ma")
         if stale.get(key):
-            draw_warn_mark(d, cx + half + 9, top_y + 12, 17)
+            # inside the bar, near its top - the mark is drawn white-on-black
+            # outline, so it reads whether or not the fill reaches up to it
+            draw_warn_mark(d, cx, top_y + 13, 17)
 
 
 # Warning-bar chip metrics
@@ -287,12 +293,16 @@ def draw_warnings_bar(d, warnings):
 
 
 def render(speed, speed_unit, temps, soc, voltage, voltage_unit,
-           warnings, stale, ha_msg, clock_str, header_lines=None, charging=False):
-    """speed/speed_unit pass through from the HA entity untouched. warnings is
-    the visible (non-hidden) ordered warning list; ha_msg is the user's
-    free-text message (shown in the MESSAGE box, not the warning bar). stale
-    maps value keys -> bool. header_lines is the (label, value) connection-row
-    list for the header block (ha_client.connection_lines())."""
+           warnings, stale, ha_msg, clock_str, header_lines=None, charging=False,
+           aux_soc=None):
+    """speed passes through from the HA entity untouched; speed_unit is the label
+    to print under it (config.SPEED_UNIT overrides the entity's own unit).
+    warnings is the visible (non-hidden) ordered warning list; ha_msg is the
+    user's free-text message (shown in the MESSAGE box, not the warning bar).
+    stale maps value keys -> bool and now marks ONLY values fed by a CAN device
+    that is off the bus (alerts.device_marks), never a merely-unchanging value.
+    header_lines is the (label, value) connection-row list for the header block
+    (ha_client.connection_lines()). aux_soc is the 12V battery percentage."""
     img = Image.new('1', (W, H), 255)
     d = ImageDraw.Draw(img)
 
@@ -313,7 +323,8 @@ def render(speed, speed_unit, temps, soc, voltage, voltage_unit,
     draw_speedometer(d, speed, speed_unit, stale.get("speed", False))
     draw_messages(d, ha_msg)
     draw_battery(d, soc, voltage, voltage_unit,
-                 stale.get("soc", False), stale.get("voltage", False), charging)
+                 stale.get("soc", False), stale.get("voltage", False), charging,
+                 aux_soc)
     draw_temps(d, temps, stale)
     draw_warnings_bar(d, warnings)
     return img

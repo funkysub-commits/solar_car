@@ -16,9 +16,11 @@ focused modules, all copied flat next to this file in the container:
 
 Layout
   Header        : team logo + title + HA IP / "Pi Offline" line + clock
-  Left          : analog speedometer gauge (value + unit exactly as the
-                  configured HA entity reports them - no conversion here)
-  Right-top     : battery icon (state of charge) + pack voltage
+  Left          : analog speedometer gauge (value exactly as the configured HA
+                  entity reports it - no numeric conversion here; the unit label
+                  can be relabelled with the speed_unit option)
+  Right-top     : battery icon (state of charge, + a lightning bolt while
+                  charging) + pack voltage + a small "AUX nn%" 12V reading
   Right-bottom  : four vertical temperature bar graphs (motor / EZkontrol / battery / Pi)
   Bottom band   : a small centred notification "toast" that only appears while a
                   warning is active. All warnings - CAN bus not connected, a
@@ -67,8 +69,8 @@ import config
 import layout
 import panel
 import ha_client
-from alerts import (build_warnings, compute_stale, device_status, fit_hidden,
-                    merge_device_stale, publish_warnings)
+from alerts import (build_warnings, compute_stale, device_marks, device_status,
+                    fit_hidden, merge_device_stale, publish_warnings)
 from ha_client import (ha_get, read_charging, read_health, read_hidden,
                        read_message, read_number, read_temp_c, set_hidden)
 from panel import full_refresh, push_region, region_snaps, settle_and_sleep
@@ -108,7 +110,7 @@ def main():
     # the value stale (and could falsely flip the whole display to "CAN bus not
     # connected"). Only advance the timestamp on a successful read.
     speed, speed_unit, lu = read_number(config.ENTITIES["speed"])
-    speed_unit = speed_unit or ""
+    speed_unit = config.SPEED_UNIT or speed_unit or ""   # option relabels the gauge unit
     if lu is not None:
         last_iso["speed"] = lu
     temps = {k: None for k in ("t_motor", "t_ezk", "t_batt", "t_pi")}
@@ -126,6 +128,11 @@ def main():
     if not voltage_unit:
         voltage_unit = "V"
     charging = read_charging(config.ENTITIES["charging"])
+    aux_soc, _, _ = read_number(config.ENTITIES["aux_soc"])
+    # Reset the MESSAGE box to the configured startup text on every boot, so a
+    # note typed during the last run doesn't reappear. Read it back rather than
+    # assuming, so a failed service call still shows whatever HA actually holds.
+    ha_client.set_message(config.ENTITIES["message"], config.STARTUP_MESSAGE)
     ha_msg = read_message(config.ENTITIES["message"]) or ""
     hidden = read_hidden()
     # CAN connectivity, from the CANbus app's health sensors. Tri-state per
@@ -136,13 +143,18 @@ def main():
               "ezk": read_health(config.ENT_CAN_EZK)}
 
     def current_alerts():
-        """(stale map with device outages merged in, full warning list). The
-        user message is NOT a warning here - it goes to the MESSAGE box."""
+        """(on-screen "!" marks, full warning list). The user message is NOT a
+        warning here - it goes to the MESSAGE box.
+
+        Age-based staleness stays internal: it infers which CAN device is off the
+        bus and stops a frozen reading raising a "high temp" warning. Only a
+        device that is actually down puts a "!" on screen, so a parked car (speed
+        stops changing) never lights up the display."""
         stale = compute_stale(last_iso)
         status = device_status(stale, health)
-        stale = merge_device_stale(stale, *status)
-        return stale, build_warnings(temps, stale, status,
-                                     ha_down=ha_client.ha_unreachable())
+        merged = merge_device_stale(stale, *status)
+        return device_marks(*status), build_warnings(
+            temps, merged, status, ha_down=ha_client.ha_unreachable())
 
     def assemble():
         """Compute (stale map, visible warnings) and keep the published HA
@@ -191,7 +203,7 @@ def main():
     powered = ha_get(config.POWER_TOGGLE)[0] != "off"   # default ON if the toggle is absent
     if powered:
         img = render(speed, speed_unit, temps, soc, voltage, voltage_unit,
-                     visible, stale, ha_msg, clock, header_lines, charging)
+                     visible, stale, ha_msg, clock, header_lines, charging, aux_soc)
         full_refresh(epd, img)            # clean base frame, then partial mode
         logging.info("initial frame drawn")
     else:
@@ -199,7 +211,7 @@ def main():
         logging.info("display starts OFF (HA toggle)")
 
     last_snaps = region_snaps(speed, speed_unit, temps, soc, voltage, visible,
-                              stale, ha_msg, clock, charging)
+                              stale, ha_msg, clock, charging, aux_soc)
     refresh_count = 0
     last_slow = time.time()
     last_button, _, _ = ha_get(config.REFRESH_BUTTON)
@@ -227,8 +239,7 @@ def main():
             s, su, lu = read_number(config.ENTITIES["speed"])
             if s is not None:
                 speed = s
-            if su:
-                speed_unit = su
+            speed_unit = config.SPEED_UNIT or su or speed_unit
             if lu is not None:
                 last_iso["speed"] = lu
 
@@ -251,6 +262,8 @@ def main():
                 if lu is not None:
                     last_iso["voltage"] = lu
                 charging = read_charging(config.ENTITIES["charging"])
+                av, _, _ = read_number(config.ENTITIES["aux_soc"])
+                aux_soc = av                  # None when the entity is absent -> "AUX --"
                 health["bus"] = read_health(config.ENT_CAN_BUS)
                 health["batt"] = read_health(config.ENT_CAN_BATT)
                 health["ezk"] = read_health(config.ENT_CAN_EZK)
@@ -272,13 +285,14 @@ def main():
             header_lines = ha_client.connection_lines()
 
             snaps = region_snaps(speed, speed_unit, temps, soc, voltage, visible,
-                                 stale, ha_msg, clock, charging)
+                                 stale, ha_msg, clock, charging, aux_soc)
             changed = [r for r in layout.REGIONS if snaps[r] != last_snaps.get(r)]
             data_changed = any(r in layout.DATA_REGIONS for r in changed)
 
             if data_changed or force or turning_on:
                 img = render(speed, speed_unit, temps, soc, voltage, voltage_unit,
-                             visible, stale, ha_msg, clock, header_lines, charging)
+                             visible, stale, ha_msg, clock, header_lines, charging,
+                             aux_soc)
                 spd_txt = "--" if speed is None else f"{speed:.0f}{speed_unit}"
                 if turning_on or not awake or force or refresh_count >= config.FULL_REFRESH_EVERY:
                     full_refresh(epd, img)        # power-on / wake / de-ghost
@@ -299,7 +313,8 @@ def main():
                 # no telemetry change for a while - settle the image and sleep
                 # the panel (e-paper must not be left powered/active when idle)
                 img = render(speed, speed_unit, temps, soc, voltage, voltage_unit,
-                             visible, stale, ha_msg, clock, header_lines, charging)
+                             visible, stale, ha_msg, clock, header_lines, charging,
+                             aux_soc)
                 settle_and_sleep(epd, img)
                 awake = False
                 last_snaps = snaps

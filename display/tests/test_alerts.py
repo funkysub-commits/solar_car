@@ -72,6 +72,26 @@ class MergeDeviceStale(unittest.TestCase):
         self.assertFalse(merged["t_pi"])
 
 
+class DeviceMarks(unittest.TestCase):
+    """The on-screen "!" marks ignore age-staleness entirely."""
+
+    def test_nothing_down_marks_nothing(self):
+        marks = alerts.device_marks(False, False, False)
+        self.assertFalse(any(marks.values()), marks)
+
+    def test_battery_down_marks_exactly_battery_keys(self):
+        marks = alerts.device_marks(False, True, False)
+        for k in config.BATT_KEYS:
+            self.assertTrue(marks[k], k)
+        for k in config.EZK_KEYS + ("t_pi",):
+            self.assertFalse(marks[k], k)
+
+    def test_every_stale_key_is_covered(self):
+        # marks must be a total map over STALE_KEYS - render() indexes it
+        self.assertEqual(set(alerts.device_marks(True, True, True)),
+                         set(config.STALE_KEYS))
+
+
 class BuildWarnings(unittest.TestCase):
     TEMPS = {"t_motor": 40.0, "t_ezk": 35.0, "t_batt": 30.0, "t_pi": 48.0}
 
@@ -79,18 +99,24 @@ class BuildWarnings(unittest.TestCase):
         return [w["key"] for w in ws]
 
     def test_priority_order(self):
-        # bestgo down + a live high motor temp + Pi temp stale (non-CAN)
+        # bestgo down + a live high motor temp + Pi temp stale (non-CAN).
+        # The stale Pi temp raises NO warning - only devices off the bus do.
         temps = {**self.TEMPS, "t_motor": 72.0}
         st = alerts.merge_device_stale(stale("t_pi"), False, True, False)
         ws = alerts.build_warnings(temps, st, (False, True, False))
-        self.assertEqual(self.keys(ws),
-                         ["can_bestgo", "temp_t_motor", "stale_t_pi"])
+        self.assertEqual(self.keys(ws), ["can_bestgo", "temp_t_motor"])
 
     def test_all_three_devices_separate_adapter_first(self):
         st = alerts.merge_device_stale(stale("t_pi"), True, True, True)
         ws = alerts.build_warnings(self.TEMPS, st, (True, True, True))
         self.assertEqual(self.keys(ws),
-                         ["can_adapter", "can_bestgo", "can_ezk", "stale_t_pi"])
+                         ["can_adapter", "can_bestgo", "can_ezk"])
+
+    def test_unchanging_value_raises_no_warning(self):
+        # a parked car: every value frozen, but nothing is reported off the bus
+        st = stale(*config.STALE_KEYS)
+        ws = alerts.build_warnings(self.TEMPS, st, (False, False, False))
+        self.assertEqual(self.keys(ws), [])
 
     def test_device_warning_replaces_its_stale_warnings(self):
         st = alerts.merge_device_stale(stale(), False, True, False)
@@ -103,10 +129,11 @@ class BuildWarnings(unittest.TestCase):
         self.assertEqual(self.keys(ws), ["temp_t_batt", "temp_t_motor"])
 
     def test_high_temp_suppressed_when_stale(self):
+        # a frozen reading raises neither a high-temp warning nor a stale one
         temps = {**self.TEMPS, "t_motor": 90.0}
         ws = alerts.build_warnings(temps, stale("t_motor"),
                                    (False, False, False))
-        self.assertEqual(self.keys(ws), ["stale_t_motor"])
+        self.assertEqual(self.keys(ws), [])
 
     def test_device_warning_outranks_temp(self):
         # a live high temp is capped (<=90) so device-down warnings stay above it
@@ -156,11 +183,26 @@ class ReaderParsing(unittest.TestCase):
             self.fake_get((state, {} if state else {}, fresh if state else None))
             self.assertEqual(ha_client.read_health("x"), want, state)
 
-    def test_read_health_stale_signal_is_unknown(self):
-        # a health sensor frozen at "1" but not updated for ages reads unknown,
-        # so the caller falls back to data-staleness inference
+    def test_read_health_trusts_an_old_timestamp(self):
+        # The CANbus app re-pushes an unchanged "1" on a heartbeat, and HA does
+        # not advance last_updated for an unchanged state+attributes. An explicit
+        # reading must therefore be trusted no matter how old its timestamp
+        # looks - otherwise a healthy adapter reads as "CAN adapter disconnected".
         self.fake_get(("1", {}, "2020-01-01T00:00:00Z"))
-        self.assertIsNone(ha_client.read_health("x"))
+        self.assertIs(ha_client.read_health("x"), True)
+        self.fake_get(("0", {}, "2020-01-01T00:00:00Z"))
+        self.assertIs(ha_client.read_health("x"), False)
+
+    def test_set_message_truncates_and_uses_entity_domain(self):
+        calls = []
+        orig = ha_client.ha_call_service
+        ha_client.ha_call_service = lambda d, s, data: calls.append((d, s, data))
+        self.addCleanup(lambda: setattr(ha_client, "ha_call_service", orig))
+        ha_client.set_message("input_text.eink_message", "x" * 300)
+        domain, service, data = calls[0]
+        self.assertEqual((domain, service), ("input_text", "set_value"))
+        self.assertEqual(data["entity_id"], "input_text.eink_message")
+        self.assertEqual(len(data["value"]), 255)   # input_text's hard cap
 
     def test_read_message_tristate(self):
         self.fake_get((None, {}, None))              # request failed
