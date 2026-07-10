@@ -161,13 +161,19 @@ def draw_charge_bolt(d, cx, cy, h):
 
 
 def draw_battery(d, soc, voltage, vunit, stale_soc=False, stale_v=False,
-                 charging=False, aux_soc=None):
+                 charging=False, aux_soc=None, aux_on=True, aux_stale=False):
     x = layout.BATT_X
     d.text((x, 60), "BATTERY", font=F_LABEL, fill=0, anchor="la")
 
     # Aux (12V) battery percentage, small, on the heading row at the far right.
-    aux_txt = "AUX --" if aux_soc is None else f"AUX {aux_soc:.0f}%"
-    d.text((layout.AUX_X, layout.AUX_Y), aux_txt, font=F_SMALL, fill=0, anchor="ra")
+    # Disabled -> nothing is drawn at all, so the row reads as it did before the
+    # aux battery existed.
+    if aux_on:
+        aux_txt = "AUX --" if aux_soc is None else f"AUX {aux_soc:.0f}%"
+        d.text((layout.AUX_X, layout.AUX_Y), aux_txt, font=F_SMALL, fill=0, anchor="ra")
+        if aux_stale:
+            w = d.textlength(aux_txt, font=F_SMALL)
+            draw_warn_mark(d, layout.AUX_X - w - 14, layout.AUX_Y + 8, 17)
 
     bx0, by0 = x, layout.BATT_BOX_Y0
     bx1, by1 = x + layout.BATT_BOX_W, layout.BATT_BOX_Y1
@@ -294,7 +300,7 @@ def draw_warnings_bar(d, warnings):
 
 def render(speed, speed_unit, temps, soc, voltage, voltage_unit,
            warnings, stale, ha_msg, clock_str, header_lines=None, charging=False,
-           aux_soc=None):
+           aux_soc=None, aux_on=True, aux_stale=False):
     """speed passes through from the HA entity untouched; speed_unit is the label
     to print under it (config.SPEED_UNIT overrides the entity's own unit).
     warnings is the visible (non-hidden) ordered warning list; ha_msg is the
@@ -302,7 +308,8 @@ def render(speed, speed_unit, temps, soc, voltage, voltage_unit,
     stale maps value keys -> bool and now marks ONLY values fed by a CAN device
     that is off the bus (alerts.device_marks), never a merely-unchanging value.
     header_lines is the (label, value) connection-row list for the header block
-    (ha_client.connection_lines()). aux_soc is the 12V battery percentage."""
+    (ha_client.connection_lines()). aux_soc is the 12V battery percentage, drawn
+    only when aux_on; aux_stale marks it when its status sensor reads down."""
     img = Image.new('1', (W, H), 255)
     d = ImageDraw.Draw(img)
 
@@ -324,7 +331,7 @@ def render(speed, speed_unit, temps, soc, voltage, voltage_unit,
     draw_messages(d, ha_msg)
     draw_battery(d, soc, voltage, voltage_unit,
                  stale.get("soc", False), stale.get("voltage", False), charging,
-                 aux_soc)
+                 aux_soc, aux_on, aux_stale)
     draw_temps(d, temps, stale)
     draw_warnings_bar(d, warnings)
     return img

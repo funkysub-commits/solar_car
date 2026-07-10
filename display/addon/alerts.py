@@ -80,7 +80,7 @@ def device_marks(adapter_down, batt_down, ezk_down):
                               adapter_down, batt_down, ezk_down)
 
 
-def build_warnings(temps, stale, status, ha_down=False):
+def build_warnings(temps, stale, status, ha_down=False, aux_down=False):
     """Build the ordered list of active WARNINGS (highest priority first). The
     plain user message is NOT a warning - it lives in its own message box - so
     it is not produced here.
@@ -93,6 +93,10 @@ def build_warnings(temps, stale, status, ha_down=False):
     so those warnings are replaced by a single accurate one - otherwise an HA
     outage would masquerade as a CAN fault and send whoever is debugging to the
     wrong subsystem.
+
+    aux_down means the auxiliary battery's status sensor explicitly reads down.
+    The caller only ever passes True while the aux battery is enabled, so a
+    disabled (or merely absent/placeholder) aux battery raises no warning.
 
     Each warning is a dict {key, text, priority, icon}; 'key' is stable so the
     HA dashboard can hide an individual warning."""
@@ -111,6 +115,10 @@ def build_warnings(temps, stale, status, ha_down=False):
     if ezk_down:
         ws.append({"key": "can_ezk", "text": "EZkontrol disconnected",
                    "priority": 95, "icon": "warn"})
+    # aux battery - only ever passed True while config.AUX_ENABLED
+    if aux_down:
+        ws.append({"key": "aux_batt", "text": "AUX battery disconnected",
+                   "priority": 94, "icon": "warn"})
     # high temps (live readings only) - capped below the device warnings
     for k, lbl in TEMP_WARN_LABELS.items():
         if stale.get(k):

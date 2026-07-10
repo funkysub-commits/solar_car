@@ -25,7 +25,7 @@ HA_PORT = os.environ.get("HA_PORT", "8123")
 
 # Poll intervals are clamped to sane minimums so a mistyped (e.g. negative)
 # option can't turn the loop into a Home Assistant-hammering busy spin.
-SPEED_POLL = max(0.2, float(os.environ.get("SPEED_POLL", "2.5")))  # seconds between speedometer updates
+SPEED_POLL = max(0.2, float(os.environ.get("SPEED_POLL", "1")))    # seconds between speedometer updates
 SLOW_POLL = max(1.0, float(os.environ.get("SLOW_POLL", "6")))      # seconds between temp/SoC/message updates
 FULL_REFRESH_EVERY = int(os.environ.get("FULL_REFRESH_EVERY", "90"))  # partial pushes between de-ghost full refreshes
 IDLE_SLEEP = float(os.environ.get("IDLE_SLEEP", "180"))      # seconds of no change before the panel deep-sleeps
@@ -94,6 +94,15 @@ ENTITIES = {
     # exists; reads "--" while it is missing/unavailable.
     "aux_soc": os.environ.get("ENT_AUX_SOC", "sensor.aux_battery_soc"),
 }
+
+# Auxiliary battery. When aux_enabled is off the "AUX" text is not drawn and the
+# aux battery can raise no warning at all - the whole feature disappears, which
+# is what you want before the hardware exists. ent_aux_status is a connectivity
+# sensor like the CAN ones (1/on = present): an explicit "down" raises a warning
+# and marks the AUX reading; a missing/unknown placeholder stays quiet.
+AUX_ENABLED = os.environ.get("AUX_ENABLED", "true").strip().lower() \
+    in ("1", "true", "yes", "on")
+ENT_AUX_STATUS = os.environ.get("ENT_AUX_STATUS", "binary_sensor.aux_battery_status")
 REFRESH_BUTTON = "input_button.eink_refresh"
 POWER_TOGGLE = os.environ.get("ENT_POWER", "input_boolean.eink_display")
 

@@ -75,15 +75,16 @@ def scenarios(D, A):
         return A.device_marks(*status), [w for w in ws if w["key"] not in set(hidden)]
 
     def S(name, speed=22, temps=None, soc=78, voltage=58.4, warnings=None,
-          stale=None, ha_msg="", clock_str="14:32",
+          stale=None, ha_msg="", clock_str="2:32:07",
           header_lines=(("Router", "192.168.1.50:8123"),
-                        ("Hotspot", "203.0.113.7:8123")), charging=False, aux_soc=87):
+                        ("Hotspot", "203.0.113.7:8123")), charging=False, aux_soc=87,
+          aux_on=True, aux_stale=False):
         return name, dict(speed=speed, temps=temps if temps is not None else temps_ok,
                           soc=soc, voltage=voltage, warnings=warnings or [],
                           stale=stale if stale is not None else no_stale,
                           ha_msg=ha_msg, clock_str=clock_str,
                           header_lines=list(header_lines), charging=charging,
-                          aux_soc=aux_soc)
+                          aux_soc=aux_soc, aux_on=aux_on, aux_stale=aux_stale)
 
     # --- nominal -----------------------------------------------------------
     yield S("normal")
@@ -131,13 +132,19 @@ def scenarios(D, A):
     st, ws = assess(temps_hot1, no_stale, HEALTH_OK, hidden=("temp_t_motor",))
     yield S("hidden", temps=temps_hot1, warnings=ws, stale=st)
     # --- SoC boundaries ----------------------------------------------------
-    yield S("soc_0", speed=0, soc=0, voltage=42.0, clock_str="23:59")
-    yield S("soc_15", speed=38.6, soc=15, voltage=46.1, clock_str="00:00")
-    yield S("soc_100", soc=100, voltage=None, clock_str="09:05")
+    yield S("soc_0", speed=0, soc=0, voltage=42.0, clock_str="11:59:58")
+    yield S("soc_15", speed=38.6, soc=15, voltage=46.1, clock_str="12:00:00")
+    yield S("soc_100", soc=100, voltage=None, clock_str="9:05:03")
     # --- charging: lightning bolt over the battery icon --------------------
     yield S("charging", speed=0, soc=64, charging=True)
     # --- aux battery: placeholder entity absent -> "AUX --" ----------------
     yield S("aux_missing", aux_soc=None)
+    # --- aux battery disabled -> no AUX text at all, no warning ------------
+    yield S("aux_off", aux_on=False)
+    # --- aux battery status explicitly down -> "!" beside it + a warning ---
+    yield S("aux_down", aux_soc=41, aux_stale=True,
+            warnings=[{"key": "aux_batt", "text": "AUX battery disconnected",
+                       "priority": 94, "icon": "warn"}])
 
 
 def render_group(group):
@@ -168,7 +175,8 @@ def render_group(group):
     for name, kw in scenarios(D, A):
         img = R.render(kw["speed"], unit, kw["temps"], kw["soc"], kw["voltage"], "V",
                        kw["warnings"], kw["stale"], kw["ha_msg"], kw["clock_str"],
-                       kw["header_lines"], kw["charging"], kw["aux_soc"])
+                       kw["header_lines"], kw["charging"], kw["aux_soc"],
+                       kw["aux_on"], kw["aux_stale"])
         digest = hashlib.sha256(img.tobytes()).hexdigest()
         img.save(GOLDEN / f"{group}_{name}.png")
         print(f"{group}/{name}\t{digest}")

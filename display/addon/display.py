@@ -23,15 +23,17 @@ Layout
                   charging) + pack voltage + a small "AUX nn%" 12V reading
   Right-bottom  : four vertical temperature bar graphs (motor / EZkontrol / battery / Pi)
   Bottom band   : a small centred notification "toast" that only appears while a
-                  warning is active. All warnings - CAN bus not connected, a
-                  sensor that has stopped updating, a high temperature, or a
-                  user message typed in Home Assistant - flow through this one
-                  box. The single most important warning is shown; if more than
-                  one is active a small badge shows the total count.
+                  warning is active. All warnings - a CAN device off the bus, an
+                  aux battery off the bus, or a high temperature - flow through
+                  this one box. The single most important warning is shown; if
+                  more than one is active a small badge shows the total count.
 
-  Any value whose source entity has stopped updating (its last_reported stops
-  advancing) gets a small "!" warning mark drawn next to it - a steady value
-  that is genuinely unchanging is *not* marked, only data that isn't arriving.
+  A small "!" mark is drawn next to a value only when the device that feeds it
+  is off the bus. A value that has merely stopped *changing* - a parked car's
+  speed, a settled temperature - is never marked, because that is normal.
+
+  The clock ticks seconds (12-hour, no AM/PM), which makes it obvious at a
+  glance whether the panel is still being refreshed.
 
 Refresh strategy & panel longevity
   E-ink wears a little with every refresh, and Waveshare explicitly warns the
@@ -81,6 +83,13 @@ def fmt_temps(temps):
     return {k: (None if v is None else round(v, 1)) for k, v in temps.items()}
 
 
+def now_clock():
+    """12-hour clock with seconds and no AM/PM, e.g. "2:32:07". The seconds tick
+    is the at-a-glance proof that the panel is still being refreshed. %I is
+    zero-padded, so strip that leading zero (12 and 10-11 are unaffected)."""
+    return datetime.now().strftime("%I:%M:%S").lstrip("0")
+
+
 def main():
     if panel.epd7in5_V2 is None:
         logging.error(f"Waveshare e-Paper library not available: {panel.EPD_IMPORT_ERROR}")
@@ -128,7 +137,7 @@ def main():
     if not voltage_unit:
         voltage_unit = "V"
     charging = read_charging(config.ENTITIES["charging"])
-    aux_soc, _, _ = read_number(config.ENTITIES["aux_soc"])
+    aux_soc = read_number(config.ENTITIES["aux_soc"])[0] if config.AUX_ENABLED else None
     # Reset the MESSAGE box to the configured startup text on every boot, so a
     # note typed during the last run doesn't reappear. Read it back rather than
     # assuming, so a failed service call still shows whatever HA actually holds.
@@ -140,7 +149,14 @@ def main():
     # None falls back to staleness inference inside device_status().
     health = {"bus": read_health(config.ENT_CAN_BUS),
               "batt": read_health(config.ENT_CAN_BATT),
-              "ezk": read_health(config.ENT_CAN_EZK)}
+              "ezk": read_health(config.ENT_CAN_EZK),
+              "aux": read_health(config.ENT_AUX_STATUS) if config.AUX_ENABLED else None}
+
+    def aux_is_down():
+        """Only an EXPLICIT "down" from the aux status sensor counts. A disabled
+        aux battery, or the placeholder entity that doesn't exist yet, reads
+        unknown and stays silent - no warning, no mark."""
+        return config.AUX_ENABLED and health.get("aux") is False
 
     def current_alerts():
         """(on-screen "!" marks, full warning list). The user message is NOT a
@@ -154,7 +170,8 @@ def main():
         status = device_status(stale, health)
         merged = merge_device_stale(stale, *status)
         return device_marks(*status), build_warnings(
-            temps, merged, status, ha_down=ha_client.ha_unreachable())
+            temps, merged, status, ha_down=ha_client.ha_unreachable(),
+            aux_down=aux_is_down())
 
     def assemble():
         """Compute (stale map, visible warnings) and keep the published HA
@@ -197,13 +214,14 @@ def main():
     _pub_time = 0.0
 
     stale, visible = assemble()
-    clock = datetime.now().strftime("%H:%M")
+    clock = now_clock()
     ha_client.refresh_network(force=True)               # first frame has the addresses
     header_lines = ha_client.connection_lines()
     powered = ha_get(config.POWER_TOGGLE)[0] != "off"   # default ON if the toggle is absent
     if powered:
         img = render(speed, speed_unit, temps, soc, voltage, voltage_unit,
-                     visible, stale, ha_msg, clock, header_lines, charging, aux_soc)
+                     visible, stale, ha_msg, clock, header_lines, charging, aux_soc,
+                     config.AUX_ENABLED, aux_is_down())
         full_refresh(epd, img)            # clean base frame, then partial mode
         logging.info("initial frame drawn")
     else:
@@ -211,7 +229,7 @@ def main():
         logging.info("display starts OFF (HA toggle)")
 
     last_snaps = region_snaps(speed, speed_unit, temps, soc, voltage, visible,
-                              stale, ha_msg, clock, charging, aux_soc)
+                              stale, ha_msg, clock, charging, aux_soc, aux_is_down())
     refresh_count = 0
     last_slow = time.time()
     last_button, _, _ = ha_get(config.REFRESH_BUTTON)
@@ -262,8 +280,9 @@ def main():
                 if lu is not None:
                     last_iso["voltage"] = lu
                 charging = read_charging(config.ENTITIES["charging"])
-                av, _, _ = read_number(config.ENTITIES["aux_soc"])
-                aux_soc = av                  # None when the entity is absent -> "AUX --"
+                if config.AUX_ENABLED:        # None when absent -> "AUX --"
+                    aux_soc = read_number(config.ENTITIES["aux_soc"])[0]
+                    health["aux"] = read_health(config.ENT_AUX_STATUS)
                 health["bus"] = read_health(config.ENT_CAN_BUS)
                 health["batt"] = read_health(config.ENT_CAN_BATT)
                 health["ezk"] = read_health(config.ENT_CAN_EZK)
@@ -281,18 +300,18 @@ def main():
                 last_button = btn
 
             stale, visible = assemble()
-            clock = datetime.now().strftime("%H:%M")
+            clock = now_clock()
             header_lines = ha_client.connection_lines()
 
             snaps = region_snaps(speed, speed_unit, temps, soc, voltage, visible,
-                                 stale, ha_msg, clock, charging, aux_soc)
+                                 stale, ha_msg, clock, charging, aux_soc, aux_is_down())
             changed = [r for r in layout.REGIONS if snaps[r] != last_snaps.get(r)]
             data_changed = any(r in layout.DATA_REGIONS for r in changed)
 
             if data_changed or force or turning_on:
                 img = render(speed, speed_unit, temps, soc, voltage, voltage_unit,
                              visible, stale, ha_msg, clock, header_lines, charging,
-                             aux_soc)
+                             aux_soc, config.AUX_ENABLED, aux_is_down())
                 spd_txt = "--" if speed is None else f"{speed:.0f}{speed_unit}"
                 if turning_on or not awake or force or refresh_count >= config.FULL_REFRESH_EVERY:
                     full_refresh(epd, img)        # power-on / wake / de-ghost
@@ -314,7 +333,7 @@ def main():
                 # the panel (e-paper must not be left powered/active when idle)
                 img = render(speed, speed_unit, temps, soc, voltage, voltage_unit,
                              visible, stale, ha_msg, clock, header_lines, charging,
-                             aux_soc)
+                             aux_soc, config.AUX_ENABLED, aux_is_down())
                 settle_and_sleep(epd, img)
                 awake = False
                 last_snaps = snaps

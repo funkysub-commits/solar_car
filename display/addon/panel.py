@@ -76,7 +76,7 @@ def diagnose_gpio():
 
 
 def region_snaps(speed, speed_unit, temps, soc, voltage, warnings, stale,
-                 ha_msg, clock_str, charging=False, aux_soc=None):
+                 ha_msg, clock_str, charging=False, aux_soc=None, aux_stale=False):
     """Per-region coarse snapshot - a region is only refreshed when its tuple
     changes. speed/speed_unit come straight from the HA entity. Stale flags are
     included so a value's "!" mark appearing/clearing triggers a refresh.
@@ -90,7 +90,7 @@ def region_snaps(speed, speed_unit, temps, soc, voltage, warnings, stale,
         "batt": (None if soc is None else round(soc),
                  None if voltage is None else round(voltage, 1),
                  stale.get("soc", False), stale.get("voltage", False), charging,
-                 None if aux_soc is None else round(aux_soc)),
+                 None if aux_soc is None else round(aux_soc), aux_stale),
         "temps": tuple((None if temps.get(k) is None else round(to_display_temp(temps.get(k))),
                         stale.get(k, False))
                        for k in ("t_motor", "t_ezk", "t_batt", "t_pi")),

@@ -141,11 +141,36 @@ class BuildWarnings(unittest.TestCase):
         ws = alerts.build_warnings(temps, stale(), (False, True, False))
         self.assertEqual(self.keys(ws)[0], "can_bestgo")
 
+    def test_aux_down_warns_below_the_can_devices(self):
+        ws = alerts.build_warnings(self.TEMPS, stale(), (False, False, True),
+                                   aux_down=True)
+        self.assertEqual(self.keys(ws), ["can_ezk", "aux_batt"])
+
+    def test_aux_silent_by_default(self):
+        # a disabled or placeholder aux battery never reaches build_warnings as
+        # down, so it contributes nothing
+        ws = alerts.build_warnings(self.TEMPS, stale(), (False, False, False))
+        self.assertEqual(self.keys(ws), [])
+
+    def test_ha_down_hides_aux_warning_too(self):
+        ws = alerts.build_warnings(self.TEMPS, stale(), (False, False, False),
+                                   ha_down=True, aux_down=True)
+        self.assertEqual(self.keys(ws), ["ha"])
+
     def test_ha_down_is_only_warning(self):
         st = stale(*config.STALE_KEYS)
         ws = alerts.build_warnings({**self.TEMPS, "t_motor": 99.0}, st,
                                    (True, False, False), ha_down=True)
         self.assertEqual(self.keys(ws), ["ha"])
+
+
+class Clock(unittest.TestCase):
+    def test_12h_with_seconds_and_no_leading_zero(self):
+        import display
+        for _ in range(3):
+            s = display.now_clock()
+            # 1-12 hour (never "0" or "01"), :MM:SS, no AM/PM
+            self.assertRegex(s, r"^(1[0-2]|[1-9]):[0-5]\d:[0-5]\d$")
 
 
 class FitHidden(unittest.TestCase):
