@@ -5,8 +5,8 @@ from PIL import Image, ImageDraw
 import config
 import layout
 from layout import (W, H, HEAD_H, DIV_X, BAT_DIV_Y, MSG_DIV_Y, CONTENT_BOT,
-                    F_TITLE, F_HEAD_LABEL, F_HEAD_NET, F_LABEL, F_SPEED, F_UNIT,
-                    F_SOC, F_TEMP, F_SMALL, F_MSG, F_WARN, F_BADGE,
+                    F_TITLE, F_HEAD_LABEL, F_HEAD_NET, F_LABEL, F_SPEED, F_ODO,
+                    F_UNIT, F_SOC, F_TEMP, F_SMALL, F_MSG, F_WARN, F_BADGE,
                     F_SPLASH, F_SPLASH_SUB)
 from units import clamp, to_display_temp
 
@@ -95,6 +95,33 @@ def draw_speedometer(d, speed, unit, stale=False):
     if stale:
         w = d.textlength("SPEED", font=F_LABEL)
         draw_warn_mark(d, cx + w / 2 + 18, 62, 22)
+
+
+def _odo_text(d, dist):
+    """Fit the odometer total to its box by shedding precision, never digits:
+    "1,284.6" -> "1,285" -> "1285". An odometer's leading digits are the whole
+    point, so ellipsizing (which would eat them) is the last resort."""
+    if dist is None:
+        return "--"
+    for txt in (f"{dist:,.1f}", f"{dist:,.0f}", f"{dist:.0f}"):
+        if d.textlength(txt, font=F_ODO) <= layout.ODO_MAXW:
+            return txt
+    return _ellipsize(d, f"{dist:.0f}", F_ODO, layout.ODO_MAXW)
+
+
+def draw_odometer(d, dist, unit):
+    """Total distance travelled, boxed, in the right half of the left-top pane.
+    Mirrors the speedometer's LABEL / value / unit stack. dist and unit come
+    straight from the Home Assistant entity - no conversion here."""
+    cx = layout.ODO_CX
+    d.text((cx, layout.ODO_LABEL_Y), "ODOMETER", font=F_LABEL, fill=0, anchor="ma")
+
+    d.rectangle((cx - layout.ODO_BOX_HALF_W, layout.ODO_BOX_Y0,
+                 cx + layout.ODO_BOX_HALF_W, layout.ODO_BOX_Y1),
+                outline=0, width=3)
+
+    d.text((cx, layout.ODO_VALUE_Y), _odo_text(d, dist), font=F_ODO, fill=0, anchor="mm")
+    d.text((cx, layout.ODO_UNIT_Y), unit or "mi", font=F_UNIT, fill=0, anchor="ma")
 
 
 def draw_header_net(d, lines):
@@ -300,7 +327,7 @@ def draw_warnings_bar(d, warnings):
 
 def render(speed, speed_unit, temps, soc, voltage, voltage_unit,
            warnings, stale, ha_msg, clock_str, header_lines=None, charging=False,
-           aux_soc=None, aux_on=True, aux_stale=False):
+           aux_soc=None, aux_on=True, aux_stale=False, odo=None, odo_unit=""):
     """speed passes through from the HA entity untouched; speed_unit is the label
     to print under it (config.SPEED_UNIT overrides the entity's own unit).
     warnings is the visible (non-hidden) ordered warning list; ha_msg is the
@@ -309,7 +336,8 @@ def render(speed, speed_unit, temps, soc, voltage, voltage_unit,
     that is off the bus (alerts.device_marks), never a merely-unchanging value.
     header_lines is the (label, value) connection-row list for the header block
     (ha_client.connection_lines()). aux_soc is the 12V battery percentage, drawn
-    only when aux_on; aux_stale marks it when its status sensor reads down."""
+    only when aux_on; aux_stale marks it when its status sensor reads down.
+    odo/odo_unit are the total distance travelled, passed through untouched."""
     img = Image.new('1', (W, H), 255)
     d = ImageDraw.Draw(img)
 
@@ -318,6 +346,9 @@ def render(speed, speed_unit, temps, soc, voltage, voltage_unit,
     d.line((DIV_X, HEAD_H, DIV_X, CONTENT_BOT), fill=0, width=2)
     d.line((DIV_X, BAT_DIV_Y, W - 3, BAT_DIV_Y), fill=0, width=2)
     d.line((8, MSG_DIV_Y, 444, MSG_DIV_Y), fill=0, width=2)
+    # splits the left-top pane into speedometer | odometer
+    d.line((layout.SPD_ODO_DIV_X, HEAD_H, layout.SPD_ODO_DIV_X, MSG_DIV_Y),
+           fill=0, width=2)
 
     tx = 16
     if layout.LOGO is not None:
@@ -328,6 +359,7 @@ def render(speed, speed_unit, temps, soc, voltage, voltage_unit,
     d.text((W - 18, 9), clock_str, font=F_TITLE, fill=0, anchor="ra")
 
     draw_speedometer(d, speed, speed_unit, stale.get("speed", False))
+    draw_odometer(d, odo, odo_unit)
     draw_messages(d, ha_msg)
     draw_battery(d, soc, voltage, voltage_unit,
                  stale.get("soc", False), stale.get("voltage", False), charging,

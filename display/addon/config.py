@@ -93,6 +93,10 @@ ENTITIES = {
     # the right of the main battery bar. Placeholder entity until the real one
     # exists; reads "--" while it is missing/unavailable.
     "aux_soc": os.environ.get("ENT_AUX_SOC", "sensor.aux_battery_soc"),
+    # Total distance travelled, shown in the odometer beside the speedometer.
+    # Value AND unit come from Home Assistant, untouched (like the speedometer);
+    # a placeholder entity that doesn't exist yet simply reads "--".
+    "odometer": os.environ.get("ENT_ODOMETER", "sensor.odometer"),
 }
 
 # Auxiliary battery. When aux_enabled is off the "AUX" text is not drawn and the

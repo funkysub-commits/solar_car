@@ -78,13 +78,14 @@ def scenarios(D, A):
           stale=None, ha_msg="", clock_str="2:32:07",
           header_lines=(("Router", "192.168.1.50:8123"),
                         ("Hotspot", "203.0.113.7:8123")), charging=False, aux_soc=87,
-          aux_on=True, aux_stale=False):
+          aux_on=True, aux_stale=False, odo=1284.6, odo_unit="mi"):
         return name, dict(speed=speed, temps=temps if temps is not None else temps_ok,
                           soc=soc, voltage=voltage, warnings=warnings or [],
                           stale=stale if stale is not None else no_stale,
                           ha_msg=ha_msg, clock_str=clock_str,
                           header_lines=list(header_lines), charging=charging,
-                          aux_soc=aux_soc, aux_on=aux_on, aux_stale=aux_stale)
+                          aux_soc=aux_soc, aux_on=aux_on, aux_stale=aux_stale,
+                          odo=odo, odo_unit=odo_unit)
 
     # --- nominal -----------------------------------------------------------
     yield S("normal")
@@ -139,6 +140,9 @@ def scenarios(D, A):
     yield S("charging", speed=0, soc=64, charging=True)
     # --- aux battery: placeholder entity absent -> "AUX --" ----------------
     yield S("aux_missing", aux_soc=None)
+    # --- odometer: placeholder absent -> "--"; and a long total ------------
+    yield S("odo_missing", odo=None, odo_unit="")
+    yield S("odo_long", odo=123456.75, odo_unit="km")
     # --- aux battery disabled -> no AUX text at all, no warning ------------
     yield S("aux_off", aux_on=False)
     # --- aux battery status explicitly down -> "!" beside it + a warning ---
@@ -176,7 +180,7 @@ def render_group(group):
         img = R.render(kw["speed"], unit, kw["temps"], kw["soc"], kw["voltage"], "V",
                        kw["warnings"], kw["stale"], kw["ha_msg"], kw["clock_str"],
                        kw["header_lines"], kw["charging"], kw["aux_soc"],
-                       kw["aux_on"], kw["aux_stale"])
+                       kw["aux_on"], kw["aux_stale"], kw["odo"], kw["odo_unit"])
         digest = hashlib.sha256(img.tobytes()).hexdigest()
         img.save(GOLDEN / f"{group}_{name}.png")
         print(f"{group}/{name}\t{digest}")

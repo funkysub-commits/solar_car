@@ -4,7 +4,7 @@ can never drift apart.
 
 Layout (800x480):
   Header (0-48): logo + title + clock
-  Left  : speedometer (top)  +  MESSAGE box (bottom)   [user free-text message]
+  Left  : speedometer | odometer (top, side by side)  +  MESSAGE box (bottom)
   Right : battery (top)      +  temperatures (bottom)
   Warning bar (428-476): full-width, fills left->right with active WARNINGS
                          (highest priority leftmost), '+N' overflow badge right.
@@ -36,8 +36,23 @@ HEAD_NET_CX, HEAD_NET_CY = 486, 24   # centre of the whole block in the header g
 HEAD_NET_MAXW = 300                  # widest the block may grow before ellipsizing
 HEAD_NET_ROW_H = 17                  # vertical pitch between the two stacked rows
 
-# Speedometer (left-top)
-SPEED_CX, SPEED_CY, SPEED_R = 228, 176, 86
+# Left-top is split into two side-by-side panes by a vertical divider. The
+# divider sits in the 232..240 gap BETWEEN the two partial-refresh regions, so
+# neither region ever repaints it and it can never ghost.
+SPD_ODO_DIV_X = 236
+
+# Speedometer (left-top, left pane: x 8..232)
+SPEED_CX, SPEED_CY, SPEED_R = 120, 176, 86
+
+# Odometer (left-top, right pane: x 240..448) - total distance travelled, shown
+# as a boxed readout that echoes the speedometer's label / value / unit stack.
+ODO_CX = 344
+ODO_LABEL_Y = 54
+ODO_BOX_HALF_W = 96
+ODO_BOX_Y0, ODO_BOX_Y1 = 148, 208
+ODO_VALUE_Y = 178          # centre of the boxed number
+ODO_UNIT_Y = 232           # sits on the speedometer's number row
+ODO_MAXW = 2 * ODO_BOX_HALF_W - 20   # widest the number may draw before ellipsizing
 
 # Message box (left-bottom)
 MSG_X = 18
@@ -70,7 +85,8 @@ WARN_X0, WARN_X1 = 16, 784      # usable horizontal span for chips + badge
 # x coordinates MUST be multiples of 8 - the panel only refreshes byte-aligned
 # columns. Regions stay clear of the frame/divider lines so those never ghost.
 REGIONS = {
-    "speed": (8, 50, 448, 298),
+    "speed": (8, 50, 232, 298),
+    "odo":   (240, 50, 448, 298),
     "msg":   (8, 304, 448, CONTENT_BOT),
     "batt":  (456, 50, 792, 260),
     "temps": (456, 264, 792, CONTENT_BOT),
@@ -79,7 +95,7 @@ REGIONS = {
 }
 # Regions that count as real telemetry: a change here keeps the panel awake.
 # The clock is redrawn alongside telemetry but never wakes the panel by itself.
-DATA_REGIONS = ("speed", "msg", "batt", "temps", "warn")
+DATA_REGIONS = ("speed", "odo", "msg", "batt", "temps", "warn")
 
 _font_warned = set()
 
@@ -101,6 +117,7 @@ F_HEAD_LABEL = _font("DejaVuSans-Bold.ttf", 16)   # the "IP:" heading / "Pi Offl
 F_HEAD_NET = _font("DejaVuSans.ttf", 13)          # the stacked Router/Hotspot rows
 F_LABEL  = _font("DejaVuSans-Bold.ttf", 19)
 F_SPEED  = _font("DejaVuSans-Bold.ttf", 54)
+F_ODO    = _font("DejaVuSans-Bold.ttf", 40)   # boxed odometer readout
 F_UNIT   = _font("DejaVuSans.ttf", 20)
 F_SOC    = _font("DejaVuSans-Bold.ttf", 56)
 F_TEMP   = _font("DejaVuSans-Bold.ttf", 26)

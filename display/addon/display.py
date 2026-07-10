@@ -16,9 +16,10 @@ focused modules, all copied flat next to this file in the container:
 
 Layout
   Header        : team logo + title + HA IP / "Pi Offline" line + clock
-  Left          : analog speedometer gauge (value exactly as the configured HA
+  Left-top      : analog speedometer gauge (value exactly as the configured HA
                   entity reports it - no numeric conversion here; the unit label
-                  can be relabelled with the speed_unit option)
+                  can be relabelled with the speed_unit option), beside a boxed
+                  ODOMETER readout of the total distance travelled
   Right-top     : battery icon (state of charge, + a lightning bolt while
                   charging) + pack voltage + a small "AUX nn%" 12V reading
   Right-bottom  : four vertical temperature bar graphs (motor / EZkontrol / battery / Pi)
@@ -138,6 +139,7 @@ def main():
         voltage_unit = "V"
     charging = read_charging(config.ENTITIES["charging"])
     aux_soc = read_number(config.ENTITIES["aux_soc"])[0] if config.AUX_ENABLED else None
+    odo, odo_unit, _ = read_number(config.ENTITIES["odometer"])
     # Reset the MESSAGE box to the configured startup text on every boot, so a
     # note typed during the last run doesn't reappear. Read it back rather than
     # assuming, so a failed service call still shows whatever HA actually holds.
@@ -221,7 +223,7 @@ def main():
     if powered:
         img = render(speed, speed_unit, temps, soc, voltage, voltage_unit,
                      visible, stale, ha_msg, clock, header_lines, charging, aux_soc,
-                     config.AUX_ENABLED, aux_is_down())
+                     config.AUX_ENABLED, aux_is_down(), odo, odo_unit)
         full_refresh(epd, img)            # clean base frame, then partial mode
         logging.info("initial frame drawn")
     else:
@@ -229,7 +231,8 @@ def main():
         logging.info("display starts OFF (HA toggle)")
 
     last_snaps = region_snaps(speed, speed_unit, temps, soc, voltage, visible,
-                              stale, ha_msg, clock, charging, aux_soc, aux_is_down())
+                              stale, ha_msg, clock, charging, aux_soc, aux_is_down(),
+                              odo, odo_unit)
     refresh_count = 0
     last_slow = time.time()
     last_button, _, _ = ha_get(config.REFRESH_BUTTON)
@@ -283,6 +286,9 @@ def main():
                 if config.AUX_ENABLED:        # None when absent -> "AUX --"
                     aux_soc = read_number(config.ENTITIES["aux_soc"])[0]
                     health["aux"] = read_health(config.ENT_AUX_STATUS)
+                ov, ou, _ = read_number(config.ENTITIES["odometer"])
+                if ov is not None:            # keep the last total on a failed read
+                    odo, odo_unit = ov, (ou or odo_unit)
                 health["bus"] = read_health(config.ENT_CAN_BUS)
                 health["batt"] = read_health(config.ENT_CAN_BATT)
                 health["ezk"] = read_health(config.ENT_CAN_EZK)
@@ -304,14 +310,16 @@ def main():
             header_lines = ha_client.connection_lines()
 
             snaps = region_snaps(speed, speed_unit, temps, soc, voltage, visible,
-                                 stale, ha_msg, clock, charging, aux_soc, aux_is_down())
+                                 stale, ha_msg, clock, charging, aux_soc, aux_is_down(),
+                                 odo, odo_unit)
             changed = [r for r in layout.REGIONS if snaps[r] != last_snaps.get(r)]
             data_changed = any(r in layout.DATA_REGIONS for r in changed)
 
             if data_changed or force or turning_on:
                 img = render(speed, speed_unit, temps, soc, voltage, voltage_unit,
                              visible, stale, ha_msg, clock, header_lines, charging,
-                             aux_soc, config.AUX_ENABLED, aux_is_down())
+                             aux_soc, config.AUX_ENABLED, aux_is_down(),
+                             odo, odo_unit)
                 spd_txt = "--" if speed is None else f"{speed:.0f}{speed_unit}"
                 if turning_on or not awake or force or refresh_count >= config.FULL_REFRESH_EVERY:
                     full_refresh(epd, img)        # power-on / wake / de-ghost
@@ -333,7 +341,8 @@ def main():
                 # the panel (e-paper must not be left powered/active when idle)
                 img = render(speed, speed_unit, temps, soc, voltage, voltage_unit,
                              visible, stale, ha_msg, clock, header_lines, charging,
-                             aux_soc, config.AUX_ENABLED, aux_is_down())
+                             aux_soc, config.AUX_ENABLED, aux_is_down(),
+                             odo, odo_unit)
                 settle_and_sleep(epd, img)
                 awake = False
                 last_snaps = snaps
