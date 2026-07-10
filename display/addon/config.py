@@ -27,8 +27,17 @@ HA_PORT = os.environ.get("HA_PORT", "8123")
 # option can't turn the loop into a Home Assistant-hammering busy spin.
 SPEED_POLL = max(0.2, float(os.environ.get("SPEED_POLL", "1")))    # seconds between speedometer updates
 SLOW_POLL = max(1.0, float(os.environ.get("SLOW_POLL", "6")))      # seconds between temp/SoC/message updates
-FULL_REFRESH_EVERY = int(os.environ.get("FULL_REFRESH_EVERY", "90"))  # partial pushes between de-ghost full refreshes
+FULL_REFRESH_EVERY = int(os.environ.get("FULL_REFRESH_EVERY", "600"))  # partial pushes between de-ghost full refreshes
 IDLE_SLEEP = float(os.environ.get("IDLE_SLEEP", "180"))      # seconds of no change before the panel deep-sleeps
+
+# Push the clock region every SPEED_POLL seconds so the ticking seconds prove at
+# a glance that the panel is alive. This makes the clock "activity": the panel
+# can then NEVER idle-sleep while the display is on, which is a real trade -
+# Waveshare would rather an idle panel were deep-slept, and it costs one partial
+# refresh per second of wear. Turn it off to get the old behaviour back, where
+# only real telemetry refreshes the panel and IDLE_SLEEP can put it to sleep.
+CLOCK_TICK = os.environ.get("CLOCK_TICK", "true").strip().lower() \
+    in ("1", "true", "yes", "on")
 
 # Speed: the VALUE is shown exactly as the source entity reports it - the add-on
 # does no numeric conversion. Point ent_speed at a sensor in the unit you want on

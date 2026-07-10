@@ -1,5 +1,5 @@
 name: Solar Car E-Ink Display
-version: "1.7.4"
+version: "1.8.0"
 slug: solar_epaper
 description: Renders a Solar Car telemetry dashboard (speedometer, battery, temperatures) on a Waveshare 7.5" V2 e-ink display
 arch:
@@ -20,7 +20,8 @@ options:
   temp_warn: 65
   speed_poll: 1
   slow_poll: 6
-  full_refresh_every: 90
+  full_refresh_every: 600
+  clock_tick: true
   idle_sleep: 180
   ent_speed: sensor.ezkontrol_motor_speed
   ent_t_motor: sensor.ezkontrol_motor_temp
@@ -50,6 +51,7 @@ schema:
   speed_poll: float(0.2,)
   slow_poll: float(1,)
   full_refresh_every: int(1,100000)
+  clock_tick: bool
   idle_sleep: float
   ent_speed: str
   ent_t_motor: str

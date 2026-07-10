@@ -34,13 +34,17 @@ Layout
   speed, a settled temperature - is never marked, because that is normal.
 
   The clock ticks seconds (12-hour, no AM/PM), which makes it obvious at a
-  glance whether the panel is still being refreshed.
+  glance whether the panel is still being refreshed. With clock_tick on (the
+  default) it ticks every second for as long as the display is on, so the panel
+  never idle-sleeps; turn clock_tick off to let IDLE_SLEEP rest the panel and
+  have only real telemetry refresh it.
 
 Refresh strategy & panel longevity
   E-ink wears a little with every refresh, and Waveshare explicitly warns the
   panel must NOT be left powered/active during long idle periods. This driver:
     * updates only when a value actually changes - a parked car with steady
-      readings produces no refreshes at all;
+      readings produces no refreshes at all (unless clock_tick is on, which
+      pushes the small clock region once a second to prove the panel is live);
     * refreshes just the screen region that changed (partial refresh) - gentle
       and flash-free - so untouched panels never ghost;
     * does an occasional fast full refresh (every FULL_REFRESH_EVERY partial
@@ -314,8 +318,14 @@ def main():
                                  odo, odo_unit)
             changed = [r for r in layout.REGIONS if snaps[r] != last_snaps.get(r)]
             data_changed = any(r in layout.DATA_REGIONS for r in changed)
+            # With clock_tick on, the ticking seconds are themselves a reason to
+            # push, so the panel refreshes every loop and never reaches the idle
+            # branch below - the clock keeps ticking for as long as the display is
+            # on. Only real telemetry advances idle_since, so turning clock_tick
+            # off restores the old, panel-sparing behaviour with no other change.
+            clock_ticked = config.CLOCK_TICK and "clock" in changed
 
-            if data_changed or force or turning_on:
+            if data_changed or clock_ticked or force or turning_on:
                 img = render(speed, speed_unit, temps, soc, voltage, voltage_unit,
                              visible, stale, ha_msg, clock, header_lines, charging,
                              aux_soc, config.AUX_ENABLED, aux_is_down(),
@@ -332,10 +342,13 @@ def main():
                     for r in changed:             # gentle per-region update
                         push_region(epd, img, r)
                         refresh_count += 1
-                    logging.info(f"partial {changed} - speed={spd_txt} "
-                                 f"(count {refresh_count}/{config.FULL_REFRESH_EVERY})")
+                    # a clock-only tick happens every second - don't flood the log
+                    log = logging.info if data_changed else logging.debug
+                    log(f"partial {changed} - speed={spd_txt} "
+                        f"(count {refresh_count}/{config.FULL_REFRESH_EVERY})")
                 last_snaps = snaps
-                idle_since = t0
+                if data_changed or force or turning_on:
+                    idle_since = t0          # a clock tick alone is not activity
             elif awake and (t0 - idle_since) >= config.IDLE_SLEEP:
                 # no telemetry change for a while - settle the image and sleep
                 # the panel (e-paper must not be left powered/active when idle)
