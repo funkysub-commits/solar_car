@@ -71,6 +71,15 @@ dmesg | grep -i gs_usb            # confirm the kernel sees the adapter
 
 `can0` stays up until reboot or `sudo ip link set can0 down`.
 
+> **Seeing 0 frames? Wake the battery first.** The BESTGO BMS only broadcasts
+> CAN when active — under load (driving) or woken via the Smart BMS Bluetooth
+> app. An idle bench pack is CAN-silent, so a listener reads **0 frames on
+> every host** (Pi *and* PC alike) even with the adapter, bus, and ~60 Ω
+> termination all correct. This mimics a CAN/USB/VL805 fault but isn't — it
+> drove a multi-week hardware hunt, resolved 2026-06-29 by simply waking the
+> pack. Always confirm a known-good listener sees frames with the pack awake
+> before suspecting the adapter, kernel, or USB host.
+
 ### No hardware? Every dashboard has a dummy mode
 
 ```sh

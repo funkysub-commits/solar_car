@@ -14,6 +14,7 @@ Devices on solar car:
 - Battery: bestgo
 - BWPFE51100ATIPF (Os as zeros) — 51V 100Ah PFE-series LiFePO4 pack
 - Motor control : ezkontrol
+- Accessory battery is a Power Queen (lookup model # and Ah)
 
 
 
@@ -28,6 +29,7 @@ Devices on solar car:
 7. [Battery BMS: Bluetooth integration](#7-battery-bms-bluetooth-integration)
 8. [System maintenance & commands](#8-system-maintenance--commands)
 9. [Network setup discussion](#9-network-setup-discussion)
+9.5. [RPM to MPH conversion](#9.5-rpm-to-mph-conversion)
 10. [Andy left to do](#10-andy-left-to-do)
 11. [Student to do (with Andy help)](#11-student-to-do-with-andy-help)
 
@@ -329,6 +331,19 @@ It publishes 41 sensors:
 These make race-day triage one glance: adapter dead vs. one device quiet
 vs. add-on not running (sensors `unavailable`).
 
+> [!IMPORTANT]
+> **A silent battery is almost always asleep, not a CAN fault.** The BESTGO
+> BMS only broadcasts CAN when active — under load (driving) or woken via the
+> Smart BMS Bluetooth app. An idle bench pack transmits nothing, so
+> `sensor.bestgo_status` reads 0 and the `bestgo_*` sensors go stale on
+> **every** host (the Pi *and* a laptop on the same bus alike) — which looks
+> like a CAN / USB / VL805 fault but isn't. This confound drove a multi-week
+> hardware hunt; it was resolved 2026-06-29 by simply waking the pack, after
+> which the Pi/HAOS received all 14 BESTGO IDs over candlelight/gs_usb →
+> SocketCAN. Before suspecting hardware, wake the pack and confirm a
+> known-good listener sees frames. During the race the pack is under load, so
+> it broadcasts continuously and this never arises.
+
 > [!NOTE]
 > Since app version 0.4.0, `sensor.ezkontrol_op_mode` reads a mode name
 > (`Normal` / `Cruise` / `EBS` / `Hold`) instead of a raw number — update
@@ -484,6 +499,67 @@ Raspberry pi is connected to an old Asus router.  The Asus router helped when se
 It might be annoying for the PC in the chase vehicle to have telemetry data but not have an internet connection for debug!  
 
 Instructions to setup a different cell phone hotspot and password: Through the home assistant GUI (to be described later)  
+## 9.5. RPM to MPH conversion
+# Drivetrain Calculation: RPM to MPH Conversion
+
+This document provides the formulas and step-by-step calculations required to convert input RPM to miles per hour (MPH) based on your specific drivetrain configuration.
+
+## 1. System Specifications
+
+* **Drive Teeth (Drivetrain):** 11 teeth
+* **Driven Teeth (Gear To):** 55 teeth
+* **Wheel Circumference:** 73.199108 inches per rotation
+
+---
+
+## 2. Mechanical Gear Ratio
+
+The gear ratio determines how many times the input drive shaft rotates for every single rotation of the wheel.
+
+$$\text{Gear Ratio} = \frac{\text{Driven Teeth}}{\text{Drive Teeth}} = \frac{55}{11} = 5.0$$
+
+This represents a **5:1 gear reduction**, meaning the wheel rotates exactly $1$ time for every $5$ rotations of the input motor or engine.
+
+---
+
+## 3. Derivation & Conversion Formula
+
+To convert from RPM to MPH, we translate rotational speed to linear distance per hour. The constants used are:
+* $60$ minutes in $1$ hour
+* $63,360$ inches in $1$ mile ($12 \text{ inches} \times 5,280 \text{ feet}$)
+
+### The Formula:
+$$\text{MPH} = \frac{\text{RPM}}{\text{Gear Ratio}} \times \frac{\text{Wheel Distance per Rotation}}{63,360} \times 60$$
+
+Plugging in the system values:
+$$\text{MPH} = \frac{\text{RPM}}{5} \times \frac{73.199108}{63,360} \times 60$$
+
+$$\text{MPH} = \text{RPM} \times \left( \frac{73.199108 \times 60}{5 \times 63,360} \right)$$
+
+$$\text{MPH} = \text{RPM} \times 0.01386347$$
+
+---
+
+## 4. Final Quick-Reference Formulas
+
+Use these multipliers for rapid calculations on your system:
+
+* **To calculate MPH from RPM:**
+    $$\text{MPH} = \text{RPM} \times 0.01386347$$
+
+* **To calculate RPM from a target MPH:**
+    $$\text{RPM} = \text{MPH} \times 72.13203$$
+
+### Example Reference Table
+
+| Input RPM | Wheel RPM | Vehicle Speed (MPH) |
+| :--- | :--- | :--- |
+| **500** | 100 | 6.93 |
+| **1,000** | 200 | 13.86 |
+| **1,500** | 300 | 20.80 |
+| **2,000** | 400 | 27.73 |
+| **2,500** | 500 | 34.66 |
+| **3,000** | 600 | 41.59 |
 
 ## 10. Andy left to do
 - [https://goldenmotor.bike/products/ezkontrol-48-volt-universal-bldc-controller](https://goldenmotor.bike/products/ezkontrol-48-volt-universal-bldc-controller)
@@ -518,11 +594,32 @@ Complete:
 
 ## 11. Student to do (with Andy help)
 
+- Final push to Texas deadline!  Prioritize these!
+	- Can bus to bestgo and ezkontrol!  turn off termination!
+		- debug bestgo for sure!
+		- check term resistance with power off - should be 6ohm..  I think battery not connected right.
+		- power queen battery enable - might need HAOS update, hmm
+	- debug raspberry pi crash around 9:45pm  2026-07-08
+	- speed sensor and calculation!
+		- rpm * 0.01386347 = MPH
+	- odometer, calculated..?
+		- maybe not accurate enough if we miss data..
+	- battery every 10+ seconds probably ok
+	- Offline viewer for the data?  backup sensor date to github??
+	- 3d model for fan holder - skip just metal plate I'm sure
+	- Backup sdcard that can be swapped out if original fails
+	- Clean up HA apps with fable?
+	- Mirror e-ink dashboard in home assistant
+	- Clean up home assisant screens - make map easier to find, view only no password login?
+	- tailscale setup.. hotspots setup?  
+	- Heartbeat on e-ink display? DONE - seconds
+	- Mount router inside vehicle
+	- In car power for the raspberry pi, wifi router - Justin has a plan
+	- ramp up traveling member of team on how things work!!!!
+		- user guide?  
+- Audio player - lower priority Justin already has a low battery alarm plan
 - Decide if you want to use wifi router for communication to the chase vehicle, or another idea?
-- In car power for the raspberry pi, wifi router
 - 3d model and print an enclosure for the display, raspberry pi, usb to can dongle.
-- Mount router inside vehicle?
-- Backup sdcard that can be swapped out if original fails
 - Home assistant alerts for: low storage space, critical home assistant errors, docker failures, etc, etc
 - Create screens for telemetry on chase vehicle with home assistant software
     - Look at telemetry video and code to see what that team thinks is important
