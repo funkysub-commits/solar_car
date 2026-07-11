@@ -6,7 +6,7 @@
     - [ ] AI review code
 - [ ] Fix the can adapter having to power cycle
 - [ ] Add startup checklist to power off screen - text box in config
-- [ ] Add mph calculator
+- [x] Add mph calculator
 - [ ] Calculate distance
 - [ ] Connect aux bat to the bms_ble add on - needs update to HAOS
 - [ ] hardware connection for aux bat to router and pi
