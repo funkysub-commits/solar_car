@@ -1,0 +1,37 @@
+# Home Assistant package: show the CAN sensor entities on the dashboard even
+# before the CAN reader add-on has live data.
+#
+# The CAN reader creates sensor.ezkontrol_* / sensor.bestgo_* via the REST
+# /api/states API, only once a fresh frame populates each field -- and those
+# states don't survive an HA restart. So before the bus comes up (or right
+# after a restart) the dashboard shows "entity not found" and there is nothing
+# to browse in history. On the homeassistant.start event this runs a
+# python_script that creates each known sensor as "unavailable" IF it doesn't
+# already exist, so the cards render and history stays browsable. It never
+# clobbers a live value (it skips entities that already exist).
+#
+# Deploy (see CANbus_data/ha/README.md):
+#   1. packages are enabled in configuration.yaml
+#        homeassistant:
+#          packages: !include_dir_named packages
+#   2. copy this file            -> /config/packages/canbus_bootstrap.yaml
+#   3. copy the python_script     -> /config/python_scripts/bootstrap_canbus_entities.py
+#   4. RESTART Home Assistant (enabling python_script needs a restart); the
+#      automation then fires on the start event and creates the placeholders.
+
+# Enables the python_script integration (needed to set entity states from an
+# automation). Empty config on purpose.
+python_script:
+
+automation:
+  - id: canbus_bootstrap_on_start
+    alias: "CANbus: bootstrap sensor placeholders on start"
+    description: >-
+      Create sensor.ezkontrol_* / sensor.bestgo_* as "unavailable" on HA start
+      so the dashboard shows them before the CAN bus delivers live data.
+    trigger:
+      - platform: homeassistant
+        event: start
+    action:
+      - service: python_script.bootstrap_canbus_entities
+    mode: single
