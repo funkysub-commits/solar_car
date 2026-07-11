@@ -10,10 +10,11 @@
 - [ ] Calculate distance
 - [ ] Connect aux bat to the bms_ble add on - needs update to HAOS
 - [ ] hardware connection for aux bat to router and pi
-- [ ] Implement audio player
-- [ ] Add IP adress QR codes to home assistant page
-- [ ] Add a switch to the power to the pi and router
+- [x] Implement audio player
+- [ ] Physically add audio player to car
+- [X] Add IP address QR codes to home assistant page
+- [ ] Add a (physical) switch to the power to the pi and router
 - [ ] Add estimated remaining miles - based on current pace
-- [ ] Retain entity values on restart
+- [x] Retain entity values on restart
 - [ ] Manage documentation
     - [ ] show travelers how to add hotspot and enable/test tailscale from Euan/Andy device over the internet
