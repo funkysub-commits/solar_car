@@ -259,6 +259,71 @@ class ParseLevels(unittest.TestCase):
         self.assertEqual(config._parse_levels("null"), [])
 
 
+class IpQrSensors(unittest.TestCase):
+    """Router/hotspot IP + QR sensor publishing (ha_client.publish_ip_sensors)."""
+
+    def setUp(self):
+        self.posts = []
+        self._orig = ha_client.ha_post_state
+        ha_client.ha_post_state = lambda e, s, a: self.posts.append((e, s, a))
+        self.addCleanup(lambda: setattr(ha_client, "ha_post_state", self._orig))
+        # reset the module's publish state and cached addresses each test
+        ha_client._ip_pub = {}
+        ha_client._ip_pub_time = 0.0
+        ha_client._router_ip = None
+        ha_client._wifi_ip = None
+        self.addCleanup(lambda: setattr(ha_client, "_router_ip", None))
+        self.addCleanup(lambda: setattr(ha_client, "_wifi_ip", None))
+
+    def posted(self):
+        return {e: (s, a) for e, s, a in self.posts}
+
+    def test_qr_is_a_png_data_uri(self):
+        uri = ha_client._qr_data_uri("http://10.0.0.5:8123")
+        # qrcode is a soft dependency; only assert the shape when it's present
+        if uri is not None:
+            self.assertTrue(uri.startswith("data:image/png;base64,"))
+            import base64
+            base64.b64decode(uri.split(",", 1)[1])   # valid base64 payload
+
+    def test_connected_link_publishes_ip_url_and_flag(self):
+        ha_client._router_ip = "192.168.0.243"
+        ha_client.publish_ip_sensors()
+        state, attrs = self.posted()[config.ENT_PI_ROUTER_IP]
+        self.assertEqual(state, "192.168.0.243")
+        self.assertEqual(attrs["url"], "http://192.168.0.243:8123")
+        self.assertTrue(attrs["connected"])
+        # hotspot link is down -> published unavailable, not connected
+        hstate, hattrs = self.posted()[config.ENT_PI_HOTSPOT_IP]
+        self.assertEqual(hstate, "unavailable")
+        self.assertFalse(hattrs["connected"])
+
+    def test_unchanged_ip_not_republished_until_heartbeat(self):
+        ha_client._router_ip = "10.0.0.9"
+        ha_client.publish_ip_sensors()
+        n = len(self.posts)
+        self.posts.clear()
+        ha_client.publish_ip_sensors()               # same IP, within heartbeat
+        self.assertEqual(self.posts, [])             # nothing re-POSTed
+        ha_client._ip_pub_time = 0.0                 # force the heartbeat due
+        ha_client.publish_ip_sensors()
+        self.assertTrue(self.posts)                  # self-heal re-POST happened
+        self.assertGreater(n, 0)
+
+    def test_ip_change_repost_and_new_qr(self):
+        ha_client._router_ip = "10.0.0.9"
+        ha_client.publish_ip_sensors()
+        first = self.posted()[config.ENT_PI_ROUTER_IP][1].get("qr")
+        self.posts.clear()
+        ha_client._router_ip = "10.0.0.10"           # link changed address
+        ha_client.publish_ip_sensors()
+        s, a = self.posted()[config.ENT_PI_ROUTER_IP]
+        self.assertEqual(s, "10.0.0.10")
+        self.assertEqual(a["url"], "http://10.0.0.10:8123")
+        if first is not None:
+            self.assertNotEqual(a.get("qr"), first)  # QR regenerated for new URL
+
+
 class Clock(unittest.TestCase):
     def test_12h_with_seconds_and_no_leading_zero(self):
         import display

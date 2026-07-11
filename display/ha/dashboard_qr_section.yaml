@@ -1,0 +1,43 @@
+# 'Connect to Pi' QR section - one QR per LAN link (Router = on-car Ethernet,
+# Hotspot = phone Wi-Fi), each shown only while that link is connected. Scanning
+# opens Home Assistant at the Pi's address. QRs are generated offline by the
+# add-on (sensor.pi_router_ip / sensor.pi_hotspot_ip, attribute `qr`), so they
+# render with no internet. Paste as a new entry in the view's `sections:` list.
+
+type: grid
+cards:
+- type: heading
+  heading: Connect to Pi
+  icon: mdi:qrcode-scan
+  visibility:
+  - condition: template
+    value_template: '{{ has_value(''sensor.pi_router_ip'') or has_value(''sensor.pi_hotspot_ip'') }}'
+- type: horizontal-stack
+  cards:
+  - type: markdown
+    content: '### Router
+
+
+      ![]({{ state_attr(''sensor.pi_router_ip'',''qr'') }})
+
+
+      [{{ state_attr(''sensor.pi_router_ip'',''url'') }}]({{ state_attr(''sensor.pi_router_ip'',''url'')
+      }})'
+    visibility:
+    - condition: template
+      value_template: '{{ has_value(''sensor.pi_router_ip'') }}'
+  - type: markdown
+    content: '### Hotspot
+
+
+      ![]({{ state_attr(''sensor.pi_hotspot_ip'',''qr'') }})
+
+
+      [{{ state_attr(''sensor.pi_hotspot_ip'',''url'') }}]({{ state_attr(''sensor.pi_hotspot_ip'',''url'')
+      }})'
+    visibility:
+    - condition: template
+      value_template: '{{ has_value(''sensor.pi_hotspot_ip'') }}'
+  visibility:
+  - condition: template
+    value_template: '{{ has_value(''sensor.pi_router_ip'') or has_value(''sensor.pi_hotspot_ip'') }}'

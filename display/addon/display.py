@@ -234,6 +234,7 @@ def main():
     stale, visible = assemble()
     clock = now_clock()
     ha_client.refresh_network(force=True)               # first frame has the addresses
+    ha_client.publish_ip_sensors()                      # router/hotspot QR sensors
     header_lines = ha_client.connection_lines()
     powered = ha_get(config.POWER_TOGGLE)[0] != "off"   # default ON if the toggle is absent
     if powered:
@@ -323,6 +324,7 @@ def main():
                     ha_msg = m
                 sync_hidden()                     # single writer of eink_hidden
                 ha_client.refresh_network()       # router/hotspot IPs, TTL-gated, off-loop
+                ha_client.publish_ip_sensors()    # QR sensors (dedup + heartbeat inside)
                 last_slow = t0
 
             # manual refresh button forces a full (de-ghosting) refresh

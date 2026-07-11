@@ -60,9 +60,9 @@ Easiest is the HA **packages** mechanism:
 ### 2. Dashboard section — `dashboard_warnings_section.yaml`
 
 Adds an **E-Paper Warnings** section that lists every active warning (hidden ones
-marked), a **Hide** button for each warning currently on the e-paper, an **Unhide
-all** button, and a field to type the e-paper message. Add it to both the **Solar
-Car** and **All Data** dashboards.
+marked), a **Hide** button for each warning currently shown, a **Show** (unhide)
+button for each one currently hidden, an **Unhide all** button, and a field to type
+the e-paper message. Add it to both the **Solar Car** and **All Data** dashboards.
 
 1. Open the dashboard → 3-dot menu → **Edit dashboard** → 3-dot menu →
    **Raw configuration editor**.
@@ -71,8 +71,27 @@ Car** and **All Data** dashboards.
    the view's `sections:` list.
 3. **Save**.
 
-The Hide buttons only appear for warnings actually on the e-paper right now, so the
-section stays uncluttered.
+Each control only appears for a warning that is actually active right now, and each
+warning shows exactly one control at a time — **Hide** while it's on the e-paper,
+**Show** once you've hidden it — so you can hide and un-hide warnings individually
+(not just "unhide all"). Button visibility keys off `input_text.eink_hidden`
+directly, so a tap flips the control instantly rather than waiting for the add-on to
+re-publish `sensor.eink_warnings`.
+
+### 3. "Connect to Pi" QR section — `dashboard_qr_section.yaml`
+
+Adds a **Connect to Pi** section with a QR code for each LAN link the Pi has —
+**Router** (on-car Ethernet, no internet) and **Hotspot** (phone Wi-Fi) — each shown
+only while that link is connected. Scanning opens Home Assistant at that address. The
+QR images are generated **offline by the add-on** (no external QR service, so they
+work on the car's no-internet router LAN) and published as the `qr` attribute of
+`sensor.pi_router_ip` / `sensor.pi_hotspot_ip`. Paste the block from
+[dashboard_qr_section.yaml](dashboard_qr_section.yaml) into the view's `sections:`
+list the same way.
+
+> These two sensors carry a small base64 PNG in their `qr` attribute. If you want to
+> keep it out of the recorder database, exclude `sensor.pi_router_ip` and
+> `sensor.pi_hotspot_ip` in your `recorder:` config.
 
 ## Warning keys (for reference)
 
@@ -82,8 +101,9 @@ section stays uncluttered.
 | `can_adapter` | the USB-CAN adapter/bus is down — `sensor.canadapter_status` 0, else inferred from every CAN value being stale; marks `!` on all CAN values |
 | `can_bestgo` | the battery isn't on CAN — `sensor.bestgo_status` 0, else inference; marks `!` on SoC, voltage, BATT temp |
 | `can_ezk` | the EZkontrol isn't on CAN — `sensor.ezkontrol_status` 0, else inference; marks `!` on speed, motor temp, EZK temp |
+| `aux_batt` | the auxiliary (12V) battery's status sensor reads disconnected (only while `aux_enabled`) → "AUX battery disconnected" |
+| `aux_low` | the aux battery SoC has dropped to/below the highest configured `aux_low_levels` percentage → "AUX battery low nn%" (also sounds `aux_low_sound` as it crosses each level) |
 | `temp_t_motor` / `temp_t_ezk` / `temp_t_batt` / `temp_t_pi` | that temperature ≥ `temp_warn` (live reading only) |
-| `stale_speed` / `stale_t_motor` / `stale_t_ezk` / `stale_t_batt` / `stale_t_pi` / `stale_soc` / `stale_voltage` | that sensor stopped updating, where a device warning doesn't already explain it (e.g. the Pi's own temperature) |
 
 The plain user message is **not** a warning - it lives in the MESSAGE box, set via
 `input_text.eink_message`.

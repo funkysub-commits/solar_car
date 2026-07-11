@@ -1,219 +1,326 @@
 # E-Paper Warnings dashboard section.
 #
-# Lists every active warning on the e-paper and gives a Hide button for each
-# one currently shown; Unhide all appears when anything is hidden. (Plain
-# user messages are NOT warnings - set those via input_text.eink_message.)
-#
-# Paste this `type: grid` block as a new entry in a dashboard view's
-# `sections:` list (Raw configuration editor). Needs sensor.eink_warnings
-# (published by the add-on) and the scripts from eink_messages.yaml.
+# Lists every active warning; for each one a Hide button (while shown) and a
+# per-warning Show button (while hidden), plus Unhide all. Button visibility is
+# gated on input_text.eink_hidden (instant) AND the warning being active in
+# sensor.eink_warnings, so a tap flips the control with no lag and only active
+# warnings show controls. Paste this `type: grid` block as a new entry in a
+# dashboard view's `sections:` list (Raw configuration editor).
 
 type: grid
 cards:
-  - type: heading
-    heading: E-Paper Warnings
-    heading_style: title
-    icon: mdi:alert
-  - type: markdown
-    text_only: true
-    content: |
-      {% set ws = state_attr('sensor.eink_warnings','warnings') %}
-      {% if ws %}{% for m in ws %}
-      {{ '🔕' if m.hidden else '⚠️' }} {{ m.text }}{{ ' *(hidden)*' if m.hidden else '' }}
-      {% endfor %}{% else %}
-      *No active warnings*
-      {% endif %}
-  - type: entities
-    title: Send a message to the e-paper
-    entities:
-      - entity: input_text.eink_message
-        name: Message
-  - type: button
-    name: "Hide: Home Assistant unreachable"
-    icon: mdi:eye-off
-    show_state: false
-    tap_action:
-      action: perform-action
-      perform_action: script.eink_hide
-      data:
-        key: ha
-    visibility:
-      - condition: template
-        value_template: "{{ 'ha' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
-  - type: button
-    name: "Hide: CAN adapter disconnected"
-    icon: mdi:eye-off
-    show_state: false
-    tap_action:
-      action: perform-action
-      perform_action: script.eink_hide
-      data:
-        key: can_adapter
-    visibility:
-      - condition: template
-        value_template: "{{ 'can_adapter' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
-  - type: button
-    name: "Hide: BESTGO disconnected"
-    icon: mdi:eye-off
-    show_state: false
-    tap_action:
-      action: perform-action
-      perform_action: script.eink_hide
-      data:
-        key: can_bestgo
-    visibility:
-      - condition: template
-        value_template: "{{ 'can_bestgo' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
-  - type: button
-    name: "Hide: EZkontrol disconnected"
-    icon: mdi:eye-off
-    show_state: false
-    tap_action:
-      action: perform-action
-      perform_action: script.eink_hide
-      data:
-        key: can_ezk
-    visibility:
-      - condition: template
-        value_template: "{{ 'can_ezk' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
-  - type: button
-    name: "Hide: High motor temp"
-    icon: mdi:eye-off
-    show_state: false
-    tap_action:
-      action: perform-action
-      perform_action: script.eink_hide
-      data:
-        key: temp_t_motor
-    visibility:
-      - condition: template
-        value_template: "{{ 'temp_t_motor' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
-  - type: button
-    name: "Hide: High EZkontrol temp"
-    icon: mdi:eye-off
-    show_state: false
-    tap_action:
-      action: perform-action
-      perform_action: script.eink_hide
-      data:
-        key: temp_t_ezk
-    visibility:
-      - condition: template
-        value_template: "{{ 'temp_t_ezk' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
-  - type: button
-    name: "Hide: High battery temp"
-    icon: mdi:eye-off
-    show_state: false
-    tap_action:
-      action: perform-action
-      perform_action: script.eink_hide
-      data:
-        key: temp_t_batt
-    visibility:
-      - condition: template
-        value_template: "{{ 'temp_t_batt' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
-  - type: button
-    name: "Hide: High Pi temp"
-    icon: mdi:eye-off
-    show_state: false
-    tap_action:
-      action: perform-action
-      perform_action: script.eink_hide
-      data:
-        key: temp_t_pi
-    visibility:
-      - condition: template
-        value_template: "{{ 'temp_t_pi' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
-  - type: button
-    name: "Hide: Speed not updating"
-    icon: mdi:eye-off
-    show_state: false
-    tap_action:
-      action: perform-action
-      perform_action: script.eink_hide
-      data:
-        key: stale_speed
-    visibility:
-      - condition: template
-        value_template: "{{ 'stale_speed' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
-  - type: button
-    name: "Hide: Motor temp not updating"
-    icon: mdi:eye-off
-    show_state: false
-    tap_action:
-      action: perform-action
-      perform_action: script.eink_hide
-      data:
-        key: stale_t_motor
-    visibility:
-      - condition: template
-        value_template: "{{ 'stale_t_motor' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
-  - type: button
-    name: "Hide: EZkontrol temp not updating"
-    icon: mdi:eye-off
-    show_state: false
-    tap_action:
-      action: perform-action
-      perform_action: script.eink_hide
-      data:
-        key: stale_t_ezk
-    visibility:
-      - condition: template
-        value_template: "{{ 'stale_t_ezk' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
-  - type: button
-    name: "Hide: Battery temp not updating"
-    icon: mdi:eye-off
-    show_state: false
-    tap_action:
-      action: perform-action
-      perform_action: script.eink_hide
-      data:
-        key: stale_t_batt
-    visibility:
-      - condition: template
-        value_template: "{{ 'stale_t_batt' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
-  - type: button
-    name: "Hide: Pi temp not updating"
-    icon: mdi:eye-off
-    show_state: false
-    tap_action:
-      action: perform-action
-      perform_action: script.eink_hide
-      data:
-        key: stale_t_pi
-    visibility:
-      - condition: template
-        value_template: "{{ 'stale_t_pi' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
-  - type: button
-    name: "Hide: Battery SOC not updating"
-    icon: mdi:eye-off
-    show_state: false
-    tap_action:
-      action: perform-action
-      perform_action: script.eink_hide
-      data:
-        key: stale_soc
-    visibility:
-      - condition: template
-        value_template: "{{ 'stale_soc' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
-  - type: button
-    name: "Hide: Pack voltage not updating"
-    icon: mdi:eye-off
-    show_state: false
-    tap_action:
-      action: perform-action
-      perform_action: script.eink_hide
-      data:
-        key: stale_voltage
-    visibility:
-      - condition: template
-        value_template: "{{ 'stale_voltage' in (state_attr('sensor.eink_warnings','keys_visible') or []) }}"
-  - type: button
-    name: Unhide all
-    icon: mdi:eye-check
-    tap_action:
-      action: perform-action
-      perform_action: script.eink_unhide_all
-    visibility:
-      - condition: template
-        value_template: "{{ (state_attr('sensor.eink_warnings','keys_hidden') or []) | length > 0 }}"
+- type: heading
+  heading: E-Paper Warnings
+  heading_style: title
+  icon: mdi:alert
+- type: markdown
+  text_only: true
+  content: '{% set ws = state_attr(''sensor.eink_warnings'',''warnings'') %}
+
+    {% if ws %}{% for m in ws %}
+
+    {{ ''🔕'' if m.hidden else ''⚠️'' }} {{ m.text }}{{ '' *(hidden)*'' if m.hidden else '''' }}
+
+    {% endfor %}{% else %}
+
+    *No active warnings*
+
+    {% endif %}
+
+    '
+- type: entities
+  title: Send a message to the e-paper
+  entities:
+  - entity: input_text.eink_message
+    name: Message
+- type: button
+  name: 'Hide: Home Assistant unreachable'
+  icon: mdi:eye-off
+  show_state: false
+  tap_action:
+    action: perform-action
+    perform_action: script.eink_hide
+    data:
+      key: ha
+  visibility:
+  - condition: template
+    value_template: '{% set act = (state_attr(''sensor.eink_warnings'',''keys_visible'') or []) + (state_attr(''sensor.eink_warnings'',''keys_hidden'')
+      or []) %}{% set hid = states(''input_text.eink_hidden'').split('','') | map(''trim'') | reject(''eq'','''')
+      | list %}{{ ''ha'' in act and ''ha'' not in hid }}'
+- type: button
+  name: 'Show: Home Assistant unreachable'
+  icon: mdi:eye
+  show_state: false
+  tap_action:
+    action: perform-action
+    perform_action: script.eink_unhide
+    data:
+      key: ha
+  visibility:
+  - condition: template
+    value_template: '{% set act = (state_attr(''sensor.eink_warnings'',''keys_visible'') or []) + (state_attr(''sensor.eink_warnings'',''keys_hidden'')
+      or []) %}{% set hid = states(''input_text.eink_hidden'').split('','') | map(''trim'') | reject(''eq'','''')
+      | list %}{{ ''ha'' in act and ''ha'' in hid }}'
+- type: button
+  name: 'Hide: CAN adapter disconnected'
+  icon: mdi:eye-off
+  show_state: false
+  tap_action:
+    action: perform-action
+    perform_action: script.eink_hide
+    data:
+      key: can_adapter
+  visibility:
+  - condition: template
+    value_template: '{% set act = (state_attr(''sensor.eink_warnings'',''keys_visible'') or []) + (state_attr(''sensor.eink_warnings'',''keys_hidden'')
+      or []) %}{% set hid = states(''input_text.eink_hidden'').split('','') | map(''trim'') | reject(''eq'','''')
+      | list %}{{ ''can_adapter'' in act and ''can_adapter'' not in hid }}'
+- type: button
+  name: 'Show: CAN adapter disconnected'
+  icon: mdi:eye
+  show_state: false
+  tap_action:
+    action: perform-action
+    perform_action: script.eink_unhide
+    data:
+      key: can_adapter
+  visibility:
+  - condition: template
+    value_template: '{% set act = (state_attr(''sensor.eink_warnings'',''keys_visible'') or []) + (state_attr(''sensor.eink_warnings'',''keys_hidden'')
+      or []) %}{% set hid = states(''input_text.eink_hidden'').split('','') | map(''trim'') | reject(''eq'','''')
+      | list %}{{ ''can_adapter'' in act and ''can_adapter'' in hid }}'
+- type: button
+  name: 'Hide: Battery disconnected'
+  icon: mdi:eye-off
+  show_state: false
+  tap_action:
+    action: perform-action
+    perform_action: script.eink_hide
+    data:
+      key: can_bestgo
+  visibility:
+  - condition: template
+    value_template: '{% set act = (state_attr(''sensor.eink_warnings'',''keys_visible'') or []) + (state_attr(''sensor.eink_warnings'',''keys_hidden'')
+      or []) %}{% set hid = states(''input_text.eink_hidden'').split('','') | map(''trim'') | reject(''eq'','''')
+      | list %}{{ ''can_bestgo'' in act and ''can_bestgo'' not in hid }}'
+- type: button
+  name: 'Show: Battery disconnected'
+  icon: mdi:eye
+  show_state: false
+  tap_action:
+    action: perform-action
+    perform_action: script.eink_unhide
+    data:
+      key: can_bestgo
+  visibility:
+  - condition: template
+    value_template: '{% set act = (state_attr(''sensor.eink_warnings'',''keys_visible'') or []) + (state_attr(''sensor.eink_warnings'',''keys_hidden'')
+      or []) %}{% set hid = states(''input_text.eink_hidden'').split('','') | map(''trim'') | reject(''eq'','''')
+      | list %}{{ ''can_bestgo'' in act and ''can_bestgo'' in hid }}'
+- type: button
+  name: 'Hide: Motor disconnected'
+  icon: mdi:eye-off
+  show_state: false
+  tap_action:
+    action: perform-action
+    perform_action: script.eink_hide
+    data:
+      key: can_ezk
+  visibility:
+  - condition: template
+    value_template: '{% set act = (state_attr(''sensor.eink_warnings'',''keys_visible'') or []) + (state_attr(''sensor.eink_warnings'',''keys_hidden'')
+      or []) %}{% set hid = states(''input_text.eink_hidden'').split('','') | map(''trim'') | reject(''eq'','''')
+      | list %}{{ ''can_ezk'' in act and ''can_ezk'' not in hid }}'
+- type: button
+  name: 'Show: Motor disconnected'
+  icon: mdi:eye
+  show_state: false
+  tap_action:
+    action: perform-action
+    perform_action: script.eink_unhide
+    data:
+      key: can_ezk
+  visibility:
+  - condition: template
+    value_template: '{% set act = (state_attr(''sensor.eink_warnings'',''keys_visible'') or []) + (state_attr(''sensor.eink_warnings'',''keys_hidden'')
+      or []) %}{% set hid = states(''input_text.eink_hidden'').split('','') | map(''trim'') | reject(''eq'','''')
+      | list %}{{ ''can_ezk'' in act and ''can_ezk'' in hid }}'
+- type: button
+  name: 'Hide: AUX battery disconnected'
+  icon: mdi:eye-off
+  show_state: false
+  tap_action:
+    action: perform-action
+    perform_action: script.eink_hide
+    data:
+      key: aux_batt
+  visibility:
+  - condition: template
+    value_template: '{% set act = (state_attr(''sensor.eink_warnings'',''keys_visible'') or []) + (state_attr(''sensor.eink_warnings'',''keys_hidden'')
+      or []) %}{% set hid = states(''input_text.eink_hidden'').split('','') | map(''trim'') | reject(''eq'','''')
+      | list %}{{ ''aux_batt'' in act and ''aux_batt'' not in hid }}'
+- type: button
+  name: 'Show: AUX battery disconnected'
+  icon: mdi:eye
+  show_state: false
+  tap_action:
+    action: perform-action
+    perform_action: script.eink_unhide
+    data:
+      key: aux_batt
+  visibility:
+  - condition: template
+    value_template: '{% set act = (state_attr(''sensor.eink_warnings'',''keys_visible'') or []) + (state_attr(''sensor.eink_warnings'',''keys_hidden'')
+      or []) %}{% set hid = states(''input_text.eink_hidden'').split('','') | map(''trim'') | reject(''eq'','''')
+      | list %}{{ ''aux_batt'' in act and ''aux_batt'' in hid }}'
+- type: button
+  name: 'Hide: AUX battery low'
+  icon: mdi:eye-off
+  show_state: false
+  tap_action:
+    action: perform-action
+    perform_action: script.eink_hide
+    data:
+      key: aux_low
+  visibility:
+  - condition: template
+    value_template: '{% set act = (state_attr(''sensor.eink_warnings'',''keys_visible'') or []) + (state_attr(''sensor.eink_warnings'',''keys_hidden'')
+      or []) %}{% set hid = states(''input_text.eink_hidden'').split('','') | map(''trim'') | reject(''eq'','''')
+      | list %}{{ ''aux_low'' in act and ''aux_low'' not in hid }}'
+- type: button
+  name: 'Show: AUX battery low'
+  icon: mdi:eye
+  show_state: false
+  tap_action:
+    action: perform-action
+    perform_action: script.eink_unhide
+    data:
+      key: aux_low
+  visibility:
+  - condition: template
+    value_template: '{% set act = (state_attr(''sensor.eink_warnings'',''keys_visible'') or []) + (state_attr(''sensor.eink_warnings'',''keys_hidden'')
+      or []) %}{% set hid = states(''input_text.eink_hidden'').split('','') | map(''trim'') | reject(''eq'','''')
+      | list %}{{ ''aux_low'' in act and ''aux_low'' in hid }}'
+- type: button
+  name: 'Hide: High motor temp'
+  icon: mdi:eye-off
+  show_state: false
+  tap_action:
+    action: perform-action
+    perform_action: script.eink_hide
+    data:
+      key: temp_t_motor
+  visibility:
+  - condition: template
+    value_template: '{% set act = (state_attr(''sensor.eink_warnings'',''keys_visible'') or []) + (state_attr(''sensor.eink_warnings'',''keys_hidden'')
+      or []) %}{% set hid = states(''input_text.eink_hidden'').split('','') | map(''trim'') | reject(''eq'','''')
+      | list %}{{ ''temp_t_motor'' in act and ''temp_t_motor'' not in hid }}'
+- type: button
+  name: 'Show: High motor temp'
+  icon: mdi:eye
+  show_state: false
+  tap_action:
+    action: perform-action
+    perform_action: script.eink_unhide
+    data:
+      key: temp_t_motor
+  visibility:
+  - condition: template
+    value_template: '{% set act = (state_attr(''sensor.eink_warnings'',''keys_visible'') or []) + (state_attr(''sensor.eink_warnings'',''keys_hidden'')
+      or []) %}{% set hid = states(''input_text.eink_hidden'').split('','') | map(''trim'') | reject(''eq'','''')
+      | list %}{{ ''temp_t_motor'' in act and ''temp_t_motor'' in hid }}'
+- type: button
+  name: 'Hide: High controller temp'
+  icon: mdi:eye-off
+  show_state: false
+  tap_action:
+    action: perform-action
+    perform_action: script.eink_hide
+    data:
+      key: temp_t_ezk
+  visibility:
+  - condition: template
+    value_template: '{% set act = (state_attr(''sensor.eink_warnings'',''keys_visible'') or []) + (state_attr(''sensor.eink_warnings'',''keys_hidden'')
+      or []) %}{% set hid = states(''input_text.eink_hidden'').split('','') | map(''trim'') | reject(''eq'','''')
+      | list %}{{ ''temp_t_ezk'' in act and ''temp_t_ezk'' not in hid }}'
+- type: button
+  name: 'Show: High controller temp'
+  icon: mdi:eye
+  show_state: false
+  tap_action:
+    action: perform-action
+    perform_action: script.eink_unhide
+    data:
+      key: temp_t_ezk
+  visibility:
+  - condition: template
+    value_template: '{% set act = (state_attr(''sensor.eink_warnings'',''keys_visible'') or []) + (state_attr(''sensor.eink_warnings'',''keys_hidden'')
+      or []) %}{% set hid = states(''input_text.eink_hidden'').split('','') | map(''trim'') | reject(''eq'','''')
+      | list %}{{ ''temp_t_ezk'' in act and ''temp_t_ezk'' in hid }}'
+- type: button
+  name: 'Hide: High battery temp'
+  icon: mdi:eye-off
+  show_state: false
+  tap_action:
+    action: perform-action
+    perform_action: script.eink_hide
+    data:
+      key: temp_t_batt
+  visibility:
+  - condition: template
+    value_template: '{% set act = (state_attr(''sensor.eink_warnings'',''keys_visible'') or []) + (state_attr(''sensor.eink_warnings'',''keys_hidden'')
+      or []) %}{% set hid = states(''input_text.eink_hidden'').split('','') | map(''trim'') | reject(''eq'','''')
+      | list %}{{ ''temp_t_batt'' in act and ''temp_t_batt'' not in hid }}'
+- type: button
+  name: 'Show: High battery temp'
+  icon: mdi:eye
+  show_state: false
+  tap_action:
+    action: perform-action
+    perform_action: script.eink_unhide
+    data:
+      key: temp_t_batt
+  visibility:
+  - condition: template
+    value_template: '{% set act = (state_attr(''sensor.eink_warnings'',''keys_visible'') or []) + (state_attr(''sensor.eink_warnings'',''keys_hidden'')
+      or []) %}{% set hid = states(''input_text.eink_hidden'').split('','') | map(''trim'') | reject(''eq'','''')
+      | list %}{{ ''temp_t_batt'' in act and ''temp_t_batt'' in hid }}'
+- type: button
+  name: 'Hide: High Pi temp'
+  icon: mdi:eye-off
+  show_state: false
+  tap_action:
+    action: perform-action
+    perform_action: script.eink_hide
+    data:
+      key: temp_t_pi
+  visibility:
+  - condition: template
+    value_template: '{% set act = (state_attr(''sensor.eink_warnings'',''keys_visible'') or []) + (state_attr(''sensor.eink_warnings'',''keys_hidden'')
+      or []) %}{% set hid = states(''input_text.eink_hidden'').split('','') | map(''trim'') | reject(''eq'','''')
+      | list %}{{ ''temp_t_pi'' in act and ''temp_t_pi'' not in hid }}'
+- type: button
+  name: 'Show: High Pi temp'
+  icon: mdi:eye
+  show_state: false
+  tap_action:
+    action: perform-action
+    perform_action: script.eink_unhide
+    data:
+      key: temp_t_pi
+  visibility:
+  - condition: template
+    value_template: '{% set act = (state_attr(''sensor.eink_warnings'',''keys_visible'') or []) + (state_attr(''sensor.eink_warnings'',''keys_hidden'')
+      or []) %}{% set hid = states(''input_text.eink_hidden'').split('','') | map(''trim'') | reject(''eq'','''')
+      | list %}{{ ''temp_t_pi'' in act and ''temp_t_pi'' in hid }}'
+- type: button
+  name: Unhide all
+  icon: mdi:eye-check
+  tap_action:
+    action: perform-action
+    perform_action: script.eink_unhide_all
+  visibility:
+  - condition: template
+    value_template: '{% set act = (state_attr(''sensor.eink_warnings'',''keys_visible'') or []) + (state_attr(''sensor.eink_warnings'',''keys_hidden'')
+      or []) %}{% set hid = states(''input_text.eink_hidden'').split('','') | map(''trim'') | reject(''eq'','''')
+      | list %}{{ hid | select(''in'', act) | list | length > 0 }}'

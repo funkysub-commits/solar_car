@@ -157,6 +157,15 @@ POWER_TOGGLE = os.environ.get("ENT_POWER", "input_boolean.eink_display")
 WARN_SENSOR = os.environ.get("ENT_WARN_SENSOR", "sensor.eink_warnings")
 ENT_HIDDEN = os.environ.get("ENT_HIDDEN", "input_text.eink_hidden")
 
+# The add-on already resolves the Pi's two LAN addresses for the panel header
+# (Router = on-car Ethernet, no internet; Hotspot = phone Wi-Fi, has internet).
+# It republishes them here as HA sensors carrying a scannable QR of the HA URL,
+# so a dashboard can show "scan to open" codes - one per link, each conditional
+# on that link being connected. State = the IP (or "unavailable" when the link
+# is down); attributes carry the url, a connected flag, and the QR data-URI.
+ENT_PI_ROUTER_IP = os.environ.get("ENT_PI_ROUTER_IP", "sensor.pi_router_ip")
+ENT_PI_HOTSPOT_IP = os.environ.get("ENT_PI_HOTSPOT_IP", "sensor.pi_hotspot_ip")
+
 # CAN health sensors, published by the solar-car-canbus app (1 = up, 0 = down):
 # canadapter_status (USB-CAN bus open), bestgo_status (battery sending frames),
 # ezkontrol_status (controller sending frames). If one reads unknown OR has
