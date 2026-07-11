@@ -29,9 +29,9 @@ Devices on solar car:
 7. [Battery BMS: Bluetooth integration](#7-battery-bms-bluetooth-integration)
 8. [System maintenance & commands](#8-system-maintenance--commands)
 9. [Network setup discussion](#9-network-setup-discussion)
-9.5. [RPM to MPH conversion](#9.5-rpm-to-mph-conversion)
-10. [Andy left to do](#10-andy-left-to-do)
-11. [Student to do (with Andy help)](#11-student-to-do-with-andy-help)
+10. [RPM to MPH conversion](#10-rpm-to-mph-conversion)
+11. [Andy left to do](#11-andy-left-to-do)
+12. [Student to do (with Andy help)](#12-student-to-do-with-andy-help)
 
 ## Repository layout
 
@@ -499,20 +499,17 @@ Raspberry pi is connected to an old Asus router.  The Asus router helped when se
 It might be annoying for the PC in the chase vehicle to have telemetry data but not have an internet connection for debug!  
 
 Instructions to setup a different cell phone hotspot and password: Through the home assistant GUI (to be described later)  
-## 9.5. RPM to MPH conversion
-# Drivetrain Calculation: RPM to MPH Conversion
+## 10. RPM to MPH conversion
 
-This document provides the formulas and step-by-step calculations required to convert input RPM to miles per hour (MPH) based on your specific drivetrain configuration.
+The formulas and step-by-step calculations that convert raw motor RPM to miles per hour (MPH) for this drivetrain configuration.
 
-## 1. System Specifications
+### 10.1 System Specifications
 
 * **Drive Teeth (Drivetrain):** 11 teeth
 * **Driven Teeth (Gear To):** 55 teeth
 * **Wheel Circumference:** 73.199108 inches per rotation
 
----
-
-## 2. Mechanical Gear Ratio
+### 10.2 Mechanical Gear Ratio
 
 The gear ratio determines how many times the input drive shaft rotates for every single rotation of the wheel.
 
@@ -520,15 +517,13 @@ $$\text{Gear Ratio} = \frac{\text{Driven Teeth}}{\text{Drive Teeth}} = \frac{55}
 
 This represents a **5:1 gear reduction**, meaning the wheel rotates exactly $1$ time for every $5$ rotations of the input motor or engine.
 
----
-
-## 3. Derivation & Conversion Formula
+### 10.3 Derivation & Conversion Formula
 
 To convert from RPM to MPH, we translate rotational speed to linear distance per hour. The constants used are:
 * $60$ minutes in $1$ hour
 * $63,360$ inches in $1$ mile ($12 \text{ inches} \times 5,280 \text{ feet}$)
 
-### The Formula:
+#### The Formula:
 $$\text{MPH} = \frac{\text{RPM}}{\text{Gear Ratio}} \times \frac{\text{Wheel Distance per Rotation}}{63,360} \times 60$$
 
 Plugging in the system values:
@@ -538,9 +533,7 @@ $$\text{MPH} = \text{RPM} \times \left( \frac{73.199108 \times 60}{5 \times 63,3
 
 $$\text{MPH} = \text{RPM} \times 0.01386347$$
 
----
-
-## 4. Final Quick-Reference Formulas
+### 10.4 Final Quick-Reference Formulas
 
 Use these multipliers for rapid calculations on your system:
 
@@ -550,7 +543,7 @@ Use these multipliers for rapid calculations on your system:
 * **To calculate RPM from a target MPH:**
     $$\text{RPM} = \text{MPH} \times 72.13203$$
 
-### Example Reference Table
+#### Example Reference Table
 
 | Input RPM | Wheel RPM | Vehicle Speed (MPH) |
 | :--- | :--- | :--- |
@@ -561,7 +554,11 @@ Use these multipliers for rapid calculations on your system:
 | **2,500** | 500 | 34.66 |
 | **3,000** | 600 | 41.59 |
 
-## 10. Andy left to do
+### 10.5 Live Sensor
+
+These exact drivetrain values are baked into the live speed sensor. `sensor.solar_car_speed` — the Home Assistant template sensor in [`display/ha/eink_messages.yaml`](display/ha/eink_messages.yaml) — converts `sensor.ezkontrol_motor_speed` (raw motor rpm) to mph using `wheel_circumference_in = 73.199108` and `gear_ratio = 5.0`, i.e. the **× 0.01386347** factor derived above. The e-ink display does no conversion itself, so point the add-on's `ent_speed` option at `sensor.solar_car_speed` to show mph on the gauge. To retune for a different drivetrain, edit those two variables in that file — no code change needed.
+
+## 11. Andy left to do
 - [https://goldenmotor.bike/products/ezkontrol-48-volt-universal-bldc-controller](https://goldenmotor.bike/products/ezkontrol-48-volt-universal-bldc-controller)
 - [https://www.ytk-group.co.jp/products/wp-content/uploads/2023/02/EZkontrol-CANBUS-MCU-to-VCU-V1.0-20221001.pdf](https://www.ytk-group.co.jp/products/wp-content/uploads/2023/02/EZkontrol-CANBUS-MCU-to-VCU-V1.0-20221001.pdf)
 - [https://goldenmotor.bike/products/ezkontrol-48-volt-universal-bldc-controller?variant=45701095358709](https://goldenmotor.bike/products/ezkontrol-48-volt-universal-bldc-controller?variant=45701095358709)
@@ -592,7 +589,7 @@ Complete:
 > [!IMPORTANT]
 > Changed network name to:SolarStormsHomeAssistant (document this)
 
-## 11. Student to do (with Andy help)
+## 12. Student to do (with Andy help)
 
 - Final push to Texas deadline!  Prioritize these!
 	- Can bus to bestgo and ezkontrol!  turn off termination!

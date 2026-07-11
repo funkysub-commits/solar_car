@@ -94,7 +94,9 @@ script:
 # lives HERE (in Home Assistant) by design: the e-ink add-on shows the value
 # and unit exactly as its ent_speed entity reports them. Set the add-on's
 # ent_speed option to sensor.solar_car_speed to put mph on the gauge. Adjust
-# the wheel diameter / gear ratio below to match the drivetrain.
+# the wheel circumference / gear ratio below to match the drivetrain. With the
+# documented values (73.199108 in circumference, 5:1 gear) this works out to
+# MPH = rpm * 0.01386347 -- see README section 9.5 for the derivation.
 template:
   - sensor:
       - name: "Solar Car Speed"
@@ -107,7 +109,7 @@ template:
              not in ('unknown', 'unavailable', '') }}
         state: >-
           {% set rpm = states('sensor.ezkontrol_motor_speed') | float(0) %}
-          {% set wheel_diameter_in = 20.0 %}
-          {% set gear_ratio = 1.0 %}
+          {% set wheel_circumference_in = 73.199108 %}
+          {% set gear_ratio = 5.0 %}
           {% set wheel_rpm = rpm / gear_ratio %}
-          {{ (wheel_rpm * pi * wheel_diameter_in * 60 / 63360) | round(1) }}
+          {{ (wheel_rpm * wheel_circumference_in * 60 / 63360) | round(1) }}
