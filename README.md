@@ -16,6 +16,7 @@ Devices on solar car:
 - Motor control : ezkontrol
 - Accessory battery is a Power Queen (lookup model # and Ah)
 
+Map elevation tool: https://funkysub-commits.github.io/solar_car/
 
 
 ## Table of contents
