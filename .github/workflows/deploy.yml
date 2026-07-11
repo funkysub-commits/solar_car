@@ -1,0 +1,43 @@
+name: Deploy Map Viewer
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Setup Pages Environment
+        uses: actions/configure-pages@v5
+
+      # Creates a clean directory and renames your file to index.html
+      - name: Isolate and Rename File
+        run: |
+          mkdir deploy_dir
+          cp mapping/viewer.html deploy_dir/index.html
+
+      - name: Upload Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: 'deploy_dir'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
