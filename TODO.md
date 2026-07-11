@@ -3,7 +3,7 @@
 - [ ] Make the can bus work with both devices!!!
     - [ ] Check the wiring
     - [x] Manually review code
-    - [ ] AI review code
+    - [x] AI review code
 - [ ] Fix the can adapter having to power cycle
 - [ ] Add startup checklist to power off screen - text box in config
 - [x] Add mph calculator
@@ -18,3 +18,4 @@
 - [x] Retain entity values on restart
 - [ ] Manage documentation
     - [ ] show travelers how to add hotspot and enable/test tailscale from Euan/Andy device over the internet
+- [x] Eat a ice cream bar
