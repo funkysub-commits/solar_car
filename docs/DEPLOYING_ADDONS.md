@@ -14,7 +14,8 @@ and the traps that have actually bitten us.
 | Needs | GPIO/SPI (`full_access`) | `NET_ADMIN`, USB (`can0`) |
 | Deploy script | `scratchpad deploy_eink.py`* | `CANbus_data/tools/deploy_addon.py` |
 
-\* The e-ink deploy script has lived in a scratchpad; the steps below are the durable
+> [!NOTE]
+> The e-ink deploy script has lived in a scratchpad; the steps below are the durable
 version. Both add-ons deploy the same way.
 
 The Pi's address and SSH/HA credentials are in `status.json` at the repo root
@@ -87,11 +88,13 @@ curl -sX POST -H "Authorization: Bearer $SUPERVISOR_TOKEN" http://supervisor/add
 curl -s      -H "Authorization: Bearer $SUPERVISOR_TOKEN" http://supervisor/addons/local_solar_epaper/info
 ```
 
-If `version:` didn't change, `update` no-ops — use `ha addons rebuild <slug>` to force a
-rebuild at the same version.
+> [!CAUTION]
+> If `version:` didn't change, `update` no-ops — use `ha addons rebuild <slug>` to force a
+> rebuild at the same version.
 
-**Always read the logs.** `state=started` only means the container is up, not that the
-job works — the e-ink panel can fail on GPIO, the CAN reader can fail to open `can0`.
+> [!NOTE]
+> **Always read the logs.** `state=started` only means the container is up, not that the
+> job works — the e-ink panel can fail on GPIO, the CAN reader can fail to open `can0`.
 
 ---
 
@@ -132,7 +135,8 @@ curl -sX POST -H "Authorization: Bearer $SUPERVISOR_TOKEN" \
 # expect: {"result":"ok",...}  then restart the add-on
 ```
 
-Always re-read `info` afterwards and confirm the value actually took.
+> [!NOTE]
+> Always re-read `info` afterwards and confirm the value actually took.
 
 ---
 
