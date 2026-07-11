@@ -82,15 +82,14 @@ function buildView(sel){
     let off=0;
     DAYS.forEach((d,di)=>{
       const c=PALETTE[di%PALETTE.length];
+      dividers.push({at:off,label:d.day}); // marker at the START of each day, so each section shows its own day
       d.segments.forEach(s=>{
         const sp=s.points.map(p=>({...p,d:p.d+off}));
         segs.push({name:d.day+' · '+s.name, points:sp, color:c});
         points.push(...sp);
       });
       off=points[points.length-1].d;
-      dividers.push({at:off,label:d.day});
     });
-    dividers.pop(); // last day end == route end
     summary=DATA.grand;
   } else {
     const d=DAYS[sel];
@@ -164,7 +163,7 @@ function draw(){
   ctx.strokeStyle='#58a6ff88';ctx.setLineDash([4,4]);
   ctx.fillStyle='#58a6ff';ctx.font='10px system-ui';ctx.textAlign='left';ctx.textBaseline='top';
   for(const dv of V.dividers){const x=X(dv.at);
-    ctx.beginPath();ctx.moveTo(x,M.t);ctx.lineTo(x,H-M.b);ctx.stroke();
+    if(x>M.l+0.5){ctx.beginPath();ctx.moveTo(x,M.t);ctx.lineTo(x,H-M.b);ctx.stroke();}
     if(dv.label)ctx.fillText(' '+dv.label,x,M.t+1);}
   ctx.setLineDash([]);
 }
