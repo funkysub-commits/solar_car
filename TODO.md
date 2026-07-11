@@ -8,7 +8,8 @@
 - [ ] Add startup checklist to power off screen - text box in config
 - [ ] Add mph calculator
 - [ ] Calculate distance
-- [ ] Connect aux bat
+- [ ] Connect aux bat to the bms_ble add on - needs update to HAOS
+- [ ] hardware connection for aux bat to router and pi
 - [ ] Implement audio player
 - [ ] Add a switch to the power to the pi and router
 - [ ] Add estimated remaining miles - based on current pace
