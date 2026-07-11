@@ -11,8 +11,9 @@
 - [ ] Connect aux bat to the bms_ble add on - needs update to HAOS
 - [ ] hardware connection for aux bat to router and pi
 - [ ] Implement audio player
+- [ ] Add IP adress QR codes to home assistant page
 - [ ] Add a switch to the power to the pi and router
 - [ ] Add estimated remaining miles - based on current pace
 - [ ] Retain entity values on restart
-- [ ] show travelers how to add hotspot and enable/test tailscale from Euan/Andy devie over the internet
-- [ ] 
+- [ ] Manage documentation
+    - [ ] show travelers how to add hotspot and enable/test tailscale from Euan/Andy device over the internet
