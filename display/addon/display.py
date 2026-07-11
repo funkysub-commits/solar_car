@@ -76,8 +76,9 @@ import config
 import layout
 import panel
 import ha_client
-from alerts import (build_warnings, compute_stale, device_marks, device_status,
-                    fit_hidden, merge_device_stale, publish_warnings)
+from alerts import (aux_is_low, aux_low_levels_crossed, build_warnings,
+                    compute_stale, device_marks, device_status, fit_hidden,
+                    merge_device_stale, publish_warnings)
 from ha_client import (ha_get, read_charging, read_health, read_hidden,
                        read_message, read_number, read_temp_c, set_hidden)
 from panel import full_refresh, push_region, region_snaps, settle_and_sleep
@@ -143,6 +144,11 @@ def main():
         voltage_unit = "V"
     charging = read_charging(config.ENTITIES["charging"])
     aux_soc = read_number(config.ENTITIES["aux_soc"])[0] if config.AUX_ENABLED else None
+    # Arm every alarm level the aux battery already sits at/below, so a restart
+    # while it is low doesn't immediately blast the alarm - only a further drop
+    # past the next level down will fire. The visible "low" warning still shows.
+    aux_triggered = {L for L in config.AUX_LOW_LEVELS
+                     if aux_soc is not None and aux_soc <= L}
     odo, odo_unit, _ = read_number(config.ENTITIES["odometer"])
     # Reset the MESSAGE box to the configured startup text on every boot, so a
     # note typed during the last run doesn't reappear. Read it back rather than
@@ -164,6 +170,12 @@ def main():
         unknown and stays silent - no warning, no mark."""
         return config.AUX_ENABLED and health.get("aux") is False
 
+    def aux_low():
+        """Whether the aux battery has fallen into the low-charge alerting zone
+        (at/below the highest configured level). Gated by aux_enabled so the
+        feature disappears entirely when the aux battery is off."""
+        return config.AUX_ENABLED and aux_is_low(aux_soc, config.AUX_LOW_LEVELS)
+
     def current_alerts():
         """(on-screen "!" marks, full warning list). The user message is NOT a
         warning here - it goes to the MESSAGE box.
@@ -177,7 +189,7 @@ def main():
         merged = merge_device_stale(stale, *status)
         return device_marks(*status), build_warnings(
             temps, merged, status, ha_down=ha_client.ha_unreachable(),
-            aux_down=aux_is_down())
+            aux_down=aux_is_down(), aux_low=aux_low(), aux_soc=aux_soc)
 
     def assemble():
         """Compute (stale map, visible warnings) and keep the published HA
@@ -290,6 +302,16 @@ def main():
                 if config.AUX_ENABLED:        # None when absent -> "AUX --"
                     aux_soc = read_number(config.ENTITIES["aux_soc"])[0]
                     health["aux"] = read_health(config.ENT_AUX_STATUS)
+                    # Audible low-aux alarm: sound the configured file once as the
+                    # SoC crosses each configured level downward (edge-triggered
+                    # with hysteresis, so it doesn't nag every slow poll).
+                    fire, aux_triggered = aux_low_levels_crossed(
+                        aux_soc, aux_triggered, config.AUX_LOW_LEVELS)
+                    if fire and config.AUX_LOW_SOUND:
+                        ha_client.play_sound(config.AUX_LOW_SOUND,
+                                             config.AUX_ALARM_PLAYER)
+                        logging.warning(f"aux battery low ({aux_soc:.0f}%) - "
+                                        f"playing {config.AUX_LOW_SOUND}")
                 ov, ou, _ = read_number(config.ENTITIES["odometer"])
                 if ov is not None:            # keep the last total on a failed read
                     odo, odo_unit = ov, (ou or odo_unit)

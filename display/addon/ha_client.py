@@ -328,3 +328,15 @@ def set_hidden(keys):
         logging.warning(f"hidden-key list over 255 chars - truncated to: {value}")
     ha_call_service("input_text", "set_value",
                     {"entity_id": config.ENT_HIDDEN, "value": value})
+    
+def play_sound(file, entity_id=config.AUX_ALARM_PLAYER):
+    """Play a sound file through a media_player (VLC over telnet by default).
+    `file` is a path under Home Assistant's local "media" folder - e.g.
+    "aux_low.mp3" plays media/aux_low.mp3. Best-effort: any failure degrades to
+    a logged miss (inside ha_call_service) rather than disturbing the loop."""
+    data = {
+        "entity_id": entity_id,
+        "media_content_id": f"media_local/{file}",
+        "media_content_type": "music",
+    }
+    ha_call_service("media_player", "play_media", data)

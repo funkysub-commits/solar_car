@@ -80,7 +80,42 @@ def device_marks(adapter_down, batt_down, ezk_down):
                               adapter_down, batt_down, ezk_down)
 
 
-def build_warnings(temps, stale, status, ha_down=False, aux_down=False):
+def aux_is_low(aux_soc, levels):
+    """True when the auxiliary battery SoC has dropped to/below the highest
+    configured alert level - i.e. it has entered the alerting zone. Used to keep
+    the "AUX battery low" warning on the panel; a None reading or no configured
+    levels is never low."""
+    return aux_soc is not None and bool(levels) and aux_soc <= levels[0]
+
+
+def aux_low_levels_crossed(aux_soc, triggered, levels, rearm_margin=2):
+    """Edge-detect the audible aux low-battery alarm.
+
+    Returns (fire, new_triggered). A level fires (fire=True) the first time the
+    SoC drops to/below it, and stays armed - so it does NOT re-fire every poll
+    while the battery sits low. A level re-arms (and can fire again on a later
+    drop) only once the SoC climbs back to level+rearm_margin, so a reading that
+    jitters a percent or two around a threshold doesn't retrigger the sound.
+
+    Pure and state-carrying: the caller owns `triggered` (the set of levels
+    currently alerted) and passes the returned set back next time. A None SoC
+    leaves the state untouched."""
+    if aux_soc is None:
+        return False, triggered
+    new = set(triggered)
+    fire = False
+    for level in levels:
+        if aux_soc <= level:
+            if level not in new:
+                new.add(level)
+                fire = True                # newly crossed this level downward
+        elif aux_soc >= level + rearm_margin:
+            new.discard(level)             # recovered clear of it - re-arm
+    return fire, new
+
+
+def build_warnings(temps, stale, status, ha_down=False, aux_down=False,
+                   aux_low=False, aux_soc=None):
     """Build the ordered list of active WARNINGS (highest priority first). The
     plain user message is NOT a warning - it lives in its own message box - so
     it is not produced here.
@@ -97,6 +132,9 @@ def build_warnings(temps, stale, status, ha_down=False, aux_down=False):
     aux_down means the auxiliary battery's status sensor explicitly reads down.
     The caller only ever passes True while the aux battery is enabled, so a
     disabled (or merely absent/placeholder) aux battery raises no warning.
+
+    aux_low means the aux battery SoC has fallen into the low-charge alerting
+    zone (aux_is_low); aux_soc is that reading, shown in the warning text.
 
     Each warning is a dict {key, text, priority, icon}; 'key' is stable so the
     HA dashboard can hide an individual warning."""
@@ -121,6 +159,10 @@ def build_warnings(temps, stale, status, ha_down=False, aux_down=False):
     if aux_down:
         ws.append({"key": "aux_batt", "text": "AUX battery disconnected",
                    "priority": 94, "icon": "warn"})
+    if aux_low:
+        soc_txt = f" {aux_soc:.0f}%" if aux_soc is not None else ""
+        ws.append({"key": "aux_low", "text": f"AUX battery low{soc_txt}",
+                   "priority": 92, "icon": "warn"})
     # high temps (live readings only) - capped below the device warnings
     for k, lbl in TEMP_WARN_LABELS.items():
         if stale.get(k):

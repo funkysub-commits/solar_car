@@ -164,6 +164,101 @@ class BuildWarnings(unittest.TestCase):
         self.assertEqual(self.keys(ws), ["ha"])
 
 
+class AuxLowWarning(unittest.TestCase):
+    TEMPS = {"t_motor": 40.0, "t_ezk": 35.0, "t_batt": 30.0, "t_pi": 48.0}
+
+    def keys(self, ws):
+        return [w["key"] for w in ws]
+
+    def test_is_low_boundaries(self):
+        levels = [10, 5, 2]                       # highest-first, as config parses
+        self.assertTrue(alerts.aux_is_low(10, levels))   # at the top level
+        self.assertTrue(alerts.aux_is_low(3, levels))
+        self.assertFalse(alerts.aux_is_low(11, levels))
+        self.assertFalse(alerts.aux_is_low(None, levels))
+        self.assertFalse(alerts.aux_is_low(4, []))       # feature disabled
+
+    def test_low_warning_text_and_priority(self):
+        ws = alerts.build_warnings(self.TEMPS, stale(), (False, False, False),
+                                   aux_low=True, aux_soc=8)
+        self.assertEqual(self.keys(ws), ["aux_low"])
+        self.assertEqual(ws[0]["text"], "AUX battery low 8%")
+
+    def test_disconnected_outranks_low(self):
+        ws = alerts.build_warnings(self.TEMPS, stale(), (False, False, False),
+                                   aux_down=True, aux_low=True, aux_soc=3)
+        self.assertEqual(self.keys(ws), ["aux_batt", "aux_low"])
+
+    def test_ha_down_hides_low_warning(self):
+        ws = alerts.build_warnings(self.TEMPS, stale(), (False, False, False),
+                                   ha_down=True, aux_low=True, aux_soc=3)
+        self.assertEqual(self.keys(ws), ["ha"])
+
+
+class AuxLowAlarm(unittest.TestCase):
+    """Edge-triggered aux low-battery alarm (alerts.aux_low_levels_crossed)."""
+    LEVELS = [10, 5, 2]                            # highest-first
+
+    def cross(self, soc, triggered):
+        return alerts.aux_low_levels_crossed(soc, triggered, self.LEVELS)
+
+    def test_fires_once_per_level_crossed_down(self):
+        fire, t = self.cross(12, set())
+        self.assertFalse(fire)                     # above every level
+        fire, t = self.cross(8, t)
+        self.assertTrue(fire)                      # crossed 10
+        fire, t = self.cross(8, t)
+        self.assertFalse(fire)                     # still low - no nag
+        fire, t = self.cross(4, t)
+        self.assertTrue(fire)                      # crossed 5
+        fire, t = self.cross(4, t)
+        self.assertFalse(fire)
+
+    def test_multiple_levels_at_once_fire_once(self):
+        fire, t = self.cross(1, set())             # blows past 10, 5 and 2
+        self.assertTrue(fire)
+        self.assertEqual(t, {10, 5, 2})
+        fire, _ = self.cross(1, t)
+        self.assertFalse(fire)
+
+    def test_rearm_only_after_recovery_margin(self):
+        _, t = self.cross(4, set())                # armed 10 and 5
+        self.assertEqual(t, {10, 5})
+        # jitter back up to 6 (< 5+margin) must NOT re-arm level 5...
+        fire, t = self.cross(6, t)
+        self.assertFalse(fire)
+        fire, t = self.cross(4, t)
+        self.assertFalse(fire)                     # so dipping again is silent
+        # a real recovery clear of the margin re-arms, and a later drop fires
+        _, t = self.cross(20, t)
+        self.assertEqual(t, set())
+        fire, _ = self.cross(4, t)
+        self.assertTrue(fire)
+
+    def test_none_leaves_state_untouched(self):
+        fire, t = self.cross(None, {10})
+        self.assertFalse(fire)
+        self.assertEqual(t, {10})
+
+    def test_no_levels_never_fires(self):
+        fire, t = alerts.aux_low_levels_crossed(1, set(), [])
+        self.assertFalse(fire)
+        self.assertEqual(t, set())
+
+
+class ParseLevels(unittest.TestCase):
+    def test_parses_sorts_and_dedupes(self):
+        self.assertEqual(config._parse_levels("10, 5, 2"), [10.0, 5.0, 2.0])
+        self.assertEqual(config._parse_levels("8;4"), [8.0, 4.0])
+        self.assertEqual(config._parse_levels("2, 5, 10"), [10.0, 5.0, 2.0])
+        self.assertEqual(config._parse_levels("5, 5, 5"), [5.0])
+
+    def test_drops_junk_and_out_of_range(self):
+        self.assertEqual(config._parse_levels("abc, 200, -3, 10"), [10.0])
+        self.assertEqual(config._parse_levels(""), [])
+        self.assertEqual(config._parse_levels("null"), [])
+
+
 class Clock(unittest.TestCase):
     def test_12h_with_seconds_and_no_leading_zero(self):
         import display

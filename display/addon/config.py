@@ -116,6 +116,39 @@ ENTITIES = {
 AUX_ENABLED = os.environ.get("AUX_ENABLED", "true").strip().lower() \
     in ("1", "true", "yes", "on")
 ENT_AUX_STATUS = os.environ.get("ENT_AUX_STATUS", "binary_sensor.aux_battery_status")
+
+
+def _parse_levels(raw):
+    """Parse the aux low-battery alert levels ("10, 5, 2") into a de-duplicated
+    list of percentages, highest first. Non-numeric or out-of-range parts (and
+    bashio's "null" for a cleared option) are silently dropped, so a blank or
+    junk value simply disables the alerts rather than crashing the add-on."""
+    out = set()
+    for part in str(raw).replace(";", ",").split(","):
+        part = part.strip()
+        try:
+            v = float(part)
+        except ValueError:
+            continue
+        if 0 <= v <= 100:
+            out.add(v)
+    return sorted(out, reverse=True)
+
+
+# Auxiliary-battery low-charge alarm. As the aux SoC drops past each of these
+# percentages the configured sound is played once (edge-triggered, so it doesn't
+# nag every poll), and the panel shows an "AUX battery low" warning the whole
+# time the SoC is at/below the highest level. Clearing the levels or the sound
+# disables the respective half of the feature; both are gated by aux_enabled.
+AUX_LOW_LEVELS = _parse_levels(os.environ.get("AUX_LOW_LEVELS", "10, 5, 2"))
+AUX_LOW_SOUND = os.environ.get("AUX_LOW_SOUND", "aux_low.mp3").strip()
+if AUX_LOW_SOUND.lower() in ("null", "none"):   # unset bashio option
+    AUX_LOW_SOUND = ""
+# Media player entity that play_sound targets (a VLC/telnet media_player served
+# by the HA "media" folder). Configurable so a different speaker can be used.
+AUX_ALARM_PLAYER = os.environ.get("AUX_ALARM_PLAYER", "media_player.vlc_telnet").strip()
+if AUX_ALARM_PLAYER.lower() in ("null", "none"):
+    AUX_ALARM_PLAYER = "media_player.vlc_telnet"
 REFRESH_BUTTON = "input_button.eink_refresh"
 POWER_TOGGLE = os.environ.get("ENT_POWER", "input_boolean.eink_display")
 
