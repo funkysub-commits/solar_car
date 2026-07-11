@@ -69,6 +69,7 @@ class Device:
         self.sensors = sensors
         self.summary_fn = summary_fn
         self.data = {}
+        self.good_data = False
         self.last_push = 0.0
         self.last_rx = 0.0       # when this device last claimed a frame
         self.last_status = None  # last pushed status value (for change logging)
@@ -366,8 +367,13 @@ def main():
                     msg = None
                 if msg is not None:
                     raw = bytes(msg.data)
+                    # A frame belongs to exactly one device (disjoint arbitration
+                    # ids), so stop at the owner. Only SET the owner's flag - never
+                    # touch the others, or a frame for one device would clear the
+                    # other's "fresh data" flag and stall its pushes.
                     for d in live:
                         if d.decode(msg.arbitration_id, raw):
+                            d.good_data = True
                             break
             else:
                 time.sleep(0.2)
@@ -390,8 +396,10 @@ def main():
                 d.last_push = now
                 if d.dummy:
                     d.data = d.dummy_fn()
-                if d.data:
+                    d.good_data = True        # dummy data is always fresh
+                if d.good_data:
                     push_device(d)
+                    d.good_data = False       # consume: the next push needs a new frame
                     logging.info(f"{d.name}: {d.summary_fn(d.data)}")
                 # Status is pushed every interval even with no data, so a
                 # silent device reads 0 instead of having missing sensors.
