@@ -319,7 +319,7 @@ def main():
     if not HA_TOKEN:
         logging.warning("HA_TOKEN is empty; REST pushes will fail")
 
-    devices = [EZKONTROL, BESTGO]
+    devices = [BESTGO, EZKONTROL]
     live = [d for d in devices if not d.dummy]
 
     bus = None
