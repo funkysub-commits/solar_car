@@ -28,6 +28,9 @@ prompt-history*.md
 # Webcam capture scratch (e-paper display verification)
 .webcam/
 
+# MS Office owner/lock files (created while a doc is open)
+~$*
+
 # large HAOS data for recovery
 haos_recovery_data/
 
