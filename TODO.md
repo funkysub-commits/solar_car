@@ -11,4 +11,4 @@
 - [ ] Connect aux bat
 - [ ] Implement audio player
 - [ ] Add a switch to the power to the pi and router
-- [ ]
+- [ ] Add estimated remaining miles - based on current pace
