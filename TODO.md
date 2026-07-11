@@ -13,3 +13,5 @@
 - [ ] Add a switch to the power to the pi and router
 - [ ] Add estimated remaining miles - based on current pace
 - [ ] Retain entity values on restart
+- [ ] show travelers how to add hotspot and enable/test tailscale from Euan/Andy devie over the internet
+- [ ] 
