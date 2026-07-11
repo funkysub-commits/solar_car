@@ -1,4 +1,4 @@
-**Solar Car Challenge 2026**
+### Solar Car Challenge 2026
 
 **Telemetry user guide**
 

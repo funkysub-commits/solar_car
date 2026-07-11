@@ -1,8 +1,8 @@
-**Solar Car Challenge 2026**
+# Solar Car Challenge 2026
 
 Team Checklist — Items Outside the Car Build
 
-Andy notes:
+## Andy notes:
 
 Telemetry systems may have a common ground with the propulsion system, as long as the current draw is low
 
@@ -32,7 +32,7 @@ Umbilical Cord – To position a solar car’s solar array in a favorable positi
 
 Prop car up to face the sun?
 
-**Support Vehicles & Convoy**
+### Support Vehicles & Convoy
 
 | **✓** | **Item** | **Owner** | **Deadline / Notes** |
 | --- | --- | --- | --- |
@@ -44,7 +44,7 @@ Prop car up to face the sun?
 | ☐ | Truck and trailer for trailering the car |  |  |
 | ☐ | Support-vehicle signage / team identification |  |  |
 
-**On-Road & Pit Safety Equipment**
+### On-Road & Pit Safety Equipment
 
 | **✓** | **Item** | **Owner** | **Deadline / Notes** |
 | --- | --- | --- | --- |
@@ -58,20 +58,20 @@ Prop car up to face the sun?
 | ☐ | First-aid supplies |  |  |
 | ☐ | Protective eyewear for garage work (penalty if not worn) |  |  |
 
-**Battery / Electrical Safety**
+### Battery / Electrical Safety
 
 | **✓** | **Item** | **Owner** | **Deadline / Notes** |
 | --- | --- | --- | --- |
 | ☐ | Battery spill kit (box of baking soda), in reach of driver – lead-acid teams |  |  |
 | ☐ | Second battery spill kit – lead-acid teams |  |  |
 
-**Driver Gear**
+### Driver Gear
 
 | **✓** | **Item** | **Owner** | **Deadline / Notes** |
 | --- | --- | --- | --- |
 | ☐ | Helmet (not mandatory, highly recommended) |  |  |
 
-**Required Documents & Submissions**
+### Required Documents & Submissions
 
 | **✓** | **Item** | **Owner** | **Deadline / Notes** |
 | --- | --- | --- | --- |
@@ -83,7 +83,7 @@ Prop car up to face the sun?
 | ☐ | Oral presentation with visual aids |  | At event |
 | ☐ | Release-of-liability forms |  | Per event updates |
 
-**Team Logistics & Provisions**
+### Team Logistics & Provisions
 
 | **✓** | **Item** | **Owner** | **Deadline / Notes** |
 | --- | --- | --- | --- |
