@@ -18,17 +18,33 @@ Traps this script handles (learned the hard way):
     the running image -> connectivity is checked first and the deploy aborts
 
 Usage:
-    python tools/deploy_addon.py [pi_ip] [--skip-net-check]
-    (pi_ip defaults to the host in status.json's Pi.IP)
+    python CANbus_data/tools/deploy_addon.py [pi_ip] [--addon canbus|eink] [--skip-net-check]
+    (pi_ip defaults to the host in status.json's Pi.IP; --addon defaults to canbus)
 """
 import io, json, os, re, sys, tarfile, time
 import paramiko
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-LOCAL = os.path.join(ROOT, "CANbus_data", "ha_addons", "solar-car-canbus")
-REMOTE = "/addons/solar-car-canbus"
+
+ADDONS = {
+    "canbus": {
+        "local": os.path.join(ROOT, "CANbus_data", "ha_addons", "solar-car-canbus"),
+        "remote": "/addons/solar-car-canbus",
+        "slug": "local_solarcar_canbus",
+    },
+    "eink": {
+        "local": os.path.join(ROOT, "display", "addon"),
+        "remote": "/addons/solar-epaper",
+        "slug": "local_solar_epaper",
+    },
+}
+_which = "canbus"
+if "--addon" in sys.argv:
+    _which = sys.argv[sys.argv.index("--addon") + 1]
+LOCAL = ADDONS[_which]["local"]
+REMOTE = ADDONS[_which]["remote"]
 BACKUPS = "/addons/.backups"
-SLUG = "local_solarcar_canbus"
+SLUG = ADDONS[_which]["slug"]
 EXCLUDE_DIRS = {"__pycache__", ".git"}
 TEXT_EXT = {".sh", ".py", ".yaml", ".yml", ".md", ".txt", ".json", ".cfg", ".ini"}
 TEXT_NAMES = {"Dockerfile"}
@@ -37,6 +53,8 @@ KEY_PATH = os.path.expanduser("~/.ssh/id_ed25519")
 with open(os.path.join(ROOT, "status.json")) as f:
     _status = json.load(f)
 _args = [a for a in sys.argv[1:] if not a.startswith("--")]
+if _which in _args:                    # drop --addon's value from positionals
+    _args.remove(_which)
 HOST = _args[0] if _args else re.sub(r"^https?://|:\d+$", "", _status["Pi"]["IP"])
 SKIP_NET = "--skip-net-check" in sys.argv
 PWD = _status["SSH"]["Password"]
@@ -117,10 +135,11 @@ def main():
             cli.close()
             sys.exit(2)
 
+    name = os.path.basename(REMOTE)
     rc, out, err = run(
         f"sudo mkdir -p {BACKUPS} && test -d {REMOTE} "
-        f"&& sudo cp -a {REMOTE} {BACKUPS}/solar-car-canbus.bak.$(date +%Y%m%d-%H%M%S) "
-        f"&& ls -d {BACKUPS}/solar-car-canbus.bak.* | tail -1 || echo no-existing-folder")
+        f"&& sudo cp -a {REMOTE} {BACKUPS}/{name}.bak.$(date +%Y%m%d-%H%M%S) "
+        f"&& ls -d {BACKUPS}/{name}.bak.* | tail -1 || echo no-existing-folder")
     print("backup:", out.strip(), err.strip())
 
     data = build_tar()
