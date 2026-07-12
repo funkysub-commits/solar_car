@@ -7,15 +7,22 @@
 - [ ] Fix the can adapter having to power cycle
 - [ ] Add startup checklist to power off screen - text box in config
 - [x] Add mph calculator
-- [ ] Calculate distance
+- [ ] Calculate distance/odometer
+- [ ] Calculate kw per mile over the last mile?
+- [ ] Add estimated remaining miles - based on current pace
 - [ ] Connect aux bat to the bms_ble add on - needs update to HAOS
-- [ ] hardware connection for aux bat to router and pi
+- [x] hardware connection for aux bat to router and pi
 - [x] Implement audio player
 - [ ] Physically add audio player to car
 - [X] Add IP address QR codes to home assistant page
-- [ ] Add a (physical) switch to the power to the pi and router
-- [ ] Add estimated remaining miles - based on current pace
+- [x] Add a (physical) switch to the power to the pi and router
 - [x] Retain entity values on restart
 - [ ] Manage documentation
+    - [ ] Finish Evana telemetry userguide
     - [ ] show travelers how to add hotspot and enable/test tailscale from Euan/Andy device over the internet
-- [x] Eat a ice cream bar
+- [x] Eat an ice cream bar
+- [x] Eat another ice cream bar
+- [x] Eat a popsicle, or 2
+- [x] Eat some oreos
+
+
