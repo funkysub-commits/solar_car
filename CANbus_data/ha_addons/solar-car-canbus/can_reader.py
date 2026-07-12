@@ -76,14 +76,11 @@ class Device:
 
     def decode(self, arb_id, raw):
         """Decode a frame into self.data. Return True if it belonged here."""
-        logging.info(f"Decoding data with id '{str(hex(arb_id))}'...")
         fields = self.decoder.decode(arb_id, raw)
         if fields is None:
-            logging.info(f"data not for '{self.name}'")
             return False
         self.data.update(fields)
         self.last_rx = time.time()
-        logging.info(f"data for '{self.name}'")
         return True
         
 
@@ -105,8 +102,6 @@ def push_device(device):
     for key, value in device.data.items():
         cfg = device.sensors.get(key)
         if cfg is None:
-            if key not in device.sensors.keys():
-                logging.info(f"The key '{key}' is missing in configuration for '{device.name}', dropping data")
             continue
         entity_id = f"sensor.{device.prefix}_{key}"
         attrs = {
