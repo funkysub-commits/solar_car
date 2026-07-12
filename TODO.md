@@ -9,11 +9,11 @@
 - [x] Add mph calculator
 - [ ] Calculate distance
 - [ ] Connect aux bat to the bms_ble add on - needs update to HAOS
-- [ ] hardware connection for aux bat to router and pi
+- [x] hardware connection for aux bat to router and pi
 - [x] Implement audio player
 - [ ] Physically add audio player to car
 - [X] Add IP address QR codes to home assistant page
-- [ ] Add a (physical) switch to the power to the pi and router
+- [x] Add a (physical) switch to the power to the pi and router
 - [ ] Add estimated remaining miles - based on current pace
 - [x] Retain entity values on restart
 - [ ] Manage documentation
