@@ -92,6 +92,21 @@ curl -s      -H "Authorization: Bearer $SUPERVISOR_TOKEN" http://supervisor/addo
 > If `version:` didn't change, `update` no-ops — use `ha addons rebuild <slug>` to force a
 > rebuild at the same version.
 
+> [!CAUTION]
+> **Backups must NOT sit directly under `/addons`.** The Supervisor's local-store scan
+> treats *every* `/addons/<dir>/config.yaml` as a candidate add-on, and when two folders
+> share a `slug:` it keeps whichever it happens to read **last** (filesystem order —
+> arbitrary). On 2026-07-12 a `solar-car-canbus.bak.*` folder shadowed the freshly
+> uploaded 0.9.2 with its stale 0.9.1, so `update` reported "No update available".
+> Backups now go to `/addons/.backups/<name>.bak.<timestamp>` — one level deeper, where
+> the scanner can't see their `config.yaml`.
+
+> [!NOTE]
+> Running `ha` over a **non-interactive SSH exec channel** (paramiko, `ssh host cmd`)
+> fails with `Error: unauthorized: missing or invalid API token`: `SUPERVISOR_TOKEN`
+> lives in the container env that only login shells load. Wrap the command:
+> `bash -lc 'ha addons update …'` (or `with-contenv`).
+
 > [!NOTE]
 > **Always read the logs.** `state=started` only means the container is up, not that the
 > job works — the e-ink panel can fail on GPIO, the CAN reader can fail to open `can0`.
@@ -170,8 +185,9 @@ capabilities, and the Supervisor API **forbids an add-on turning off its own pro
       file` error. The deploy scripts convert text files to LF on upload — if you copy files
       another way, run `dos2unix` or save as LF.
 - [ ] **Pi IP** comes from `status.json` (DHCP; it moves).
-- [ ] A **backup** of the previous folder is left at `/addons/<name>.bak.<timestamp>` —
-      handy for rollback, worth pruning occasionally.
+- [ ] A **backup** of the previous folder is left at `/addons/.backups/<name>.bak.<timestamp>` —
+      handy for rollback, worth pruning occasionally. **Never leave backups directly under
+      `/addons`** — same-slug folders shadow the real one (see caution above).
 
 ---
 
@@ -215,9 +231,9 @@ capabilities, and the Supervisor API **forbids an add-on turning off its own pro
 The previous folder is backed up on-Pi before each upload:
 
 ```bash
-ssh hassio@<PI_IP> 'ls -d /addons/solar-epaper.bak.* '     # find the timestamped backup
+ssh hassio@<PI_IP> 'ls -d /addons/.backups/solar-epaper.bak.* '     # find the timestamped backup
 # restore it:
-ssh hassio@<PI_IP> 'sudo rm -rf /addons/solar-epaper && sudo mv /addons/solar-epaper.bak.<ts> /addons/solar-epaper'
+ssh hassio@<PI_IP> 'sudo rm -rf /addons/solar-epaper && sudo mv /addons/.backups/solar-epaper.bak.<ts> /addons/solar-epaper'
 ha addons reload && ha addons rebuild local_solar_epaper
 ```
 
