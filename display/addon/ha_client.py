@@ -17,6 +17,11 @@ import requests
 
 import config
 
+# One shared session for all HA/Supervisor requests: connection reuse cuts
+# per-request latency dramatically (the loop makes 3-15 requests per pass),
+# which also bounds how long a shutdown can lag behind SIGTERM.
+_session = requests.Session()
+
 # Consecutive-failure tracking for ha_unreachable().
 _UNREACHABLE_AFTER_FAILS = 3      # this many consecutive request failures...
 _UNREACHABLE_AFTER_SECS = 15      # ...spanning at least this long
@@ -75,6 +80,7 @@ _net_at = 0.0
 _net_lock = threading.Lock()
 _net_refreshing = False
 _NET_TTL = 240.0          # refresh the addresses at most this often ("once in a while")
+_NET_RETRY = 30.0         # ...but retry this soon after a FAILED refresh
 
 # Supervisor's own docker network - never a real connect address.
 _INTERNAL_PREFIXES = ("172.30.", "172.17.", "127.")
@@ -86,7 +92,7 @@ def _query_interfaces():
     Returns None (not a tuple) when the request itself fails, so the caller can
     tell 'link is down' apart from 'couldn't ask' and keep the last good value."""
     try:
-        r = requests.get(f"{config.SUPERVISOR_URL}/network/info",
+        r = _session.get(f"{config.SUPERVISOR_URL}/network/info",
                          headers={"Authorization": f"Bearer {config.SUPERVISOR_TOKEN}"},
                          timeout=5)
         r.raise_for_status()
@@ -114,14 +120,21 @@ def _query_interfaces():
 
 
 def _do_refresh():
-    global _router_ip, _wifi_ip, _net_refreshing
+    global _router_ip, _wifi_ip, _net_refreshing, _net_at
+    ok = False
     try:
         res = _query_interfaces()
         if res is not None:                     # reached Supervisor - trust it,
             _router_ip, _wifi_ip = res          # even to clear an unplugged link
+            ok = True
     finally:
         with _net_lock:
             _net_refreshing = False
+            if not ok:
+                # a failed refresh must not burn the whole TTL (the header
+                # would show "Pi Offline"/stale IPs for minutes after a boot
+                # race) - allow the next attempt after a short retry delay
+                _net_at = time.time() - _NET_TTL + _NET_RETRY
 
 
 def refresh_network(force=False):
@@ -234,25 +247,35 @@ def publish_ip_sensors():
         _ip_pub_time = now
 
 
-def ha_get(entity):
-    """Return (state, attributes, last_reported_iso) for an entity. last_reported
-    is preferred over last_updated because it advances on every push, even when
-    the state value hasn't changed - which is what we want for staleness."""
+def ha_get_ex(entity):
+    """ha_get plus an `ok` flag: (state, attributes, last_reported_iso, ok).
+    ok is True whenever the request itself succeeded - a 404 (entity simply
+    missing) still counts as ok. ok=False means HA couldn't be asked at all,
+    so callers that must tell "explicitly off/absent" apart from "couldn't
+    read" (the power toggle, the hidden-warnings list) can keep their last
+    known value instead of misreading the failure."""
     try:
-        r = requests.get(f"{config.HA_URL}/api/states/{entity}",
+        r = _session.get(f"{config.HA_URL}/api/states/{entity}",
                          headers=config.HEADERS, timeout=5)
         if r.status_code == 404:        # entity simply doesn't exist - the
             _record(True)               # connection itself is healthy
-            return None, {}, None
+            return None, {}, None, True
         r.raise_for_status()
         j = r.json()
         _record(True)
         return (j.get("state"), j.get("attributes", {}),
-                j.get("last_reported") or j.get("last_updated"))
+                j.get("last_reported") or j.get("last_updated"), True)
     except Exception as e:
         logging.debug(f"fetch {entity} failed: {e}")
         _record(False)
-        return None, {}, None
+        return None, {}, None, False
+
+
+def ha_get(entity):
+    """Return (state, attributes, last_reported_iso) for an entity. last_reported
+    is preferred over last_updated because it advances on every push, even when
+    the state value hasn't changed - which is what we want for staleness."""
+    return ha_get_ex(entity)[:3]
 
 
 def ha_post_state(entity, state, attributes):
@@ -260,7 +283,7 @@ def ha_post_state(entity, state, attributes):
     live warning list to sensor.eink_warnings (states POSTed this way are
     transient - they vanish on HA restart and are simply re-published)."""
     try:
-        requests.post(f"{config.HA_URL}/api/states/{entity}",
+        _session.post(f"{config.HA_URL}/api/states/{entity}",
                       headers={**config.HEADERS, "Content-Type": "application/json"},
                       json={"state": str(state), "attributes": attributes}, timeout=5)
         _record(True)
@@ -272,7 +295,7 @@ def ha_post_state(entity, state, attributes):
 def ha_call_service(domain, service, data):
     """Call an HA service via the REST API (e.g. input_text.set_value)."""
     try:
-        requests.post(f"{config.HA_URL}/api/services/{domain}/{service}",
+        _session.post(f"{config.HA_URL}/api/services/{domain}/{service}",
                       headers={**config.HEADERS, "Content-Type": "application/json"},
                       json=data, timeout=5)
         _record(True)
@@ -383,8 +406,12 @@ def set_message(entity, text):
 
 def read_hidden():
     """Return the set of warning keys the user has chosen to hide (read from the
-    comma-separated input_text.eink_hidden helper)."""
-    state, _, _ = ha_get(config.ENT_HIDDEN)
+    comma-separated input_text.eink_hidden helper), or None when the request
+    itself failed - a failed read must not look like "nothing hidden", or one
+    timed-out poll would transiently un-hide every hidden warning chip."""
+    state, _, _, ok = ha_get_ex(config.ENT_HIDDEN)
+    if not ok:
+        return None
     if not state or state in ("unknown", "unavailable"):
         return set()
     return {p.strip() for p in str(state).split(",") if p.strip()}

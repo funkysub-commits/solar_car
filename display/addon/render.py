@@ -54,9 +54,10 @@ def _wrap(d, text, font, max_w, max_lines):
     if len(lines) < max_lines and cur:
         lines.append(cur)
     if len(lines) == max_lines:
-        # if anything was dropped, mark the final line with an ellipsis
-        joined = " ".join(lines)
-        if joined != text:
+        # if anything was dropped, mark the final line with an ellipsis.
+        # Compare word lists, not raw strings - text.split() collapsed any
+        # doubled whitespace, which must not read as truncation.
+        if " ".join(lines).split() != words:
             lines[-1] = _ellipsize(d, lines[-1] + " …", font, max_w)
     return lines[:max_lines]
 
