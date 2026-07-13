@@ -25,10 +25,10 @@ user:sct, passwd: letsgo
 to be filled in by Evana (setting/network)
 
 > [!IMPORTANT]
-> to turn off the home assistant it is best to power it off, avoids any sdcard corruption.  under solarcar tab, push the shutdown system button at the bottom and wait for screen to show poweroff message, maybe 1 minute.
+> to turn off the home assistant it is best to do a software shutdown before unplugging the power, it avoids any sdcard corruption.  under solarcar tab, push the shutdown system button at the bottom and wait for screen to show poweroff message, maybe 1 minute.
 
 > [!CAUTION]
-> Only the Ezkontrol is connected right now, not the bestgo.
-> > though it's data can be accessed via the Smart BMS app
+> Only the Ezkontrol is connected right now, not the bestgo battery.
+> > tho, we never got a chance to test some recent software chnages, will need a little work to try a new can cable. in the meantime, use the Smart BMS app to get actual value of SOC, don't trust the battery panels until they are calibrated 
 
 Evana will put her file here
