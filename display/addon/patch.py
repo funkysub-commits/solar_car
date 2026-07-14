@@ -96,6 +96,39 @@ c = replace(c,'self.GPIO_DC_PIN.close()', 'pass')
 c = replace(c,'self.GPIO_PWR_PIN.close()', 'pass')
 c = replace(c,'self.GPIO_BUSY_PIN.close()', 'self.request.release()')
 
+# --- SPI fd-leak fix ---------------------------------------------------------
+# Upstream module_init() opens /dev/spidev0.0 unconditionally and py-spidev's
+# open() overwrites the previous fd without closing it, so every full refresh
+# (init_fast -> init_part, two module_init calls) leaked fds until the
+# container hit its open-file limit. Guard open/close behind a flag so
+# repeated init/exit calls are idempotent. Patterns match the commit pinned
+# in the Dockerfile (EPAPER_COMMIT).
+c = replace(c,
+    """        else:
+            # SPI device, bus = 0, device = 0
+            self.SPI.open(0, 0)
+            self.SPI.max_speed_hz = 4000000
+            self.SPI.mode = 0b00
+        return 0""",
+    """        else:
+            # SPI device, bus = 0, device = 0
+            if not getattr(self, '_spi_open', False):
+                self.SPI.open(0, 0)
+                self.SPI.max_speed_hz = 4000000
+                self.SPI.mode = 0b00
+                self._spi_open = True
+        return 0""")
+
+c = replace(c,
+    """    def module_exit(self, cleanup=False):
+        logger.debug("spi end")
+        self.SPI.close()""",
+    """    def module_exit(self, cleanup=False):
+        logger.debug("spi end")
+        if getattr(self, '_spi_open', False):
+            self.SPI.close()
+        self._spi_open = False""")
+
 with open(filepath, 'w') as f:
     f.write(c)
 print("All patches applied successfully")

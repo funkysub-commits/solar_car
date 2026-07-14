@@ -79,8 +79,9 @@ import ha_client
 from alerts import (aux_is_low, aux_low_levels_crossed, build_warnings,
                     compute_stale, device_marks, device_status, fit_hidden,
                     merge_device_stale, publish_warnings)
-from ha_client import (ha_get, read_charging, read_health, read_hidden,
-                       read_message, read_number, read_temp_c, set_hidden)
+from ha_client import (ha_get, ha_get_ex, read_charging, read_health,
+                       read_hidden, read_message, read_number, read_temp_c,
+                       set_hidden)
 from panel import full_refresh, push_region, region_snaps, settle_and_sleep
 from render import render, render_splash
 
@@ -155,7 +156,8 @@ def main():
     # assuming, so a failed service call still shows whatever HA actually holds.
     ha_client.set_message(config.ENTITIES["message"], config.STARTUP_MESSAGE)
     ha_msg = read_message(config.ENTITIES["message"]) or ""
-    hidden = read_hidden()
+    _h0 = read_hidden()
+    hidden = _h0 if _h0 is not None else set()   # None = fetch failed
     # CAN connectivity, from the CANbus app's health sensors. Tri-state per
     # entry: True up / False down / None unknown (sensor not published yet) -
     # None falls back to staleness inference inside device_status().
@@ -216,6 +218,8 @@ def main():
         avoids clobbering a Hide the dashboard just applied."""
         nonlocal hidden
         cur = read_hidden()
+        if cur is None:          # fetch failed - keep the current set this cycle
+            return
         target = set(cur)
         _, all_ws = current_alerts()
         active_keys = {w["key"] for w in all_ws}
@@ -228,6 +232,65 @@ def main():
             set_hidden(target)
         hidden = target
 
+    def slow_poll(include_speed=False):
+        """Everything polled every SLOW_POLL seconds: temps / SoC / voltage /
+        aux / odometer / health / message / hidden list, plus the network
+        address refresh and the QR IP sensors. Runs whether or not the panel
+        is on - HA publishing must not stop while the display is off, or the
+        dashboard's warning list and QR cards die with every HA restart.
+        include_speed adds the speed read that the on-path does every loop."""
+        nonlocal soc, voltage, voltage_unit, charging, aux_soc, aux_triggered
+        nonlocal odo, odo_unit, ha_msg, speed, speed_unit
+        if include_speed:
+            s, su, lu = read_number(config.ENTITIES["speed"])
+            if s is not None:
+                speed = s
+            speed_unit = config.SPEED_UNIT or su or speed_unit
+            if lu is not None:
+                last_iso["speed"] = lu
+        for k in temps:
+            tv, lu = read_temp_c(config.ENTITIES[k])
+            if tv is not None:
+                temps[k] = tv
+            if lu is not None:
+                last_iso[k] = lu
+        sv, _, lu = read_number(config.ENTITIES["soc"])
+        if sv is not None:
+            soc = sv
+        if lu is not None:
+            last_iso["soc"] = lu
+        vv, vu, lu = read_number(config.ENTITIES["voltage"])
+        if vv is not None:
+            voltage, voltage_unit = vv, (vu or voltage_unit)
+        if lu is not None:
+            last_iso["voltage"] = lu
+        charging = read_charging(config.ENTITIES["charging"])
+        if config.AUX_ENABLED:        # None when absent -> "AUX --"
+            aux_soc = read_number(config.ENTITIES["aux_soc"])[0]
+            health["aux"] = read_health(config.ENT_AUX_STATUS)
+            # Audible low-aux alarm: sound the configured file once as the
+            # SoC crosses each configured level downward (edge-triggered
+            # with hysteresis, so it doesn't nag every slow poll).
+            fire, aux_triggered = aux_low_levels_crossed(
+                aux_soc, aux_triggered, config.AUX_LOW_LEVELS)
+            if fire and config.AUX_LOW_SOUND:
+                ha_client.play_sound(config.AUX_LOW_SOUND,
+                                     config.AUX_ALARM_PLAYER)
+                logging.warning(f"aux battery low ({aux_soc:.0f}%) - "
+                                f"playing {config.AUX_LOW_SOUND}")
+        ov, ou, _ = read_number(config.ENTITIES["odometer"])
+        if ov is not None:            # keep the last total on a failed read
+            odo, odo_unit = ov, (ou or odo_unit)
+        health["bus"] = read_health(config.ENT_CAN_BUS)
+        health["batt"] = read_health(config.ENT_CAN_BATT)
+        health["ezk"] = read_health(config.ENT_CAN_EZK)
+        m = read_message(config.ENTITIES["message"])
+        if m is not None:                 # None = fetch failed; keep last
+            ha_msg = m
+        sync_hidden()                     # single writer of eink_hidden
+        ha_client.refresh_network()       # router/hotspot IPs, TTL-gated, off-loop
+        ha_client.publish_ip_sensors()    # QR sensors (dedup + heartbeat inside)
+
     _pub_sig = None
     _pub_time = 0.0
 
@@ -236,7 +299,10 @@ def main():
     ha_client.refresh_network(force=True)               # first frame has the addresses
     ha_client.publish_ip_sensors()                      # router/hotspot QR sensors
     header_lines = ha_client.connection_lines()
-    powered = ha_get(config.POWER_TOGGLE)[0] != "off"   # default ON if the toggle is absent
+    # Default ON when the toggle is absent (404) - but a FAILED read at
+    # startup also defaults ON, there is no previous state to keep yet.
+    _pw, _, _, _pw_ok = ha_get_ex(config.POWER_TOGGLE)
+    powered = (_pw != "off") if _pw_ok else True
     if powered:
         img = render(speed, speed_unit, temps, soc, voltage, voltage_unit,
                      visible, stale, ha_msg, clock, header_lines, charging, aux_soc,
@@ -256,18 +322,35 @@ def main():
     awake = powered
     idle_since = time.time()
 
+    consec_errors = 0
     try:
         while not stop["flag"]:
+          # One guard per iteration: a transient error (an SPI hiccup from EMI,
+          # an unforeseen HA response) must not kill the add-on - log the full
+          # traceback, back off, and force a clean full refresh on recovery.
+          try:
             t0 = time.time()
 
-            # HA on/off toggle - clears the panel when switched off
-            if ha_get(config.POWER_TOGGLE)[0] == "off":
+            # HA on/off toggle - clears the panel when switched off. A FAILED
+            # read keeps the current state: None must not mean "on", or every
+            # HA restart would wake (and flash) a deliberately-off panel.
+            _pw, _, _, _pw_ok = ha_get_ex(config.POWER_TOGGLE)
+            want_on = (_pw != "off") if _pw_ok else powered
+            if not want_on:
                 if powered:
                     epd.init()
                     epd.Clear()
                     epd.sleep()
                     powered, awake = False, False
                     logging.info("display turned OFF via HA - screen cleared")
+                # HA publishing continues while the panel is off, so the
+                # warning list and QR sensors survive an HA restart and the
+                # first frame after power-on isn't stale.
+                if t0 - last_slow >= config.SLOW_POLL:
+                    slow_poll(include_speed=True)
+                    last_slow = t0
+                assemble()                   # change/heartbeat-gated inside
+                consec_errors = 0
                 time.sleep(config.SPEED_POLL)
                 continue
             turning_on = not powered
@@ -283,49 +366,11 @@ def main():
 
             # slow values - temps / SoC / voltage / message / hidden, every SLOW_POLL seconds
             if t0 - last_slow >= config.SLOW_POLL:
-                for k in temps:
-                    tv, lu = read_temp_c(config.ENTITIES[k])
-                    if tv is not None:
-                        temps[k] = tv
-                    if lu is not None:
-                        last_iso[k] = lu
-                sv, _, lu = read_number(config.ENTITIES["soc"])
-                if sv is not None:
-                    soc = sv
-                if lu is not None:
-                    last_iso["soc"] = lu
-                vv, vu, lu = read_number(config.ENTITIES["voltage"])
-                if vv is not None:
-                    voltage, voltage_unit = vv, (vu or voltage_unit)
-                if lu is not None:
-                    last_iso["voltage"] = lu
-                charging = read_charging(config.ENTITIES["charging"])
-                if config.AUX_ENABLED:        # None when absent -> "AUX --"
-                    aux_soc = read_number(config.ENTITIES["aux_soc"])[0]
-                    health["aux"] = read_health(config.ENT_AUX_STATUS)
-                    # Audible low-aux alarm: sound the configured file once as the
-                    # SoC crosses each configured level downward (edge-triggered
-                    # with hysteresis, so it doesn't nag every slow poll).
-                    fire, aux_triggered = aux_low_levels_crossed(
-                        aux_soc, aux_triggered, config.AUX_LOW_LEVELS)
-                    if fire and config.AUX_LOW_SOUND:
-                        ha_client.play_sound(config.AUX_LOW_SOUND,
-                                             config.AUX_ALARM_PLAYER)
-                        logging.warning(f"aux battery low ({aux_soc:.0f}%) - "
-                                        f"playing {config.AUX_LOW_SOUND}")
-                ov, ou, _ = read_number(config.ENTITIES["odometer"])
-                if ov is not None:            # keep the last total on a failed read
-                    odo, odo_unit = ov, (ou or odo_unit)
-                health["bus"] = read_health(config.ENT_CAN_BUS)
-                health["batt"] = read_health(config.ENT_CAN_BATT)
-                health["ezk"] = read_health(config.ENT_CAN_EZK)
-                m = read_message(config.ENTITIES["message"])
-                if m is not None:                 # None = fetch failed; keep last
-                    ha_msg = m
-                sync_hidden()                     # single writer of eink_hidden
-                ha_client.refresh_network()       # router/hotspot IPs, TTL-gated, off-loop
-                ha_client.publish_ip_sensors()    # QR sensors (dedup + heartbeat inside)
+                slow_poll()
                 last_slow = t0
+
+            if stop["flag"]:              # don't start a refresh we won't finish
+                break
 
             # manual refresh button forces a full (de-ghosting) refresh
             btn, _, _ = ha_get(config.REFRESH_BUTTON)
@@ -385,23 +430,35 @@ def main():
                 last_snaps = snaps
                 logging.info("idle - panel asleep")
 
+            consec_errors = 0
             dt = time.time() - t0
             if dt < config.SPEED_POLL:
                 time.sleep(config.SPEED_POLL - dt)
-    except Exception as e:
-        logging.error(f"loop crashed: {e}")
+          except Exception:
+            consec_errors += 1
+            delay = min(60.0, 2.0 ** min(consec_errors, 6))
+            logging.exception(f"loop iteration failed ({consec_errors} in a row) - "
+                              f"retrying in {delay:.0f}s")
+            # the panel state is unknown now - the next successful draw
+            # starts with a clean full wake+refresh instead of a partial
+            awake = False
+            time.sleep(delay)
     finally:
         # On shutdown, leave the panel in a clean, intended state and deep-slept,
         # so it isn't caught mid-refresh (showing a garbled frame) when the Pi
         # cuts power. If the display was on, settle to a "POWERED OFF" splash;
-        # if it was toggled off via HA, just leave it blank.
+        # if it was toggled off via HA it is already blank AND already asleep -
+        # sleeping it again would write to a closed SPI device and log a
+        # spurious "shutdown handling failed" every time.
         try:
             if powered:
                 settle_and_sleep(epd, render_splash())
                 logging.info("stopping - shutdown splash shown, panel asleep")
-            else:
+            elif awake:
                 epd.sleep()
                 logging.info("stopping - display was off, panel asleep")
+            else:
+                logging.info("stopping - panel already asleep")
         except Exception as e:
             logging.error(f"shutdown handling failed: {e}")
             try:

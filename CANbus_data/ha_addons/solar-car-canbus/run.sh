@@ -19,7 +19,10 @@ bashio::log.info "BESTGO:    dummy=${BESTGO_DUMMY} push=${BESTGO_PUSH_INTERVAL}s
 if [ "${EZKONTROL_DUMMY}" = "true" ] && [ "${BESTGO_DUMMY}" = "true" ]; then
     bashio::log.info "Both devices in dummy mode -- no adapter needed"
 elif [ -d /sys/class/net/can0 ]; then
-    ip link set can0 down 2>/dev/null
+    # bashio runs this script under errexit: a bare failing command (e.g. the
+    # adapter yanked between the -d test and here) would kill the add-on
+    # before python ever starts, so this must never carry its exit code
+    ip link set can0 down 2>/dev/null || true
     if ip link set can0 type can bitrate "${CAN_BITRATE}" && ip link set can0 up; then
         bashio::log.info "can0 up @ ${CAN_BITRATE} bps (SocketCAN)"
     else

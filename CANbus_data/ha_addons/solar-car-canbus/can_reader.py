@@ -20,6 +20,7 @@ package has to be carried inside it). Edit the original, then re-sync.
 import os
 import glob
 import time
+import queue
 import socket
 import struct
 import logging
@@ -43,6 +44,7 @@ BUS_RETRY_SEC = 10       # how often to retry opening a lost/missing CAN bus
 STATUS_MISS_INTERVALS = 3  # device status drops to 0 after this many silent push intervals
 NET_INTERVAL = 10        # seconds between host-network checks (runs off-thread)
 NET_TIMEOUT = 1.5        # per-probe TCP connect timeout
+PUSH_QUEUE_MAX = 256     # pending HA pushes; oldest dropped first when HA lags
 
 EZKONTROL_DUMMY = os.environ.get("EZKONTROL_DUMMY", "false").lower() == "true"
 EZKONTROL_PUSH_INTERVAL = int(os.environ.get("EZKONTROL_PUSH_INTERVAL", "2"))
@@ -71,21 +73,17 @@ class Device:
         self.data = {}
         self.good_data = False
         self.last_push = 0.0
-        self.last_rx = 0.0       # when this device last claimed a frame
+        self.last_rx = 0.0       # when this device last claimed a frame (monotonic)
         self.last_status = None  # last pushed status value (for change logging)
 
     def decode(self, arb_id, raw):
         """Decode a frame into self.data. Return True if it belonged here."""
-        logging.info(f"Decoding data with id '{str(hex(arb_id))}'...")
         fields = self.decoder.decode(arb_id, raw)
         if fields is None:
-            logging.info(f"data not for '{self.name}'")
             return False
         self.data.update(fields)
-        self.last_rx = time.time()
-        logging.info(f"data for '{self.name}'")
+        self.last_rx = time.monotonic()
         return True
-        
 
     def status(self, now):
         """1 if this device is alive: dummy mode counts as alive; live mode
@@ -105,8 +103,6 @@ def push_device(device):
     for key, value in device.data.items():
         cfg = device.sensors.get(key)
         if cfg is None:
-            if key not in device.sensors.keys():
-                logging.info(f"The key '{key}' is missing in configuration for '{device.name}', dropping data")
             continue
         entity_id = f"sensor.{device.prefix}_{key}"
         attrs = {
@@ -121,19 +117,55 @@ def push_device(device):
         push_state(entity_id, value, attrs)
 
 
+# HTTP pushes run on their own thread (state_pusher below). Callers only
+# enqueue, so a slow or restarting HA can never stall bus.recv() - blocking
+# the read loop lets the kernel RX buffer overflow and silently drop frames.
+_push_q = queue.Queue(maxsize=PUSH_QUEUE_MAX)
+_push_drops = 0
+_push_drop_logged = 0.0
+
+
 def push_state(entity_id, value, attrs):
-    """POST one entity state to the HA REST API."""
-    try:
-        r = requests.post(
-            f"{HA_URL}/api/states/{entity_id}",
-            headers=HEADERS,
-            json={"state": str(value), "attributes": attrs},
-            timeout=5,
-        )
-        if r.status_code not in (200, 201):
-            logging.warning(f"{entity_id}: HTTP {r.status_code} {r.text[:200]}")
-    except Exception as e:
-        logging.error(f"{entity_id}: {e}")
+    """Queue one entity state for the pusher thread. Never blocks: when the
+    queue is full (HA badly behind) the OLDEST update is dropped - every
+    sensor is re-pushed each interval, so fresh values win."""
+    global _push_drops, _push_drop_logged
+    while True:
+        try:
+            _push_q.put_nowait((entity_id, value, attrs))
+            return
+        except queue.Full:
+            try:
+                _push_q.get_nowait()
+                _push_drops += 1
+            except queue.Empty:
+                pass
+            now = time.monotonic()
+            if now - _push_drop_logged >= 30:
+                _push_drop_logged = now
+                logging.warning(f"push queue full - dropped {_push_drops} stale "
+                                "updates so far (HA slow/unreachable?)")
+
+
+def state_pusher(stop):
+    """Daemon loop: POST queued entity states to the HA REST API."""
+    session = requests.Session()
+    while not stop.is_set():
+        try:
+            entity_id, value, attrs = _push_q.get(timeout=0.5)
+        except queue.Empty:
+            continue
+        try:
+            r = session.post(
+                f"{HA_URL}/api/states/{entity_id}",
+                headers=HEADERS,
+                json={"state": str(value), "attributes": attrs},
+                timeout=5,
+            )
+            if r.status_code not in (200, 201):
+                logging.warning(f"{entity_id}: HTTP {r.status_code} {r.text[:200]}")
+        except Exception as e:
+            logging.error(f"{entity_id}: {e}")
 
 
 def push_device_status(device, now):
@@ -201,7 +233,7 @@ def default_gateway():
                 p = line.split()
                 if len(p) > 3 and p[1] == "00000000" and int(p[3], 16) & 0x2:
                     return socket.inet_ntoa(struct.pack("<L", int(p[2], 16)))
-    except OSError:
+    except (OSError, ValueError):     # ValueError: malformed hex field
         pass
     return None
 
@@ -239,32 +271,38 @@ def network_monitor(stop):
     can never delay CAN frame reading."""
     last = None
     while not stop.is_set():
-        ip = host_ip()
-        gw = default_gateway()
-        lan = tcp_reachable(gw, (80, 443, 53)) if gw else bool(ip)
-        wan = tcp_reachable("1.1.1.1", (53,)) or tcp_reachable("8.8.8.8", (53,))
+        # One guard around the whole probe cycle: an unforeseen error must not
+        # kill the thread, or the network sensors would silently freeze at
+        # their last values for the rest of the add-on's life.
+        try:
+            ip = host_ip()
+            gw = default_gateway()
+            lan = tcp_reachable(gw, (80, 443, 53)) if gw else bool(ip)
+            wan = tcp_reachable("1.1.1.1", (53,)) or tcp_reachable("8.8.8.8", (53,))
 
-        push_state("sensor.haos_ip_address", ip or "unknown", {
-            "friendly_name": "HAOS IP Address",
-            "icon": "mdi:ip-network",
-            "source": "solar_car_canbus",
-        })
-        push_state("sensor.network_status", 1 if ip else 0, {
-            "friendly_name": "Network Status",
-            "icon": "mdi:lan-connect" if ip else "mdi:lan-disconnect",
-            "source": "solar_car_canbus",
-        })
-        push_connectivity("binary_sensor.lan_connected", lan, "LAN Connected",
-                          "mdi:lan-connect", "mdi:lan-disconnect")
-        push_connectivity("binary_sensor.wan_connected", wan, "WAN Connected",
-                          "mdi:web", "mdi:web-off")
+            push_state("sensor.haos_ip_address", ip or "unknown", {
+                "friendly_name": "HAOS IP Address",
+                "icon": "mdi:ip-network",
+                "source": "solar_car_canbus",
+            })
+            push_state("sensor.network_status", 1 if ip else 0, {
+                "friendly_name": "Network Status",
+                "icon": "mdi:lan-connect" if ip else "mdi:lan-disconnect",
+                "source": "solar_car_canbus",
+            })
+            push_connectivity("binary_sensor.lan_connected", lan, "LAN Connected",
+                              "mdi:lan-connect", "mdi:lan-disconnect")
+            push_connectivity("binary_sensor.wan_connected", wan, "WAN Connected",
+                              "mdi:web", "mdi:web-off")
 
-        cur = (ip, lan, wan)
-        if cur != last:
-            logging.info(f"network: ip={ip or 'none'} "
-                         f"lan={'up' if lan else 'down'} "
-                         f"wan={'up' if wan else 'down'}")
-            last = cur
+            cur = (ip, lan, wan)
+            if cur != last:
+                logging.info(f"network: ip={ip or 'none'} "
+                             f"lan={'up' if lan else 'down'} "
+                             f"wan={'up' if wan else 'down'}")
+                last = cur
+        except Exception:
+            logging.exception("network monitor: probe cycle failed; retrying")
         stop.wait(NET_INTERVAL)
 
 
@@ -334,11 +372,13 @@ def main():
     adapter_push_at = 0.0
     adapter_interval = min(d.push_interval for d in devices)
 
-    # Host network monitoring runs on its own thread so its blocking probes
-    # never delay CAN reads.
-    net_stop = threading.Event()
-    threading.Thread(target=network_monitor, args=(net_stop,),
+    # Network monitoring and HA pushes run on their own threads so neither
+    # blocking TCP probes nor slow HTTP POSTs ever delay CAN reads.
+    stop = threading.Event()
+    threading.Thread(target=network_monitor, args=(stop,),
                      name="network-monitor", daemon=True).start()
+    threading.Thread(target=state_pusher, args=(stop,),
+                     name="state-pusher", daemon=True).start()
 
     if live:
         bus = open_bus()
@@ -353,7 +393,11 @@ def main():
 
     try:
         while True:
-            now = time.time()
+            # All scheduling uses time.monotonic(): the Pi has no RTC, so NTP
+            # steps the wall clock whenever the hotspot connects - a backward
+            # step froze every push (and retry) for the step duration, and a
+            # forward step published spurious status=0 transitions.
+            now = time.monotonic()
             if live and bus is None and now >= bus_retry_at:
                 bus_retry_at = now + BUS_RETRY_SEC
                 bus = open_bus()
@@ -381,10 +425,21 @@ def main():
                         if d.decode(msg.arbitration_id, raw):
                             d.good_data = True
                             break
+                elif bus is not None and not can0_ready():
+                    # socketcan recv() just times out (no exception) when the
+                    # link goes down while the netdev still exists - catch it
+                    # here so canadapter_status doesn't keep claiming 1.
+                    logging.error("can0 went down; will keep retrying "
+                                  f"every {BUS_RETRY_SEC}s (canadapter_status=0)")
+                    try:
+                        bus.shutdown()
+                    except Exception:
+                        pass
+                    bus = None
             else:
                 time.sleep(0.2)
 
-            now = time.time()
+            now = time.monotonic()
 
             # canadapter_status: 1 while the bus is open (all-dummy counts
             # as 1). Pushed on every change and at least every push interval.
@@ -413,7 +468,7 @@ def main():
     except KeyboardInterrupt:
         logging.info("Shutting down")
     finally:
-        net_stop.set()
+        stop.set()
         if bus is not None:
             bus.shutdown()
 

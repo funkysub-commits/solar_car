@@ -24,5 +24,3 @@
 - [x] Eat another ice cream bar
 - [x] Eat a popsicle, or 2
 - [x] Eat some oreos
-
-
