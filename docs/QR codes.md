@@ -1,5 +1,7 @@
 ## Telemetry User Guide
 
+![Map](./QR%20codes_images/image-000.png)
+
 ## Map with elevation
 
 ![Map](./QR%20codes_images/image-001.png)
