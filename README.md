@@ -74,6 +74,16 @@ Two services run on the Pi alongside Home Assistant OS:
 
 Both run as Home Assistant apps and restart with HA. `solar-car-canbus` brings up the CAN interface itself; the `solar_epaper` display app runs with full access to /dev for SPI/GPIO. Each talks to HA through the Supervisor proxy, so neither needs a long-lived token.  
 
+### Power architecture
+The car runs two electrically separate power domains, kept apart by a **galvanic isolation barrier** so a fault or ground shift on one side can't reach the other:
+
+**48V traction system** — the solar panel feeds the BESTGO 48V pack through an MPPT controller, and the pack powers the EZkontrol B48800 motor controller off the 48V bus.  
+**12V accessory system** — a separate off-board charger tops up the 12V accessory battery (a Power Queen pack); a buck converter steps that down to 5V USB-C to run the Raspberry Pi 4, which in turn powers its two peripherals — the DSD TECH SH-C31G USB-CAN adapter (isolated USB 5V) and the Waveshare e-ink display (5V header pins).  
+
+The two domains meet at exactly one point: the **SH-C31G is galvanically isolated**, so it carries the CAN ground reference across the barrier to the shared EZkontrol/BESTGO bus without tying the 48V and 12V grounds together. That isolation is what keeps the Pi-side electronics safe while they sit on the same CAN bus as the traction pack (wiring in Section 6.1).
+
+![Power architecture](readme_assets/diagram3.png)
+
 ## 2. Prerequisites
 ### Hardware
 | Component | Details |
