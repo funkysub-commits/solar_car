@@ -32,6 +32,6 @@ details coming here from Evana
 in case of sdcard failure we will have a backup, as well as a backup rpi.
 
 [!NOTE]
-The power cord for the pi is very hard to remove, recommended to file down the opening to make it go in and out easier.  Now you might need some pliers to remove!
+The power cord for the pi is very hard to remove, recommended to file down the opening to make it go in and out easier.  Now you might need some pliers to remove!  Also cover the pi and screen if you bleed the brakes, turns out brake fluid and metal filings aren't so good for a raspberry pi.  Who knew?
 
 
