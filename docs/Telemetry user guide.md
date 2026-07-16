@@ -31,4 +31,27 @@ details coming here from Evana
 
 in case of sdcard failure we will have a backup, as well as a backup rpi.
 
+---
+
+### How the system works
+
+A quick picture of what's going on under the hood — handy if something looks wrong, or if you're explaining the setup to someone else.
+
+#### Data flow — where the numbers come from
+![System data flow](../readme_assets/diagram1.png)
+
+The motor controller (EZkontrol) and the battery (BESTGO) share one CAN bus. The USB-CAN adapter feeds that into the Raspberry Pi, where a small app decodes it and posts every reading into Home Assistant as a sensor. From there the same data drives two things: the Home Assistant dashboard you open in a browser, and the e-ink screen on the car. So everything you see — on your phone and on the physical display — comes from those sensors.
+
+#### Network — how you connect to it
+![Network layout](../readme_assets/diagram2.png)
+
+The Raspberry Pi is wired to the Asus router. Your phone or the chase-vehicle PC joins that router's WiFi and opens Home Assistant at its IP address (step 3 above). This network is local only, with no route to the internet, which is why your phone may complain and try to jump back to mobile data. Optionally the Pi can also join a cell-phone hotspot; that gives it internet so a remote helper (Euan) can reach it over the Tailscale VPN for debugging. Rule of thumb: **router = you in the chase vehicle, hotspot = remote help over the internet.**
+
+#### Power — what you're switching on
+![Power architecture](../readme_assets/diagram3.png)
+
+There are two separate power systems. The 48V traction side (solar panel → BESTGO pack → EZkontrol) moves the car. The 12V accessory side runs all the telemetry: its own battery feeds a buck converter that makes 5V for the Raspberry Pi, which in turn powers the CAN adapter and the e-ink display. The "power on the 12v circuit" in step 1 is this accessory side — that's what boots the Pi and router, independent of the traction pack. The two sides are electrically isolated (the isolation barrier); the only link between them is the CAN adapter, which is isolated on purpose so the low-voltage electronics stay protected.
+
+---
+
 Evana will put her file here
