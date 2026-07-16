@@ -11,7 +11,7 @@
 > If it only has the red led on (no green) unplug and replug it until the green led turns on.
 2. The clock in upper right of the e-ink should be ticking every few seconds: it is controlled by the rpi and means things look good.  if it stops that means something is wrong, likely power loss.
 3. connect phone to the wifi "dd-wrt", there is no password.  it is a LAN wifi (no route to the internet), so you might need to tell your phone this (stay connected anyway, or something along those lines) Phones will want to jump back to mobile data or another wifi where it can see the internet.  The ipad is setup to connect long term.
-5. the e-ink dash should display the ip of home assitant.  probbaly `192.168.1.146:8123`
+5. the e-ink dash should display the ip of home assitant.  probaly `192.168.1.146:8123`
 6. put that into your phone browser to see home assistant login.  (make sure you arent doing a google search, just enter as a url)
 user:sct, passwd: letsgo
 
@@ -30,6 +30,9 @@ details coming here from Evana
 
 
 in case of sdcard failure we will have a backup, as well as a backup rpi.
+
+[!NOTE]
+The power cord for the pi is very hard to remove, recommended to file down the opening to make it go in and out easier.  Now you might need some pliers to remove!  Also cover the pi and screen if you bleed the brakes, turns out brake fluid and metal filings aren't so good for a raspberry pi.  Who knew?
 
 ---
 
@@ -51,7 +54,3 @@ The Raspberry Pi is wired to the Asus router. Your phone or the chase-vehicle PC
 ![Power architecture](../readme_assets/diagram3.png)
 
 There are two separate power systems. The 48V traction side (solar panel → BESTGO pack → EZkontrol) moves the car. The 12V accessory side runs all the telemetry: its own battery feeds a buck converter that makes 5V for the Raspberry Pi, which in turn powers the CAN adapter and the e-ink display. The "power on the 12v circuit" in step 1 is this accessory side — that's what boots the Pi and router, independent of the traction pack. The two sides are electrically isolated (the isolation barrier); the only link between them is the CAN adapter, which is isolated on purpose so the low-voltage electronics stay protected.
-
----
-
-Evana will put her file here
