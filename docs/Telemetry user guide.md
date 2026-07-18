@@ -18,7 +18,13 @@ user:sct, passwd: letsgo
 7. when ezkontrol is turned on you should see data from it, see the
 "solar car" tab in home assistant on the left in home assistant for most important data.
 
-8. settings/system/network To connect a new cell phone hotspot, this will allow the home assistant to get though to the interent so Euan can help with remote debug. 
+8. settings/system/network To connect a new cell phone hotspot, this will allow the home assistant to get though to the interent so Euan can help with remote debug.
+   There is a network screen error, so need to setup hotspot wifi from a terminal:
+>docker run --rm -it --privileged --pid=host alpine nsenter -t 1 -m -u -n -i sh
+>nmcli connection show
+>nmcli connection add type wifi ifname wlan0 con-name hotspot ssid "Isabel" wifi-sec.key-mgmt wpa-psk wifi-sec.psk "!sab3lw!f!!"
+>nmcli connection show
+
 details coming here from Evana
 
 > [!IMPORTANT]
