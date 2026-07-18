@@ -48,7 +48,7 @@ The motor controller (EZkontrol) and the battery (BESTGO) share one CAN bus. The
 #### Network — how you connect to it
 ![Network layout](../readme_assets/diagram2.png)
 
-The Raspberry Pi is wired to the Asus router. Your phone or the chase-vehicle PC joins that router's WiFi and opens Home Assistant at its IP address (step 3 above). This network is local only, with no route to the internet, which is why your phone may complain and try to jump back to mobile data. Optionally the Pi can also join a cell-phone hotspot; that gives it internet so a remote helper (Euan) can reach it over the Tailscale VPN for debugging. Rule of thumb: **router = you in the chase vehicle, hotspot = remote help over the internet.**
+The Raspberry Pi is wired to the Asus router. Your chase-vehicle iPad or any cellphone joins that router's WiFi and opens Home Assistant at its IP address (step 3 above). This network is local only, with no route to the internet, which is why your phone may complain and try to jump back to mobile data. Optionally the Pi can also join a cell-phone hotspot; that gives it internet so a remote helper (Euan) can reach it over the Tailscale VPN for debugging. Rule of thumb: **router = you in the chase vehicle, hotspot = remote help over the internet.**
 
 #### Power — what you're switching on
 ![Power architecture](../readme_assets/diagram3.png)
