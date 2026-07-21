@@ -8,7 +8,7 @@
 > [!NOTE]
 > The ipad will quickly connect to the solar car, but any device can connect to the rpi system with the steps below.
 
-1. power on 12v circuit, it will turn on the rpi and the router.  The eink dashboard should turn on after 30 seconds, that means rpi booted successfully.
+1. power on 12v circuit, it will turn on the rpi and the router.  The eink dashboard should turn on after 30 seconds, that means rpi booted successfully.  The clock seconds moving indicates the pi is booted up.
 > [!IMPORTANT]
 > Look at the CAN to USB adapter.
 > If it only has the red led on (no green) unplug and replug it until the green led turns on.
