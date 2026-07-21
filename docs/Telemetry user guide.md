@@ -1,6 +1,9 @@
 ### Solar Car Challenge 2026
 
+
 **Telemetry user guide**
+
+> Always try to shutdown pi before removing power!
 
 > [!NOTE]
 > The ipad will quickly connect to the solar car, but any device can connect to the rpi system with the steps below.
