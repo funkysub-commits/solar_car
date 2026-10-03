@@ -31,6 +31,7 @@ import requests
 from solarcar_can import bestgo, ezkontrol
 from solarcar_can.bestgo import BestgoDecoder, BG_SENSORS
 from solarcar_can.ezkontrol import EzkontrolDecoder, EZ_SENSORS
+import telemetry_log
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)s %(message)s')
@@ -50,6 +51,22 @@ EZKONTROL_DUMMY = os.environ.get("EZKONTROL_DUMMY", "false").lower() == "true"
 EZKONTROL_PUSH_INTERVAL = int(os.environ.get("EZKONTROL_PUSH_INTERVAL", "2"))
 BESTGO_DUMMY = os.environ.get("BESTGO_DUMMY", "false").lower() == "true"
 BESTGO_PUSH_INTERVAL = int(os.environ.get("BESTGO_PUSH_INTERVAL", "5"))
+
+# High-resolution mode: while the HA toggle HIGH_RES_ENTITY is "on", BOTH
+# devices push (and the telemetry log ticks) every HIGH_RES_PUSH_INTERVAL
+# seconds instead of their normal intervals. Only values that CHANGED are
+# re-POSTed at the fast rate (HA ignores identical states anyway, so this
+# only saves HTTP traffic); unchanged values keep their normal cadence.
+HIGH_RES_PUSH_INTERVAL = float(os.environ.get("HIGH_RES_PUSH_INTERVAL", "0.5"))
+HIGH_RES_ENTITY = os.environ.get("HIGH_RES_ENTITY", "input_boolean.canbus_high_res")
+CONTROL_POLL_SEC = 2.0   # how often the HA toggle is re-read
+
+# Telemetry CSV log (telemetry_log.py): one wide row per tick into
+# /share/solarcar_telemetry/telemetry-YYYY-MM-DD.csv, exported over HTTP.
+TELEMETRY_LOG = os.environ.get("TELEMETRY_LOG", "true").lower() == "true"
+TELEMETRY_LOG_INTERVAL = float(os.environ.get("TELEMETRY_LOG_INTERVAL", "2"))
+TELEMETRY_LOG_KEEP_DAYS = int(os.environ.get("TELEMETRY_LOG_KEEP_DAYS", "30"))
+EXPORT_PORT = int(os.environ.get("EXPORT_PORT", "8099"))   # fixed: ingress_port in config.yaml
 
 HEADERS = {
     "Authorization": f"Bearer {HA_TOKEN}",
@@ -73,6 +90,8 @@ class Device:
         self.data = {}
         self.good_data = False
         self.last_push = 0.0
+        self.last_summary = 0.0      # last summary log line (throttled in high-res)
+        self.last_status_push = 0.0  # status sensor keeps the normal cadence
         self.last_rx = 0.0       # when this device last claimed a frame (monotonic)
         self.last_status = None  # last pushed status value (for change logging)
 
@@ -87,24 +106,46 @@ class Device:
 
     def status(self, now):
         """1 if this device is alive: dummy mode counts as alive; live mode
-        requires a frame within STATUS_MISS_INTERVALS push intervals."""
+        requires a frame within STATUS_MISS_INTERVALS push intervals. Always
+        judged against the NORMAL interval, so flipping high-res on never
+        makes a healthy device read 0."""
         if self.dummy:
             return 1
         return 1 if (now - self.last_rx) <= STATUS_MISS_INTERVALS * self.push_interval else 0
 
+    def effective_interval(self, high_res):
+        """Seconds between pushes right now: the fast rate in high-res mode,
+        otherwise this device's configured interval."""
+        return min(HIGH_RES_PUSH_INTERVAL, self.push_interval) if high_res else self.push_interval
 
-def push_device(device):
+
+# entity_id -> (last pushed value as str, monotonic time it was queued).
+# Used by push_device to skip re-POSTing an unchanged value at the high-res
+# rate: identical state+attributes don't even bump last_updated in HA, so the
+# request would be pure load on the Pi. The value is still re-sent once its
+# normal interval has elapsed, so a restarted HA gets everything back within
+# one normal cycle exactly as before.
+_last_sent = {}
+
+
+def push_device(device, now=None, high_res=False):
     """POST the decoded fields of `device` to the HA REST API as sensors.
 
     Only fields listed in the device's sensor table are pushed; extra
     decoded fields (soc_hi, chemistry, life) stay dashboard-only so the
     published sensor set doesn't change.
     """
+    now = time.monotonic() if now is None else now
     for key, value in device.data.items():
         cfg = device.sensors.get(key)
         if cfg is None:
             continue
         entity_id = f"sensor.{device.prefix}_{key}"
+        if high_res:
+            prev = _last_sent.get(entity_id)
+            if prev and prev[0] == str(value) and now - prev[1] < device.push_interval:
+                continue
+        _last_sent[entity_id] = (str(value), now)
         attrs = {
             "friendly_name": f"{device.name} {key.replace('_', ' ').title()}",
             "icon":          cfg.get("icon", "mdi:information"),
@@ -166,6 +207,54 @@ def state_pusher(stop):
                 logging.warning(f"{entity_id}: HTTP {r.status_code} {r.text[:200]}")
         except Exception as e:
             logging.error(f"{entity_id}: {e}")
+
+
+class HighResControl:
+    """Mirrors the HA toggle HIGH_RES_ENTITY (an input_boolean helper) into a
+    thread-safe flag. Polled on its own thread so the GET can never stall
+    the CAN read loop. Missing helper => off, with a one-time hint in the
+    log on how to create it."""
+
+    def __init__(self):
+        self._on = threading.Event()
+        self.missing_logged = False
+
+    @property
+    def on(self):
+        return self._on.is_set()
+
+    def run(self, stop):
+        session = requests.Session()
+        while not stop.is_set():
+            try:
+                r = session.get(f"{HA_URL}/api/states/{HIGH_RES_ENTITY}",
+                                headers=HEADERS, timeout=5)
+                if r.status_code == 200:
+                    want = r.json().get("state") == "on"
+                    if want != self.on:
+                        if want:
+                            logging.info(f"high-resolution mode -> ON ({HIGH_RES_PUSH_INTERVAL}s pushes/log)")
+                            self._on.set()
+                        else:
+                            logging.info("high-resolution mode -> off (normal intervals)")
+                            self._on.clear()
+                    self.missing_logged = False
+                elif r.status_code == 404:
+                    if not self.missing_logged:
+                        logging.warning(
+                            f"{HIGH_RES_ENTITY} not found in HA: high-res mode stays off. "
+                            "Create a Toggle helper with that entity id (or deploy "
+                            "CANbus_data/ha/packages/canbus_controls.yaml).")
+                        self.missing_logged = True
+                    self._on.clear()
+                else:
+                    logging.warning(f"high-res poll: HTTP {r.status_code}")
+            except Exception as e:
+                logging.debug(f"high-res poll: {e}")   # HA down: keep last state
+            stop.wait(CONTROL_POLL_SEC)
+
+
+HIGH_RES = HighResControl()
 
 
 def push_device_status(device, now):
@@ -356,10 +445,46 @@ BESTGO = Device(
 )
 
 
+def telemetry_columns(devices):
+    """CSV data columns, in a fixed order: <prefix>_<sensor key> for every
+    published sensor of every device (matches the HA entity ids minus the
+    'sensor.' prefix, so an export lines up with HA history)."""
+    return [f"{d.prefix}_{k}" for d in devices for k in d.sensors]
+
+
+def telemetry_values(devices):
+    out = {}
+    for d in devices:
+        for k in d.sensors:
+            out[f"{d.prefix}_{k}"] = d.data.get(k)
+    return out
+
+
+def push_telemetry_log_status(tlog, high_res, interval):
+    """sensor.canbus_telemetry_log: rows logged today, with where/how fast as
+    attributes -- gives the dashboard something to show next to the toggle."""
+    attrs = {
+        "friendly_name": "CANbus Telemetry Log",
+        "icon": "mdi:file-delimited",
+        "source": "solar_car_canbus",
+        "unit_of_measurement": "rows",
+        "high_res": bool(high_res),
+        "log_interval_s": interval,
+        "file": tlog.path if tlog else None,
+        "export_port": EXPORT_PORT,
+        "error": tlog.last_error if tlog else "logging disabled",
+    }
+    push_state("sensor.canbus_telemetry_log", tlog.rows_today if tlog else 0, attrs)
+
+
 def main():
     logging.info("Solar Car CAN Reader starting")
     logging.info(f"  EZkontrol: dummy={EZKONTROL_DUMMY} push={EZKONTROL_PUSH_INTERVAL}s")
     logging.info(f"  BESTGO:    dummy={BESTGO_DUMMY} push={BESTGO_PUSH_INTERVAL}s")
+    logging.info(f"  High-res:  {HIGH_RES_ENTITY} -> {HIGH_RES_PUSH_INTERVAL}s pushes")
+    logging.info(f"  Telemetry log: {'on' if TELEMETRY_LOG else 'OFF'} every "
+                 f"{TELEMETRY_LOG_INTERVAL}s -> {telemetry_log.LOG_DIR} "
+                 f"(keep {TELEMETRY_LOG_KEEP_DAYS} days); export on :{EXPORT_PORT}")
     if not HA_TOKEN:
         logging.warning("HA_TOKEN is empty; REST pushes will fail")
 
@@ -372,13 +497,32 @@ def main():
     adapter_push_at = 0.0
     adapter_interval = min(d.push_interval for d in devices)
 
-    # Network monitoring and HA pushes run on their own threads so neither
-    # blocking TCP probes nor slow HTTP POSTs ever delay CAN reads.
+    # Network monitoring, HA pushes and the high-res toggle poll run on their
+    # own threads so neither blocking TCP probes nor slow HTTP ever delay CAN
+    # reads.
     stop = threading.Event()
     threading.Thread(target=network_monitor, args=(stop,),
                      name="network-monitor", daemon=True).start()
     threading.Thread(target=state_pusher, args=(stop,),
                      name="state-pusher", daemon=True).start()
+    threading.Thread(target=HIGH_RES.run, args=(stop,),
+                     name="high-res-control", daemon=True).start()
+
+    # Telemetry CSV log + its export server. The server is started even when
+    # logging is off so old files stay downloadable.
+    tlog = None
+    log_at = 0.0
+    log_rx_mark = {d.name: 0.0 for d in devices}   # last_rx seen at the previous row
+    if TELEMETRY_LOG:
+        tlog = telemetry_log.TelemetryLog(telemetry_columns(devices),
+                                          keep_days=TELEMETRY_LOG_KEEP_DAYS)
+
+    def export_state():
+        return {"high_res": HIGH_RES.on,
+                "interval": HIGH_RES_PUSH_INTERVAL if HIGH_RES.on else TELEMETRY_LOG_INTERVAL,
+                "rows_today": tlog.rows_today if tlog else 0,
+                "logging": TELEMETRY_LOG}
+    telemetry_log.start_export_server(EXPORT_PORT, export_state)
 
     if live:
         bus = open_bus()
@@ -437,9 +581,12 @@ def main():
                         pass
                     bus = None
             else:
-                time.sleep(0.2)
+                # No bus to block on: nap, but short enough to honour the
+                # high-res interval in dummy mode.
+                time.sleep(min(0.2, HIGH_RES_PUSH_INTERVAL / 2))
 
             now = time.monotonic()
+            high_res = HIGH_RES.on
 
             # canadapter_status: 1 while the bus is open (all-dummy counts
             # as 1). Pushed on every change and at least every push interval.
@@ -448,27 +595,54 @@ def main():
                 if adapter_ok != adapter_pushed:
                     logging.info(f"CAN adapter status -> {adapter_ok}")
                 push_adapter_status(adapter_ok)
+                push_telemetry_log_status(
+                    tlog, high_res, HIGH_RES_PUSH_INTERVAL if high_res else TELEMETRY_LOG_INTERVAL)
                 adapter_pushed = adapter_ok
                 adapter_push_at = now
 
             for d in devices:
-                if now - d.last_push < d.push_interval:
+                if now - d.last_push < d.effective_interval(high_res):
                     continue
                 d.last_push = now
                 if d.dummy:
                     d.data = d.dummy_fn()
                     d.good_data = True        # dummy data is always fresh
                 if d.good_data:
-                    push_device(d)
+                    push_device(d, now, high_res)
                     d.good_data = False       # consume: the next push needs a new frame
-                    logging.info(f"{d.name}: {d.summary_fn(d.data)}")
+                    # The per-push summary line would flood the log at the
+                    # high-res rate; keep it at the normal cadence.
+                    if not high_res or now - d.last_summary >= d.push_interval:
+                        d.last_summary = now
+                        logging.info(f"{d.name}: {d.summary_fn(d.data)}")
                 # Status is pushed every interval even with no data, so a
                 # silent device reads 0 instead of having missing sensors.
-                push_device_status(d, now)
+                # (Status itself stays on the normal cadence.)
+                if now - d.last_status_push >= d.push_interval:
+                    d.last_status_push = now
+                    push_device_status(d, now)
+
+            # Telemetry CSV row: every log interval (fast in high-res mode),
+            # but only when some device actually produced data since the
+            # previous row -- so a dead bus leaves a visible gap rather than
+            # a wall of repeated stale values.
+            if tlog is not None:
+                log_interval = HIGH_RES_PUSH_INTERVAL if high_res else TELEMETRY_LOG_INTERVAL
+                if now - log_at >= log_interval:
+                    fresh = any(d.dummy or d.last_rx > log_rx_mark[d.name] for d in devices)
+                    if fresh:
+                        log_at = now
+                        for d in devices:
+                            log_rx_mark[d.name] = d.last_rx
+                        tlog.write(now, high_res,
+                                   (adapter_ok, EZKONTROL.status(now), BESTGO.status(now)),
+                                   telemetry_values(devices))
     except KeyboardInterrupt:
         logging.info("Shutting down")
     finally:
         stop.set()
+        if tlog is not None:
+            tlog.close()
         if bus is not None:
             bus.shutdown()
 

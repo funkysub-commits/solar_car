@@ -21,6 +21,19 @@ user:sct, passwd: letsgo
 7. when ezkontrol is turned on you should see data from it, see the
 "solar car" tab in home assistant on the left in home assistant for most important data.
 
+> [!TIP]
+> **Collecting data for analysis.** Normally readings are recorded every 2–5 seconds.
+> If you want finer detail for a test run, flip the **High resolution mode** switch on
+> the solar car tab **on** — everything is then recorded every half second (the e-ink
+> screen won't look any different). Switch it **off** again afterwards so the Pi isn't
+> working harder than it needs to.
+>
+> **Downloading the data.** Open **Telemetry Export** in the Home Assistant sidebar (or
+> `http://<pi ip>:8099/` on the car's Wi-Fi), pick "last 1 h" / "last 6 h" or a from–to
+> window, and you get one CSV with every motor-controller and battery reading in it.
+> It opens in Excel / Google Sheets. Times in the file are UTC. The Pi keeps about a
+> month of these logs.
+
 8. settings/system/network To connect a new cell phone hotspot, this will allow the home assistant to get though to the interent so Euan can help with remote debug.
    There is a network screen error, so need to setup hotspot wifi from a terminal:
    

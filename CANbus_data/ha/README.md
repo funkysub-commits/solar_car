@@ -10,6 +10,8 @@ in `../../display/ha/`.)
 | --- | --- |
 | `python_scripts/bootstrap_canbus_entities.py` | Creates every `sensor.ezkontrol_*` / `sensor.bestgo_*` as `unavailable` if it doesn't already exist. **Auto-generated** from `EZ_SENSORS` / `BG_SENSORS` — do not hand-edit. |
 | `packages/canbus_bootstrap.yaml` | Enables `python_script` and adds the automation that runs the script on the `homeassistant.start` event. |
+| `packages/canbus_controls.yaml` | Defines `input_boolean.canbus_high_res` — the **high-resolution mode** switch the add-on (0.10.0+) polls. On: both devices push + log every `high_res_push_interval` s (default 0.5). Only needs an *input_boolean* reload, not a restart (`deploy_addon.py --with-packages` does this). |
+| `dashboard_telemetry_section.yaml` | Dashboard card: the high-res switch, rows logged today, and download links to the add-on's export page (`http://<pi>:8099/`, also the "Telemetry Export" sidebar panel). |
 
 ## Why
 
@@ -41,6 +43,8 @@ python CANbus_data/tools/gen_ha_bootstrap.py
    ```
 2. Copy the files onto the Pi:
    - `packages/canbus_bootstrap.yaml` → `/config/packages/canbus_bootstrap.yaml`
+   - `packages/canbus_controls.yaml` → `/config/packages/canbus_controls.yaml`
+     (or let `python CANbus_data/tools/deploy_addon.py --with-packages` do it)
    - `python_scripts/bootstrap_canbus_entities.py` → `/config/python_scripts/bootstrap_canbus_entities.py`
 3. **Check configuration** (Developer Tools → YAML, or `ha core check`), then
    **restart Home Assistant** — enabling `python_script` needs a restart. The

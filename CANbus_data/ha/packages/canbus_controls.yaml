@@ -1,0 +1,20 @@
+# Home Assistant package: controls for the Solar Car CANbus Reader add-on.
+#
+# input_boolean.canbus_high_res -- the "high resolution" switch. The add-on
+# polls this toggle every 2 s; while it is ON both devices push sensor updates
+# (and the telemetry CSV log ticks) every `high_res_push_interval` seconds
+# (default 0.5 s) instead of the normal 2 s / 5 s. Turn it on while you are
+# actively collecting data, off again afterwards to spare the Pi and the SD
+# card. The e-ink screen refreshes at its own pace, so it won't look any
+# different.
+#
+# Deploy (see CANbus_data/ha/README.md): copy to /config/packages/canbus_controls.yaml,
+# then Developer tools -> YAML -> "Input booleans" reload (no restart needed),
+# or `ha core restart`. Alternatively create a Toggle helper in the UI with
+# entity id input_boolean.canbus_high_res -- the add-on only cares about the id.
+
+input_boolean:
+  canbus_high_res:
+    name: CANbus High Resolution
+    icon: mdi:speedometer
+    initial: false   # always start normal after an HA restart

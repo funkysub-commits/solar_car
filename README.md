@@ -310,11 +310,13 @@ apps with the app folder as the Docker context): after editing
 app. Golden-master tests (`CANbus_data/tests/test_decoders.py`) replay real
 bus captures from `tests/fixtures/` through the decoders.
 
-It publishes 41 sensors:
+It publishes 42 sensors:
 - 13 `sensor.ezkontrol_*` — bus voltage/current, phase current, motor speed,
   controller/motor temperature, throttle, gear, brake, contactor, errors.
 - 21 `sensor.bestgo_*` — SOC/SOH, pack voltage/current/temperature, cell
   min/max voltage and temperature, charge/discharge limits, alarms, capacity.
+- `sensor.canbus_telemetry_log` (since 0.10.0) — rows written to today's
+  telemetry CSV, with the log file, interval and high-res flag as attributes.
 - 7 health sensors (CAN since 0.5.0, network since 0.6.0/0.7.0), pushed even
   when no data is flowing:
 
@@ -364,20 +366,51 @@ vs. add-on not running (sensors `unavailable`).
 starting. If the USB-CAN adapter came up in STM32 DFU mode (so there is no
 `can0`), it first attempts a `uhubctl` USB port power-cycle to recover it.
 
+#### High-resolution mode and telemetry export (0.10.0+)
+
+Normally the app pushes EZkontrol sensors every 2 s and BESTGO every 5 s —
+fine for watching the car, coarse for analysing a run. Two additions:
+
+- **High-resolution switch.** The toggle helper
+  `input_boolean.canbus_high_res` ("CANbus High Resolution", defined in
+  `CANbus_data/ha/packages/canbus_controls.yaml`) is polled by the app every
+  2 s. While it is **on**, both devices push every `high_res_push_interval`
+  seconds (default 0.5 s) and the telemetry log ticks at the same rate. Only
+  values that changed are re-sent at the fast rate, so the extra load on the
+  Pi stays modest; the `*_status` sensors and the e-ink screen keep their
+  normal cadence. Turn it on when you are collecting data, off afterwards.
+- **Telemetry CSV log + export.** Every tick (2 s, or the high-res interval)
+  the app appends one row with *every* sensor of both devices plus the health
+  columns to `/share/solarcar_telemetry/telemetry-YYYY-MM-DD.csv` (UTC, one
+  file per day, pruned after `telemetry_log_keep_days`). A small export page
+  lets you download any time window as a single CSV: **Telemetry Export** in
+  the HA sidebar (ingress, so it also works over Nabu Casa / Tailscale), or
+  directly at `http://<pi-ip>:8099/` from the car's LAN. From a PC,
+  `python CANbus_data/tools/export_telemetry.py --hours 2` fetches the same
+  thing, and falls back to HA's recorder history (`--source history`, needs
+  `HA_TOKEN`) for periods before the CSV log existed. The dashboard card in
+  `CANbus_data/ha/dashboard_telemetry_section.yaml` puts the switch and the
+  download links next to each other.
+
 ### 6.4 App configuration
 Set these in the app's **Configuration** tab:
 | Option | Default | Purpose |
 | --- | --- | --- |
-| can_interface | can0 | SocketCAN interface name |
 | can_bitrate | 500000 | shared-bus bitrate for both devices |
 | ezkontrol_dummy | false | simulate the motor controller instead of decoding it |
 | ezkontrol_push_interval | 2 | seconds between EZkontrol sensor pushes |
 | bestgo_dummy | false | simulate the battery instead of decoding it |
 | bestgo_push_interval | 5 | seconds between BESTGO sensor pushes |
+| high_res_push_interval | 0.5 | push + log interval for both devices while `input_boolean.canbus_high_res` is on (0.1–10) |
+| telemetry_log | true | write the telemetry CSV log to `/share/solarcar_telemetry/` |
+| telemetry_log_interval | 2 | seconds between CSV rows in normal mode |
+| telemetry_log_keep_days | 30 | delete day files older than this |
 
-Each device has its own dummy flag and push interval, so one can run live
-while the other is simulated. With both `*_dummy` set to `true` the app
-skips the CAN interface entirely — handy for testing with no hardware.
+The export page always listens on host port **8099** (fixed, because it is
+also the ingress port). Each device has its own dummy flag and push
+interval, so one can run live while the other is simulated. With both
+`*_dummy` set to `true` the app skips the CAN interface entirely — handy for
+testing with no hardware.
 
 ## 7. Battery BMS: Bluetooth integration
 The battery pack connects to Home Assistant over Bluetooth using the BLE Battery Management System integration. This was set up during initial configuration (Section 3.3).  

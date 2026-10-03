@@ -1,0 +1,43 @@
+# Dashboard section: high-resolution switch + telemetry export link.
+#
+# Paste as a new section/card group into the storage-mode dashboard
+# (Edit dashboard -> Add card -> Manual, or via lovelace/config/save over the
+# WebSocket API -- see the dashboard-editing notes). Needs:
+#   - input_boolean.canbus_high_res   (packages/canbus_controls.yaml)
+#   - sensor.canbus_telemetry_log     (pushed by the add-on, 0.10.0+)
+#   - sensor.haos_ip_address          (pushed by the add-on)
+#
+# The export page is also in the HA sidebar as "Telemetry Export" (ingress),
+# which works remotely over Nabu Casa / Tailscale too; the direct :8099 link
+# below only works from the same LAN as the Pi.
+
+type: vertical-stack
+cards:
+  - type: entities
+    title: Telemetry
+    state_color: true
+    entities:
+      - entity: input_boolean.canbus_high_res
+        name: High resolution mode
+        secondary_info: last-changed
+      - entity: sensor.canbus_telemetry_log
+        name: Rows logged today
+        secondary_info: last-updated
+      - type: attribute
+        entity: sensor.canbus_telemetry_log
+        attribute: log_interval_s
+        name: Log interval
+        suffix: " s"
+        icon: mdi:timer-outline
+  - type: markdown
+    content: >-
+      {% set ip = states('sensor.haos_ip_address') %}
+      {% set err = state_attr('sensor.canbus_telemetry_log', 'error') %}
+      **Download telemetry** — [open the export page](http://{{ ip }}:8099/)
+      (same Wi-Fi as the car), or use **Telemetry Export** in the sidebar.
+      Quick links: [last 15 min](http://{{ ip }}:8099/export?minutes=15) ·
+      [1 h](http://{{ ip }}:8099/export?hours=1) ·
+      [6 h](http://{{ ip }}:8099/export?hours=6) ·
+      [today so far](http://{{ ip }}:8099/export?hours=24)
+
+      {% if err and err != 'None' %}⚠️ Telemetry log problem: {{ err }}{% endif %}

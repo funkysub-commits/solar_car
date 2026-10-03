@@ -18,8 +18,13 @@ Traps this script handles (learned the hard way):
     the running image -> connectivity is checked first and the deploy aborts
 
 Usage:
-    python CANbus_data/tools/deploy_addon.py [pi_ip] [--addon canbus|eink] [--skip-net-check]
+    python CANbus_data/tools/deploy_addon.py [pi_ip] [--addon canbus|eink] [--skip-net-check] [--with-packages]
     (pi_ip defaults to the host in status.json's Pi.IP; --addon defaults to canbus)
+
+--with-packages (canbus only) also copies CANbus_data/ha/packages/*.yaml into
+HA's /config/packages/ and reloads input_boolean, so the high-resolution
+toggle helper (input_boolean.canbus_high_res) exists without a Core restart.
+New *integrations* in a package (python_script etc.) still need a restart.
 """
 import io, json, os, re, sys, tarfile, time
 import paramiko
@@ -57,7 +62,36 @@ if _which in _args:                    # drop --addon's value from positionals
     _args.remove(_which)
 HOST = _args[0] if _args else re.sub(r"^https?://|:\d+$", "", _status["Pi"]["IP"])
 SKIP_NET = "--skip-net-check" in sys.argv
+WITH_PACKAGES = "--with-packages" in sys.argv
+PACKAGES_DIR = os.path.join(ROOT, "CANbus_data", "ha", "packages")
 PWD = _status["SSH"]["Password"]
+
+
+def push_packages(run, run_ha):
+    """Copy CANbus_data/ha/packages/*.yaml into HA's packages dir and reload
+    input_boolean (picks up new package files; no Core restart). The SSH
+    add-on mounts HA config at /config (older) or /homeassistant (newer)."""
+    rc, out, _ = run("for d in /homeassistant /config; do test -d $d/packages && echo $d && break; done")
+    cfg = out.strip().splitlines()[-1] if out.strip() else ""
+    if not cfg:
+        print("packages: no /config/packages or /homeassistant/packages dir on the Pi - "
+              "enable packages in configuration.yaml first (see CANbus_data/ha/README.md); skipped")
+        return
+    for name in sorted(os.listdir(PACKAGES_DIR)):
+        if not name.endswith((".yaml", ".yml")):
+            continue
+        data = open(os.path.join(PACKAGES_DIR, name), "rb").read().replace(b"\r\n", b"\n")
+        rc, out, err = run(f"sudo tee {cfg}/packages/{name} > /dev/null", stdin_bytes=data)
+        print(f"packages: {name} -> {cfg}/packages/ rc={rc} {err.strip()}")
+    rc, out, err = run_ha(
+        'curl -s -o /dev/null -w "%{http_code}" -X POST '
+        '-H "Authorization: Bearer $SUPERVISOR_TOKEN" -H "Content-Type: application/json" '
+        'http://supervisor/core/api/services/input_boolean/reload')
+    print(f"packages: input_boolean reload HTTP {out.strip()} (200 = ok)")
+    rc, out, err = run_ha(
+        'curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $SUPERVISOR_TOKEN" '
+        'http://supervisor/core/api/states/input_boolean.canbus_high_res')
+    print(f"packages: input_boolean.canbus_high_res exists -> HTTP {out.strip()} (200 = yes)")
 
 
 def connect():
@@ -172,6 +206,9 @@ def main():
     if rc != 0:
         cli.close()
         sys.exit(1)
+
+    if WITH_PACKAGES and _which == "canbus":
+        push_packages(run, run_ha)
 
     run_ha(f"ha addons start {SLUG} 2>/dev/null", timeout=120)
     time.sleep(5)
