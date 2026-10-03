@@ -31,7 +31,7 @@ import requests
 from solarcar_can import bestgo, ezkontrol
 from solarcar_can.bestgo import BestgoDecoder, BG_SENSORS
 from solarcar_can.ezkontrol import EzkontrolDecoder, EZ_SENSORS
-import telemetry_log
+import telemetry_export
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)s %(message)s')
@@ -54,7 +54,7 @@ BESTGO_PUSH_INTERVAL = int(os.environ.get("BESTGO_PUSH_INTERVAL", "5"))
 
 # Live update interval: the HA number helper INTERVAL_ENTITY (seconds) is
 # polled every CONTROL_POLL_SEC and, when present, overrides BOTH devices'
-# push intervals and sets the telemetry-log tick -- changeable from the
+# push intervals (and so how finely HA records history) -- changeable from the
 # dashboard at any time, no restart. Without the helper each device uses its
 # configured push interval. Values are clamped to [INTERVAL_MIN, INTERVAL_MAX].
 # Only values that CHANGED are re-POSTed faster than a device's configured
@@ -64,11 +64,14 @@ INTERVAL_ENTITY = os.environ.get("INTERVAL_ENTITY", "input_number.canbus_update_
 INTERVAL_MIN, INTERVAL_MAX = 0.1, 60.0
 CONTROL_POLL_SEC = 2.0   # how often the HA helper is re-read
 
-# Telemetry CSV log (telemetry_log.py): one wide row per update interval into
-# /share/solarcar_telemetry/telemetry-YYYY-MM-DD.csv, exported over HTTP.
-TELEMETRY_LOG = os.environ.get("TELEMETRY_LOG", "true").lower() == "true"
-TELEMETRY_LOG_KEEP_DAYS = int(os.environ.get("TELEMETRY_LOG_KEEP_DAYS", "30"))
+# Telemetry export (telemetry_export.py): nothing is logged to disk; on
+# request the add-on pulls the recorded history of every telemetry entity
+# from HA and streams one wide CSV. EXPORT_EXTRA_ENTITIES adds entities the
+# add-on doesn't own (e.g. the rpm->mph template sensor); missing ones are
+# simply blank columns.
 EXPORT_PORT = int(os.environ.get("EXPORT_PORT", "8099"))   # fixed: ingress_port in config.yaml
+EXPORT_EXTRA_ENTITIES = [e.strip() for e in os.environ.get("EXPORT_EXTRA_ENTITIES", "").split(",")
+                         if e.strip()]
 
 HEADERS = {
     "Authorization": f"Bearer {HA_TOKEN}",
@@ -457,36 +460,15 @@ BESTGO = Device(
 )
 
 
-def telemetry_columns(devices):
-    """CSV data columns, in a fixed order: <prefix>_<sensor key> for every
-    published sensor of every device (matches the HA entity ids minus the
-    'sensor.' prefix, so an export lines up with HA history)."""
-    return [f"{d.prefix}_{k}" for d in devices for k in d.sensors]
-
-
-def telemetry_values(devices):
-    out = {}
-    for d in devices:
-        for k in d.sensors:
-            out[f"{d.prefix}_{k}"] = d.data.get(k)
-    return out
-
-
-def push_telemetry_log_status(tlog, live, interval):
-    """sensor.canbus_telemetry_log: rows logged today, with where/how fast as
-    attributes -- gives the dashboard something to show next to the toggle."""
-    attrs = {
-        "friendly_name": "CANbus Telemetry Log",
-        "icon": "mdi:file-delimited",
-        "source": "solar_car_canbus",
-        "unit_of_measurement": "rows",
-        "interval_s": interval,
-        "interval_source": INTERVAL_ENTITY if live is not None else "add-on options",
-        "file": tlog.path if tlog else None,
-        "export_port": EXPORT_PORT,
-        "error": tlog.last_error if tlog else "logging disabled",
-    }
-    push_state("sensor.canbus_telemetry_log", tlog.rows_today if tlog else 0, attrs)
+def export_entities(devices):
+    """Entity ids the export covers, in CSV column order: the health sensors,
+    every published sensor of every device, then the configured extras."""
+    ids = ["sensor.canadapter_status"] + [f"sensor.{d.prefix}_status" for d in devices]
+    ids += [f"sensor.{d.prefix}_{k}" for d in devices for k in d.sensors]
+    for e in EXPORT_EXTRA_ENTITIES:
+        if e not in ids:
+            ids.append(e)
+    return ids
 
 
 def main():
@@ -494,8 +476,8 @@ def main():
     logging.info(f"  EZkontrol: dummy={EZKONTROL_DUMMY} push={EZKONTROL_PUSH_INTERVAL}s")
     logging.info(f"  BESTGO:    dummy={BESTGO_DUMMY} push={BESTGO_PUSH_INTERVAL}s")
     logging.info(f"  Live interval: {INTERVAL_ENTITY} (seconds; overrides both when present)")
-    logging.info(f"  Telemetry log: {'on' if TELEMETRY_LOG else 'OFF'} -> {telemetry_log.LOG_DIR} "
-                 f"(keep {TELEMETRY_LOG_KEEP_DAYS} days); export on :{EXPORT_PORT}")
+    logging.info(f"  Telemetry export: on :{EXPORT_PORT} from HA history"
+                 + (f"; extra entities {EXPORT_EXTRA_ENTITIES}" if EXPORT_EXTRA_ENTITIES else ""))
     if not HA_TOKEN:
         logging.warning("HA_TOKEN is empty; REST pushes will fail")
 
@@ -519,26 +501,19 @@ def main():
     threading.Thread(target=INTERVAL.run, args=(stop,),
                      name="interval-control", daemon=True).start()
 
-    # Telemetry CSV log + its export server. The server is started even when
-    # logging is off so old files stay downloadable.
-    tlog = None
-    log_at = 0.0
-    log_rx_mark = {d.name: 0.0 for d in devices}   # last_rx seen at the previous row
-    if TELEMETRY_LOG:
-        tlog = telemetry_log.TelemetryLog(telemetry_columns(devices),
-                                          keep_days=TELEMETRY_LOG_KEEP_DAYS)
-
-    def log_interval(live):
-        """Telemetry-log tick: the live setting, else the fastest device."""
+    # On-demand telemetry export (HA history -> CSV) on its own server thread.
+    def fastest_interval(live):
         return live if live is not None else min(d.push_interval for d in devices)
 
     def export_state():
         live = INTERVAL.value
-        return {"interval": log_interval(live),
-                "interval_source": INTERVAL_ENTITY if live is not None else "add-on options",
-                "rows_today": tlog.rows_today if tlog else 0,
-                "logging": TELEMETRY_LOG}
-    telemetry_log.start_export_server(EXPORT_PORT, export_state)
+        return {"interval": fastest_interval(live),
+                "interval_source": INTERVAL_ENTITY if live is not None else "add-on options"}
+    # The entity list is editable from the export page; the add-on's own
+    # sensors (+ configured extras) are the defaults it can be reset to.
+    telemetry_export.start_export_server(
+        EXPORT_PORT, telemetry_export.HAHistory(HA_URL, HA_TOKEN),
+        telemetry_export.EntitySelection(export_entities(devices)), export_state)
 
     if live:
         bus = open_bus()
@@ -599,10 +574,10 @@ def main():
             else:
                 # No bus to block on: nap, but short enough to honour a fast
                 # live interval in dummy mode.
-                time.sleep(min(0.2, log_interval(INTERVAL.value) / 2))
+                time.sleep(min(0.2, fastest_interval(INTERVAL.value) / 2))
 
             now = time.monotonic()
-            live = INTERVAL.value          # None = use configured intervals
+            ivl = INTERVAL.value           # None = use configured intervals
 
             # canadapter_status: 1 while the bus is open (all-dummy counts
             # as 1). Pushed on every change and at least every push interval.
@@ -611,12 +586,11 @@ def main():
                 if adapter_ok != adapter_pushed:
                     logging.info(f"CAN adapter status -> {adapter_ok}")
                 push_adapter_status(adapter_ok)
-                push_telemetry_log_status(tlog, live, log_interval(live))
                 adapter_pushed = adapter_ok
                 adapter_push_at = now
 
             for d in devices:
-                if now - d.last_push < d.effective_interval(live):
+                if now - d.last_push < d.effective_interval(ivl):
                     continue
                 d.last_push = now
                 if d.dummy:
@@ -637,26 +611,10 @@ def main():
                     d.last_status_push = now
                     push_device_status(d, now)
 
-            # Telemetry CSV row: every update interval, but only when some
-            # device actually produced data since the
-            # previous row -- so a dead bus leaves a visible gap rather than
-            # a wall of repeated stale values.
-            if tlog is not None:
-                if now - log_at >= log_interval(live):
-                    fresh = any(d.dummy or d.last_rx > log_rx_mark[d.name] for d in devices)
-                    if fresh:
-                        log_at = now
-                        for d in devices:
-                            log_rx_mark[d.name] = d.last_rx
-                        tlog.write(now, log_interval(live),
-                                   (adapter_ok, EZKONTROL.status(now), BESTGO.status(now)),
-                                   telemetry_values(devices))
     except KeyboardInterrupt:
         logging.info("Shutting down")
     finally:
         stop.set()
-        if tlog is not None:
-            tlog.close()
         if bus is not None:
             bus.shutdown()
 

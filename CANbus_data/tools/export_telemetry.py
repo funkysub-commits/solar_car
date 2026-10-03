@@ -3,19 +3,21 @@
 
 Two sources, picked with --source (default: try `addon`, fall back to `history`):
 
-  addon    The CANbus add-on's own CSV log (add-on 0.10.0+), served on
-           http://<pi>:8099/export. Every sensor of both devices, one row per
-           log tick (the live update interval, 2 s by default), including
-           values that did not change. Best fidelity; only covers time since
-           0.10.0 was installed and the add-on's `telemetry_log_keep_days`.
+  addon    The CANbus add-on's export endpoint (0.12.0+), http://<pi>:8099/export.
+           The add-on reads HA's recorder history itself (through the
+           Supervisor) and returns one wide CSV: first row = state of every
+           entity at the window start, then one row per change with the other
+           columns carried forward. Needs NO token from the PC. Entities that
+           don't exist (yet) are blank columns.
 
-  history  Home Assistant's recorder, via GET /api/history/period. Works for
-           any period HA kept (default purge is 10 days) -- including drives
-           made BEFORE the add-on logged CSVs -- but the recorder only stores
-           CHANGES, so the output is one row per change with the other
-           columns carried forward. Needs an HA long-lived token in the
-           HA_TOKEN environment variable (Profile -> Security -> Long-lived
-           access tokens); never write the token into the repo.
+  history  The same thing done from the PC straight against HA's REST API
+           (GET /api/history/period) -- for when the add-on isn't running.
+           Needs an HA long-lived token in the HA_TOKEN environment variable
+           (Profile -> Security -> Long-lived access tokens); never write the
+           token into the repo.
+
+Either way the data is only as fine as the update interval was at the time
+and only as old as HA's recorder keeps (default purge is 10 days).
 
 Usage:
     python CANbus_data/tools/export_telemetry.py --hours 2

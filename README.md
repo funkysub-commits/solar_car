@@ -310,14 +310,11 @@ apps with the app folder as the Docker context): after editing
 app. Golden-master tests (`CANbus_data/tests/test_decoders.py`) replay real
 bus captures from `tests/fixtures/` through the decoders.
 
-It publishes 42 sensors:
+It publishes 41 sensors:
 - 13 `sensor.ezkontrol_*` — bus voltage/current, phase current, motor speed,
   controller/motor temperature, throttle, gear, brake, contactor, errors.
 - 21 `sensor.bestgo_*` — SOC/SOH, pack voltage/current/temperature, cell
   min/max voltage and temperature, charge/discharge limits, alarms, capacity.
-- `sensor.canbus_telemetry_log` (since 0.10.0) — rows written to today's
-  telemetry CSV, with the log file and the update interval in force (and
-  where it came from) as attributes.
 - 7 health sensors (CAN since 0.5.0, network since 0.6.0/0.7.0), pushed even
   when no data is flowing:
 
@@ -367,7 +364,7 @@ vs. add-on not running (sensors `unavailable`).
 starting. If the USB-CAN adapter came up in STM32 DFU mode (so there is no
 `can0`), it first attempts a `uhubctl` USB port power-cycle to recover it.
 
-#### Live update interval and telemetry export (0.11.0+)
+#### Live update interval and telemetry export (0.12.0+)
 
 By default the app pushes EZkontrol sensors every 2 s and BESTGO every 5 s —
 fine for watching the car, coarse for analysing a run. Two additions:
@@ -383,18 +380,28 @@ fine for watching the car, coarse for analysing a run. Two additions:
   Pi stays modest; the `*_status` sensors and the e-ink screen keep their
   normal cadence. If the helper is missing or `unknown`, the configured
   per-device intervals apply.
-- **Telemetry CSV log + export.** Every update interval the app appends one
-  row with *every* sensor of both devices plus the health columns and the
-  interval in force to `/share/solarcar_telemetry/telemetry-YYYY-MM-DD.csv`
-  (UTC, one file per day, pruned after `telemetry_log_keep_days`). A small export page
-  lets you download any time window as a single CSV: **Telemetry Export** in
+- **On-demand telemetry export.** Nothing is logged to disk. When you ask
+  for a time window, the app pulls the recorded history of every telemetry
+  entity (the 3 health sensors, all `ezkontrol_*` / `bestgo_*` sensors, plus
+  any `export_extra_entities` such as the mph template sensor) out of HA's
+  recorder and builds one wide CSV: the first row is the state of everything
+  at the window start, then one row per instant anything changed, other
+  columns carried forward. Entities that don't exist (e.g. right after an HA
+  restart, before the bus has produced them) are blank columns; `unknown` /
+  `unavailable` are blank cells. The export page is **Telemetry Export** in
   the HA sidebar (ingress, so it also works over Nabu Casa / Tailscale), or
-  directly at `http://<pi-ip>:8099/` from the car's LAN. From a PC,
+  directly at `http://<pi-ip>:8099/` from the car's LAN. The page shows the
+  list of entities that go into the file, marks the ones missing right now,
+  and lets you untick any of them or add any other HA entity (picked from
+  everything HA has) — **Save** keeps the list on the Pi for everyone,
+  **Reset** returns to the app's own sensors. `?entities=a,b,c` on the export
+  URL overrides the list for one download. From a PC,
   `python CANbus_data/tools/export_telemetry.py --hours 2` fetches the same
-  thing, and falls back to HA's recorder history (`--source history`, needs
-  `HA_TOKEN`) for periods before the CSV log existed. The dashboard card in
-  `CANbus_data/ha/dashboard_telemetry_section.yaml` puts the switch and the
-  download links next to each other.
+  CSV (no token needed), or `--source history` + `HA_TOKEN` reads HA directly
+  when the app isn't running. Resolution is whatever the update interval was
+  at the time; retention is HA's recorder purge window (10 days by default).
+  The dashboard card in `CANbus_data/ha/dashboard_telemetry_section.yaml`
+  puts the interval setting and the download links next to each other.
 
 ### 6.4 App configuration
 Set these in the app's **Configuration** tab:
@@ -405,8 +412,7 @@ Set these in the app's **Configuration** tab:
 | ezkontrol_push_interval | 2 | seconds between EZkontrol sensor pushes |
 | bestgo_dummy | false | simulate the battery instead of decoding it |
 | bestgo_push_interval | 5 | seconds between BESTGO sensor pushes |
-| telemetry_log | true | write the telemetry CSV log to `/share/solarcar_telemetry/` (one row per update interval) |
-| telemetry_log_keep_days | 30 | delete day files older than this |
+| export_extra_entities | sensor.solar_car_speed | comma-separated extra entity ids to include in telemetry exports (missing ones are blank columns) |
 
 While `input_number.canbus_update_interval` exists in HA it overrides both
 `*_push_interval` values live (see above); they remain the fallback.

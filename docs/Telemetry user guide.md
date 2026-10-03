@@ -30,9 +30,12 @@ user:sct, passwd: letsgo
 >
 > **Downloading the data.** Open **Telemetry Export** in the Home Assistant sidebar (or
 > `http://<pi ip>:8099/` on the car's Wi-Fi), pick "last 1 h" / "last 6 h" or a from–to
-> window, and you get one CSV with every motor-controller and battery reading in it.
-> It opens in Excel / Google Sheets. Times in the file are UTC. The Pi keeps about a
-> month of these logs.
+> window, and you get one CSV with every motor-controller and battery reading in it,
+> pulled from Home Assistant's own history. It opens in Excel / Google Sheets. Times in
+> the file are UTC. Home Assistant keeps about 10 days of history, so download a run
+> within a week or so of driving it. Further down the page you can tick/untick which
+> readings go in the file and add any other Home Assistant entity; press **Save** to keep
+> that list, **Reset to defaults** to go back.
 
 8. settings/system/network To connect a new cell phone hotspot, this will allow the home assistant to get though to the interent so Euan can help with remote debug.
    There is a network screen error, so need to setup hotspot wifi from a terminal:

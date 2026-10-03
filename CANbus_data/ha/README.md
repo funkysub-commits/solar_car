@@ -11,7 +11,7 @@ in `../../display/ha/`.)
 | `python_scripts/bootstrap_canbus_entities.py` | Creates every `sensor.ezkontrol_*` / `sensor.bestgo_*` as `unavailable` if it doesn't already exist. **Auto-generated** from `EZ_SENSORS` / `BG_SENSORS` — do not hand-edit. |
 | `packages/canbus_bootstrap.yaml` | Enables `python_script` and adds the automation that runs the script on the `homeassistant.start` event. |
 | `packages/canbus_controls.yaml` | Defines `input_number.canbus_update_interval` — the **update interval** (seconds) the add-on (0.11.0+) polls; it overrides both devices' push intervals and the CSV log tick live (0.1–60 s). Only needs an *input_number* reload, not a restart (`deploy_addon.py --with-packages` does this). |
-| `dashboard_telemetry_section.yaml` | Dashboard card: the interval box with 0.2 / 0.5 / 2 / 10 s preset buttons, rows logged today, and download links to the add-on's export page (`http://<pi>:8099/`, also the "Telemetry Export" sidebar panel). |
+| `dashboard_telemetry_section.yaml` | Dashboard card: the interval box with 0.2 / 0.5 / 2 / 10 s preset buttons and download links to the add-on's export page (`http://<pi>:8099/`, also the "Telemetry Export" sidebar panel), which builds a CSV from HA's recorded history on demand. |
 
 ## Why
 

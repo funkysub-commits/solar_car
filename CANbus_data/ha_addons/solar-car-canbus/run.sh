@@ -7,14 +7,13 @@ EZKONTROL_DUMMY="$(bashio::config 'ezkontrol_dummy')"
 EZKONTROL_PUSH_INTERVAL="$(bashio::config 'ezkontrol_push_interval')"
 BESTGO_DUMMY="$(bashio::config 'bestgo_dummy')"
 BESTGO_PUSH_INTERVAL="$(bashio::config 'bestgo_push_interval')"
-TELEMETRY_LOG="$(bashio::config 'telemetry_log')"
-TELEMETRY_LOG_KEEP_DAYS="$(bashio::config 'telemetry_log_keep_days')"
+EXPORT_EXTRA_ENTITIES="$(bashio::config 'export_extra_entities' '')"
 
 bashio::log.info "Config: bitrate=${CAN_BITRATE}"
 bashio::log.info "EZkontrol: dummy=${EZKONTROL_DUMMY} push=${EZKONTROL_PUSH_INTERVAL}s"
 bashio::log.info "BESTGO:    dummy=${BESTGO_DUMMY} push=${BESTGO_PUSH_INTERVAL}s"
 bashio::log.info "Live update interval: input_number.canbus_update_interval (overrides both push intervals when present)"
-bashio::log.info "Telemetry log: ${TELEMETRY_LOG}, keep ${TELEMETRY_LOG_KEEP_DAYS} days; export on :8099"
+bashio::log.info "Telemetry export: HA history -> CSV on :8099 (extra entities: ${EXPORT_EXTRA_ENTITIES:-none})"
 
 # The SH-C31G runs candlelight/gs_usb firmware: the kernel gs_usb driver exposes
 # it as SocketCAN can0. Bring the interface up here (needs NET_ADMIN + host
@@ -39,7 +38,7 @@ fi
 export CAN_BITRATE
 export EZKONTROL_DUMMY EZKONTROL_PUSH_INTERVAL
 export BESTGO_DUMMY BESTGO_PUSH_INTERVAL
-export TELEMETRY_LOG TELEMETRY_LOG_KEEP_DAYS
+export EXPORT_EXTRA_ENTITIES
 export HA_URL="http://supervisor/core"
 export HA_TOKEN="${SUPERVISOR_TOKEN}"
 

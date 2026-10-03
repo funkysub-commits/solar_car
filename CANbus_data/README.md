@@ -95,11 +95,13 @@ Using a non-default interface on Linux? Set `CAN_CHANNEL`, e.g.
 
 `ha_addons/solar-car-canbus/` reads both devices off the shared bus and pushes
 sensors to HA (see the [top-level README](../README.md) §6 for the full sensor
-list and options). Since 0.10.0 it also writes a telemetry CSV log to
-`/share/solarcar_telemetry/` and serves it for download on port 8099 / the
-"Telemetry Export" sidebar panel (`telemetry_log.py`, unit-tested by
-`tests/test_telemetry_log.py`), and follows the `input_number.canbus_update_interval`
-helper (`ha/packages/canbus_controls.yaml`) as a live, adjustable push + log interval.
+list and options). Since 0.12.0 it also serves an on-demand telemetry export
+on port 8099 / the "Telemetry Export" sidebar panel: any time window of every
+telemetry entity, pulled from HA's recorder history and pivoted into one wide
+CSV, with entities that don't exist (yet) as blank columns
+(`telemetry_export.py`, unit-tested by `tests/test_telemetry_export.py`). It
+follows the `input_number.canbus_update_interval` helper
+(`ha/packages/canbus_controls.yaml`) as a live, adjustable push interval.
 
 **Important — the decoders are vendored.** The add-on folder contains a *copy*
 of `solarcar_can/` because HA builds local add-ons with the add-on folder as
@@ -134,7 +136,7 @@ python sync_addon.py --check  # CI/sanity: is the copy current? (the tests check
 
 ```sh
 python tests/test_decoders.py    # golden-master decode tests (or: pytest tests/)
-python -m unittest tests.test_telemetry_log   # add-on CSV log + export server
+python -m unittest tests.test_telemetry_export   # add-on history->CSV export (mock HA)
 python sync_addon.py --check     # is the add-on's vendored package current?
 ```
 
@@ -153,7 +155,7 @@ protocol edit can't silently change results.
 | `ha_push.py` | PC | Push a folder to the Pi over SSH (deploy helper; see above). |
 | `ha_run.py` | PC | Run one command on the Pi over SSH. |
 | `deploy_addon.py` | PC | Full add-on deploy: tar over SSH, store reload, rebuild, logs (`--with-packages` also installs `ha/packages/*.yaml`). See `docs/DEPLOYING_ADDONS.md`. |
-| `export_telemetry.py` | PC | Download a time window of telemetry as one CSV — from the add-on's log (`http://<pi>:8099/export`) or, with `--source history` + `HA_TOKEN`, from HA's recorder. |
+| `export_telemetry.py` | PC | Download a time window of telemetry as one CSV — via the add-on (`http://<pi>:8099/export`, no token) or, with `--source history` + `HA_TOKEN`, straight from HA's recorder. |
 
 ## Known issues / debugging history
 
