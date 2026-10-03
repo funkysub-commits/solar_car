@@ -16,32 +16,19 @@ as work on the PC piles up changes that need the Pi.
       one new token and set it as `HA_TOKEN` in the PC environment — do not
       write it to a file in the repo.
 
-## Deploy + verify CANbus add-on 0.10.0 (high-res mode + telemetry export, 2026-10-03)
+## Deploy + verify CANbus add-on 0.10.0 (high-res mode + telemetry export)
 
-Needs the Pi on a network **with internet** (the rebuild pulls the base image).
+Deployed and verified 2026-10-03 (Pi on hotspot 10.89.191.211): rebuild OK,
+`input_boolean.canbus_high_res` created via `--with-packages`, toggle flips the
+add-on to 0.5 s (log line + CSV rows confirmed), export on :8099 works from
+the PC, ingress panel enabled (`ingress_panel: true`).
 
-- [ ] `python CANbus_data/tools/deploy_addon.py --with-packages` — uploads the
-      add-on, rebuilds to 0.10.0, copies `ha/packages/canbus_controls.yaml` to
-      `/config/packages/` and reloads input_boolean. Read the tail of the log:
-      expect `telemetry export server listening on :8099` and
-      `telemetry log: writing /share/solarcar_telemetry/telemetry-<date>.csv`.
-      If `--with-packages` reports no packages dir, create the toggle helper in
-      the UI instead (Settings → Devices → Helpers → Toggle, entity id
-      `input_boolean.canbus_high_res`).
-- [ ] New option keys (`high_res_push_interval`, `telemetry_log*`) have
-      defaults, so saved options should validate as-is; if the add-on refuses
-      to start on schema, re-POST options from a file (docs/DEPLOYING_ADDONS.md).
-- [ ] Check **Telemetry Export** appears in the HA sidebar (ingress) and
-      `http://<pi-ip>:8099/` opens from the car LAN.
-- [ ] Toggle `input_boolean.canbus_high_res` on: add-on log says
-      `high-resolution mode -> ON (0.5s pushes/log)`, HA history for e.g.
-      `sensor.ezkontrol_bus_voltage` gets dense; toggle off again.
-- [ ] Download a window from the export page and open it; or from the PC
-      `python CANbus_data/tools/export_telemetry.py --hours 1`.
 - [ ] Add `CANbus_data/ha/dashboard_telemetry_section.yaml` to the solarcar
-      dashboard (live via lovelace/config/save, or Edit dashboard → Manual card).
-- [ ] Watch the Pi: HA CPU with high-res on (~20 POSTs/s expected), and that
-      `/share/solarcar_telemetry/` grows ~0.5 MB/h normal, ~2 MB/h high-res.
+      dashboard (live via lovelace/config/save, or Edit dashboard -> Manual card).
+- [ ] Watch over a real drive: HA CPU with high-res on (~20 POSTs/s expected),
+      and that `/share/solarcar_telemetry/` grows ~0.5 MB/h normal, ~2 MB/h high-res.
+- [ ] SSH key auth to the Pi FAILED on 2026-10-03 (password fallback worked) -
+      re-add this PC's `~/.ssh/id_ed25519.pub` to the SSH add-on's authorized_keys.
 
 ## Deploy + verify CANbus add-on 0.4.0 (Phase 2 consolidation)
 
