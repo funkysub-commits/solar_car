@@ -22,11 +22,11 @@ user:sct, passwd: letsgo
 "solar car" tab in home assistant on the left in home assistant for most important data.
 
 > [!TIP]
-> **Collecting data for analysis.** Normally readings are recorded every 2–5 seconds.
-> If you want finer detail for a test run, flip the **High resolution mode** switch on
-> the solar car tab **on** — everything is then recorded every half second (the e-ink
-> screen won't look any different). Switch it **off** again afterwards so the Pi isn't
-> working harder than it needs to.
+> **Collecting data for analysis.** The **Update interval** box on the solar car tab
+> sets how often readings are recorded, in seconds (2 is the everyday setting). For
+> finer detail during a test run set it to 0.5 (or tap the 0.5 s button); 0.2 is fine
+> for a short burst. The e-ink screen won't look any different. Put it back to 2
+> afterwards so the Pi isn't working harder than it needs to.
 >
 > **Downloading the data.** Open **Telemetry Export** in the Home Assistant sidebar (or
 > `http://<pi ip>:8099/` on the car's Wi-Fi), pick "last 1 h" / "last 6 h" or a from–to

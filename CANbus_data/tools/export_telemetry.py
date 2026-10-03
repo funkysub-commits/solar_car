@@ -5,7 +5,7 @@ Two sources, picked with --source (default: try `addon`, fall back to `history`)
 
   addon    The CANbus add-on's own CSV log (add-on 0.10.0+), served on
            http://<pi>:8099/export. Every sensor of both devices, one row per
-           log tick (2 s normally, 0.5 s in high-resolution mode), including
+           log tick (the live update interval, 2 s by default), including
            values that did not change. Best fidelity; only covers time since
            0.10.0 was installed and the add-on's `telemetry_log_keep_days`.
 

@@ -98,8 +98,8 @@ sensors to HA (see the [top-level README](../README.md) §6 for the full sensor
 list and options). Since 0.10.0 it also writes a telemetry CSV log to
 `/share/solarcar_telemetry/` and serves it for download on port 8099 / the
 "Telemetry Export" sidebar panel (`telemetry_log.py`, unit-tested by
-`tests/test_telemetry_log.py`), and honours the `input_boolean.canbus_high_res`
-toggle (`ha/packages/canbus_controls.yaml`) for faster pushes + logging.
+`tests/test_telemetry_log.py`), and follows the `input_number.canbus_update_interval`
+helper (`ha/packages/canbus_controls.yaml`) as a live, adjustable push + log interval.
 
 **Important — the decoders are vendored.** The add-on folder contains a *copy*
 of `solarcar_can/` because HA builds local add-ons with the add-on folder as

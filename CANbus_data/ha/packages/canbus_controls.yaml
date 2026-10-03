@@ -1,20 +1,30 @@
 # Home Assistant package: controls for the Solar Car CANbus Reader add-on.
 #
-# input_boolean.canbus_high_res -- the "high resolution" switch. The add-on
-# polls this toggle every 2 s; while it is ON both devices push sensor updates
-# (and the telemetry CSV log ticks) every `high_res_push_interval` seconds
-# (default 0.5 s) instead of the normal 2 s / 5 s. Turn it on while you are
-# actively collecting data, off again afterwards to spare the Pi and the SD
+# input_number.canbus_update_interval -- seconds between sensor updates. The
+# add-on (0.11.0+) polls this every 2 s; whatever value it holds overrides BOTH
+# devices' configured push intervals and sets the telemetry CSV log tick, live,
+# no restart. Set it low (0.5 s, or 0.2 s for a short burst) while collecting
+# data for analysis, back to 2 s for normal driving to spare the Pi and the SD
 # card. The e-ink screen refreshes at its own pace, so it won't look any
-# different.
+# different. Only values that changed are re-sent faster than the configured
+# intervals, so the Pi load stays modest.
+#
+# If this helper doesn't exist, the add-on just uses its configured
+# ezkontrol_push_interval / bestgo_push_interval options.
 #
 # Deploy (see CANbus_data/ha/README.md): copy to /config/packages/canbus_controls.yaml,
-# then Developer tools -> YAML -> "Input booleans" reload (no restart needed),
-# or `ha core restart`. Alternatively create a Toggle helper in the UI with
-# entity id input_boolean.canbus_high_res -- the add-on only cares about the id.
+# then Developer tools -> YAML -> "Input numbers" reload (no restart needed) --
+# `deploy_addon.py --with-packages` does both. Alternatively create a Number
+# helper in the UI with entity id input_number.canbus_update_interval.
 
-input_boolean:
-  canbus_high_res:
-    name: CANbus High Resolution
-    icon: mdi:speedometer
-    initial: false   # always start normal after an HA restart
+input_number:
+  canbus_update_interval:
+    name: CANbus Update Interval
+    icon: mdi:timer-outline
+    unit_of_measurement: s
+    min: 0.1
+    max: 60
+    step: 0.1
+    mode: box
+    # no `initial:` -- the value survives HA restarts; the add-on treats a
+    # missing/unknown value as "use configured intervals"

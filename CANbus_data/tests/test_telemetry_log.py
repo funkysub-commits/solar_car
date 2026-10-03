@@ -27,7 +27,7 @@ def _write_n(log, n, start=T0, step=1.0, **fields):
     for i in range(n):
         vals = {"ezkontrol_bus_voltage": 50 + i, "ezkontrol_gear": "D1", "bestgo_soc": 70}
         vals.update(fields)
-        log.write(100.0 + i, i % 2 == 0, (1, 1, 0), vals, now=start + timedelta(seconds=step * i))
+        log.write(100.0 + i, 0.5 if i % 2 == 0 else 2, (1, 1, 0), vals, now=start + timedelta(seconds=step * i))
 
 
 class TelemetryLogWrite(unittest.TestCase):
@@ -49,14 +49,14 @@ class TelemetryLogWrite(unittest.TestCase):
         self.assertEqual(rows[0], tl.META_COLUMNS + COLS)
         self.assertEqual(len(rows), 4)
         self.assertEqual(rows[1][0], "2026-10-03T12:00:00.000Z")
-        self.assertEqual(rows[1][1:6], ["100.000", "1", "1", "1", "0"])
+        self.assertEqual(rows[1][1:6], ["100.000", "0.5", "1", "1", "0"])
         self.assertEqual(rows[1][6:], ["50", "D1", "70"])
-        self.assertEqual(rows[2][2], "0")        # high_res False on odd rows
+        self.assertEqual(rows[2][2], "2")        # interval_s on odd rows
         self.assertEqual(log.rows_today, 3)
 
     def test_none_is_blank(self):
         log = tl.TelemetryLog(COLS, log_dir=self.dir)
-        log.write(1.0, False, (1, 0, 0), {"bestgo_soc": None}, now=T0)
+        log.write(1.0, 2, (1, 0, 0), {"bestgo_soc": None}, now=T0)
         log.close()
         with open(log.path, newline="") as f:
             row = list(csv.reader(f))[1]
@@ -64,8 +64,8 @@ class TelemetryLogWrite(unittest.TestCase):
 
     def test_day_rollover(self):
         log = tl.TelemetryLog(COLS, log_dir=self.dir)
-        log.write(1.0, False, (1, 1, 1), {}, now=T0.replace(hour=23, minute=59, second=59))
-        log.write(2.0, False, (1, 1, 1), {}, now=T0 + timedelta(days=1))
+        log.write(1.0, 2, (1, 1, 1), {}, now=T0.replace(hour=23, minute=59, second=59))
+        log.write(2.0, 2, (1, 1, 1), {}, now=T0 + timedelta(days=1))
         log.close()
         days = [d for _, d, _ in tl.list_files(self.dir)]
         self.assertEqual(days, ["2026-10-03", "2026-10-04"])
@@ -87,7 +87,7 @@ class TelemetryLogWrite(unittest.TestCase):
         _write_n(log, 1)
         log.close()
         log2 = tl.TelemetryLog(COLS + ["bestgo_soh"], log_dir=self.dir)
-        log2.write(1.0, False, (1, 1, 1), {"bestgo_soh": 99}, now=T0)
+        log2.write(1.0, 2, (1, 1, 1), {"bestgo_soh": 99}, now=T0)
         log2.close()
         names = sorted(n for n, _, _ in tl.list_files(self.dir))
         self.assertEqual(names, ["telemetry-2026-10-03-1.csv", "telemetry-2026-10-03.csv"])
@@ -105,7 +105,7 @@ class TelemetryLogWrite(unittest.TestCase):
         bad = os.path.join(self.dir, "a-file-not-a-dir")
         open(bad, "w").close()
         log = tl.TelemetryLog(COLS, log_dir=os.path.join(bad, "sub"))
-        log.write(1.0, False, (1, 1, 1), {}, now=T0)      # must not raise
+        log.write(1.0, 2, (1, 1, 1), {}, now=T0)      # must not raise
         self.assertIsNotNone(log.last_error)
 
 
@@ -153,20 +153,21 @@ class TelemetryExport(unittest.TestCase):
         self.assertIsNone(tl.parse_time("yesterday"))
 
     def test_http_server(self):
-        state = {"high_res": True, "interval": 0.5, "rows_today": 12}
+        state = {"interval": 0.5, "interval_source": "input_number.canbus_update_interval", "rows_today": 12}
         srv = tl.start_export_server(0, lambda: state, self.dir)
         self.assertIsNotNone(srv)
         port = srv.server_address[1]
         base = f"http://127.0.0.1:{port}"
         try:
             page = urllib.request.urlopen(base + "/").read().decode()
-            self.assertIn("High-resolution mode: <b>ON</b>", page)
+            self.assertIn("Update interval: <b>0.5 s</b>", page)
+            self.assertIn("input_number.canbus_update_interval", page)
             self.assertIn('href="export?hours=1"', page)          # relative (ingress-safe)
             self.assertNotIn('href="/export', page)
 
             st = json.loads(urllib.request.urlopen(base + "/status").read())
             self.assertEqual(st["files"], 2)
-            self.assertTrue(st["high_res"])
+            self.assertEqual(st["interval"], 0.5)
 
             r = urllib.request.urlopen(
                 base + "/export?start=2026-10-03T12:00:03Z&end=2026-10-03T12:00:06Z")

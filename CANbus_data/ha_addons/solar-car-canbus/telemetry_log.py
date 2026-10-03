@@ -34,7 +34,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 LOG_DIR = os.environ.get("TELEMETRY_LOG_DIR", "/share/solarcar_telemetry")
 FILE_PREFIX = "telemetry-"
 FILE_EXT = ".csv"
-META_COLUMNS = ["time_utc", "uptime_s", "high_res",
+META_COLUMNS = ["time_utc", "uptime_s", "interval_s",
                 "canadapter_status", "ezkontrol_status", "bestgo_status"]
 
 
@@ -120,13 +120,14 @@ class TelemetryLog:
         return self._path
 
     # -- writing -------------------------------------------------------------
-    def write(self, uptime_s, high_res, statuses, values, now=None):
-        """Append one row. `statuses` = (adapter, ezkontrol, bestgo) 1/0;
+    def write(self, uptime_s, interval_s, statuses, values, now=None):
+        """Append one row. `interval_s` = the update interval in force;
+        `statuses` = (adapter, ezkontrol, bestgo) 1/0;
         `values` maps column name -> value (missing -> blank). Errors (SD
         card full / share unmounted) are logged once and never raised."""
         now = now or datetime.now(timezone.utc)
         day = now.strftime("%Y-%m-%d")
-        row = [utc_now_iso(now), f"{uptime_s:.3f}", int(bool(high_res)),
+        row = [utc_now_iso(now), f"{uptime_s:.3f}", f"{interval_s:g}",
                *[int(s) for s in statuses]]
         for c in self.columns:
             v = values.get(c)
@@ -242,7 +243,6 @@ PAGE = """<!doctype html>
  body{font-family:system-ui,sans-serif;margin:16px;max-width:720px;color:#222}
  h1{font-size:1.3em} h2{font-size:1.05em;margin-top:1.4em}
  .mode{padding:6px 10px;border-radius:6px;display:inline-block;background:#eee}
- .mode.on{background:#ffe9a8}
  .quick a{display:inline-block;margin:4px 6px 4px 0;padding:6px 10px;border:1px solid #888;
           border-radius:6px;text-decoration:none;color:#124}
  table{border-collapse:collapse;width:100%%} td,th{padding:4px 8px;border-bottom:1px solid #ddd;text-align:left}
@@ -251,8 +251,8 @@ PAGE = """<!doctype html>
  small{color:#666}
 </style></head><body>
 <h1>Solar Car telemetry export</h1>
-<p><span class="mode %(mode_cls)s">High-resolution mode: <b>%(mode)s</b></span>
- &nbsp; <small>log interval %(interval)s s &middot; %(rows_today)s rows today &middot; %(n_files)s day file(s), %(total_mb).1f MB</small></p>
+<p><span class="mode">Update interval: <b>%(interval)s s</b> <small>(%(source)s)</small></span>
+ &nbsp; <small>%(rows_today)s rows today &middot; %(n_files)s day file(s), %(total_mb).1f MB</small></p>
 
 <h2>Download the last&hellip;</h2>
 <p class="quick">
@@ -278,15 +278,16 @@ function go(){var s=document.getElementById('s').value,e=document.getElementById
 <h2>Day files</h2>
 <table><tr><th>Day (UTC)</th><th>Size</th><th></th></tr>%(files)s</table>
 <p><small>Logged by the Solar Car CANbus add-on to <code>%(log_dir)s</code>. One row per log tick with
-every EZkontrol and BESTGO sensor; <code>*_status</code> columns are 1 when that device was alive.
-Turn on <b>CANbus High Resolution</b> in Home Assistant to log (and push) faster.</small></p>
+every EZkontrol and BESTGO sensor; <code>*_status</code> columns are 1 when that device was alive;
+<code>interval_s</code> is the update interval that was in force. Lower <b>CANbus Update Interval</b>
+in Home Assistant to log (and push) faster.</small></p>
 </body></html>
 """
 
 
 def make_handler(state, log_dir):
     """Build a request handler bound to `state` -- a callable returning a dict
-    with keys high_res, interval, rows_today (so the page shows live info
+    with keys interval, interval_source, rows_today (so the page shows live info
     without the server importing can_reader)."""
 
     class Handler(BaseHTTPRequestHandler):
@@ -343,9 +344,8 @@ def make_handler(state, log_dir):
                 f"<td><a href=\"files/{urllib.parse.quote(name)}\">{html.escape(name)}</a></td></tr>"
                 for name, day, size in reversed(files)) or "<tr><td colspan=3>no log files yet</td></tr>"
             body = PAGE % dict(
-                mode="ON" if st.get("high_res") else "off",
-                mode_cls="on" if st.get("high_res") else "",
-                interval=st.get("interval", "?"),
+                interval=f"{st['interval']:g}" if isinstance(st.get("interval"), (int, float)) else "?",
+                source=html.escape(str(st.get("interval_source", "add-on options"))),
                 rows_today=st.get("rows_today", 0),
                 n_files=len(files), total_mb=st["bytes"] / 1e6,
                 files=rows, log_dir=html.escape(log_dir))

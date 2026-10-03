@@ -1,11 +1,11 @@
-# Dashboard section: high-resolution switch + telemetry export link.
+# Dashboard section: update-interval setting + telemetry export link.
 #
 # Paste as a new section/card group into the storage-mode dashboard
 # (Edit dashboard -> Add card -> Manual, or via lovelace/config/save over the
 # WebSocket API -- see the dashboard-editing notes). Needs:
-#   - input_boolean.canbus_high_res   (packages/canbus_controls.yaml)
-#   - sensor.canbus_telemetry_log     (pushed by the add-on, 0.10.0+)
-#   - sensor.haos_ip_address          (pushed by the add-on)
+#   - input_number.canbus_update_interval  (packages/canbus_controls.yaml)
+#   - sensor.canbus_telemetry_log          (pushed by the add-on, 0.10.0+)
+#   - sensor.haos_ip_address               (pushed by the add-on)
 #
 # The export page is also in the HA sidebar as "Telemetry Export" (ingress),
 # which works remotely over Nabu Casa / Tailscale too; the direct :8099 link
@@ -17,18 +17,52 @@ cards:
     title: Telemetry
     state_color: true
     entities:
-      - entity: input_boolean.canbus_high_res
-        name: High resolution mode
+      - entity: input_number.canbus_update_interval
+        name: Update interval (seconds)
         secondary_info: last-changed
+      - type: buttons
+        entities:
+          - entity: input_number.canbus_update_interval
+            name: "0.2 s"
+            icon: mdi:fast-forward
+            tap_action:
+              action: call-service
+              service: input_number.set_value
+              target: { entity_id: input_number.canbus_update_interval }
+              data: { value: 0.2 }
+          - entity: input_number.canbus_update_interval
+            name: "0.5 s"
+            icon: mdi:play-speed
+            tap_action:
+              action: call-service
+              service: input_number.set_value
+              target: { entity_id: input_number.canbus_update_interval }
+              data: { value: 0.5 }
+          - entity: input_number.canbus_update_interval
+            name: "2 s"
+            icon: mdi:play
+            tap_action:
+              action: call-service
+              service: input_number.set_value
+              target: { entity_id: input_number.canbus_update_interval }
+              data: { value: 2 }
+          - entity: input_number.canbus_update_interval
+            name: "10 s"
+            icon: mdi:tortoise
+            tap_action:
+              action: call-service
+              service: input_number.set_value
+              target: { entity_id: input_number.canbus_update_interval }
+              data: { value: 10 }
       - entity: sensor.canbus_telemetry_log
         name: Rows logged today
         secondary_info: last-updated
       - type: attribute
         entity: sensor.canbus_telemetry_log
-        attribute: log_interval_s
-        name: Log interval
+        attribute: interval_s
+        name: Interval in force
         suffix: " s"
-        icon: mdi:timer-outline
+        icon: mdi:timer-check-outline
   - type: markdown
     content: >-
       {% set ip = states('sensor.haos_ip_address') %}

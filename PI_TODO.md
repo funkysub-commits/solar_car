@@ -16,15 +16,29 @@ as work on the PC piles up changes that need the Pi.
       one new token and set it as `HA_TOKEN` in the PC environment — do not
       write it to a file in the repo.
 
-## Deploy + verify CANbus add-on 0.10.0 (high-res mode + telemetry export)
+## Deploy CANbus add-on 0.11.0 (live update-interval setting) — NOT YET DEPLOYED
 
-Deployed and verified 2026-10-03 (Pi on hotspot 10.89.191.211): rebuild OK,
-`input_boolean.canbus_high_res` created via `--with-packages`, toggle flips the
-add-on to 0.5 s (log line + CSV rows confirmed), export on :8099 works from
-the PC, ingress panel enabled (`ingress_panel: true`).
+0.10.0 (toggle version) is what's running on the Pi (deployed + verified
+2026-10-03, hotspot 10.89.191.211: rebuild, CSV log, :8099 export and ingress
+panel all confirmed). 0.11.0 replaces the on/off toggle with
+`input_number.canbus_update_interval` (seconds, 0.1–60, overrides both push
+intervals + the log tick live) and drops the `high_res_push_interval` /
+`telemetry_log_interval` options. Needs internet on the Pi for the rebuild.
 
-- [ ] Add `CANbus_data/ha/dashboard_telemetry_section.yaml` to the solarcar
-      dashboard (live via lovelace/config/save, or Edit dashboard -> Manual card).
+- [ ] `python CANbus_data/tools/deploy_addon.py --with-packages` — now also
+      strips saved option keys the new schema dropped (else start fails
+      validation), copies the updated `canbus_controls.yaml`, reloads
+      input_number AND input_boolean (the reload removes the old
+      `input_boolean.canbus_high_res`). Expect in the log:
+      `update interval -> 2s (from input_number.canbus_update_interval)` once
+      the helper has a value (it starts `unknown` -> configured intervals until
+      you type a number; set it to 2).
+- [ ] Set the helper to 0.5 and check the log line + `sensor.canbus_telemetry_log`
+      attribute `interval_s`; CSV rows now carry `interval_s` (a new header, so
+      the day file rolls to `telemetry-<date>-1.csv`). Set it back to 2.
+- [ ] Add `CANbus_data/ha/dashboard_telemetry_section.yaml` (interval box +
+      0.2/0.5/2/10 s buttons + download links) to the solarcar dashboard
+      (live via lovelace/config/save, or Edit dashboard -> Manual card).
 - [ ] Watch over a real drive: HA CPU with high-res on (~20 POSTs/s expected),
       and that `/share/solarcar_telemetry/` grows ~0.5 MB/h normal, ~2 MB/h high-res.
 - [ ] SSH key auth to the Pi FAILED on 2026-10-03 (password fallback worked) -

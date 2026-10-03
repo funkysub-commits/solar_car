@@ -22,8 +22,9 @@ Usage:
     (pi_ip defaults to the host in status.json's Pi.IP; --addon defaults to canbus)
 
 --with-packages (canbus only) also copies CANbus_data/ha/packages/*.yaml into
-HA's /config/packages/ and reloads input_boolean, so the high-resolution
-toggle helper (input_boolean.canbus_high_res) exists without a Core restart.
+HA's /config/packages/ and reloads input_number/input_boolean, so the
+update-interval helper (input_number.canbus_update_interval) exists without a
+Core restart.
 New *integrations* in a package (python_script etc.) still need a restart.
 """
 import io, json, os, re, sys, tarfile, time
@@ -67,9 +68,38 @@ PACKAGES_DIR = os.path.join(ROOT, "CANbus_data", "ha", "packages")
 PWD = _status["SSH"]["Password"]
 
 
+def prune_stale_options(run, run_ha):
+    """Saved add-on options are validated against the NEW schema on start; a
+    key the new config.yaml dropped makes the add-on refuse to start
+    (docs/DEPLOYING_ADDONS.md). Compare the saved options with the schema
+    in the local config.yaml and re-POST them without the stale keys."""
+    import yaml
+    with open(os.path.join(LOCAL, "config.yaml"), encoding="utf-8") as f:
+        schema = yaml.safe_load(f).get("schema") or {}
+    rc, out, err = run_ha(
+        'curl -s -H "Authorization: Bearer $SUPERVISOR_TOKEN" '
+        f'http://supervisor/addons/{SLUG}/info')
+    try:
+        saved = json.loads(out)["data"]["options"] or {}
+    except (ValueError, KeyError):
+        print("prune options: could not read saved options; skipped")
+        return
+    stale = [k for k in saved if k not in schema]
+    if not stale:
+        return
+    keep = {k: v for k, v in saved.items() if k in schema}
+    body = json.dumps({"options": keep}).encode()
+    run("cat > /tmp/opts.json", stdin_bytes=body)
+    rc, out, err = run_ha(
+        'curl -s -X POST -H "Authorization: Bearer $SUPERVISOR_TOKEN" '
+        '-H "Content-Type: application/json" --data @/tmp/opts.json '
+        f'http://supervisor/addons/{SLUG}/options')
+    print(f"prune options: removed stale {stale} -> {out.strip()[:80]}")
+
+
 def push_packages(run, run_ha):
     """Copy CANbus_data/ha/packages/*.yaml into HA's packages dir and reload
-    input_boolean (picks up new package files; no Core restart). The SSH
+    the helper domains (picks up new package files; no Core restart). The SSH
     add-on mounts HA config at /config (older) or /homeassistant (newer)."""
     rc, out, _ = run("for d in /homeassistant /config; do test -d $d/packages && echo $d && break; done")
     cfg = out.strip().splitlines()[-1] if out.strip() else ""
@@ -83,15 +113,19 @@ def push_packages(run, run_ha):
         data = open(os.path.join(PACKAGES_DIR, name), "rb").read().replace(b"\r\n", b"\n")
         rc, out, err = run(f"sudo tee {cfg}/packages/{name} > /dev/null", stdin_bytes=data)
         print(f"packages: {name} -> {cfg}/packages/ rc={rc} {err.strip()}")
-    rc, out, err = run_ha(
-        'curl -s -o /dev/null -w "%{http_code}" -X POST '
-        '-H "Authorization: Bearer $SUPERVISOR_TOKEN" -H "Content-Type: application/json" '
-        'http://supervisor/core/api/services/input_boolean/reload')
-    print(f"packages: input_boolean reload HTTP {out.strip()} (200 = ok)")
+    # Reload the helper domains the packages define (a reload also REMOVES
+    # YAML helpers that are no longer in the packages, e.g. the old
+    # input_boolean.canbus_high_res).
+    for domain in ("input_number", "input_boolean"):
+        rc, out, err = run_ha(
+            'curl -s -o /dev/null -w "%{http_code}" -X POST '
+            '-H "Authorization: Bearer $SUPERVISOR_TOKEN" -H "Content-Type: application/json" '
+            f'http://supervisor/core/api/services/{domain}/reload')
+        print(f"packages: {domain} reload HTTP {out.strip()} (200 = ok)")
     rc, out, err = run_ha(
         'curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $SUPERVISOR_TOKEN" '
-        'http://supervisor/core/api/states/input_boolean.canbus_high_res')
-    print(f"packages: input_boolean.canbus_high_res exists -> HTTP {out.strip()} (200 = yes)")
+        'http://supervisor/core/api/states/input_number.canbus_update_interval')
+    print(f"packages: input_number.canbus_update_interval exists -> HTTP {out.strip()} (200 = yes)")
 
 
 def connect():
@@ -197,6 +231,7 @@ def main():
     time.sleep(3)
     rc, out, err = run_ha(f'ha addons info {SLUG} 2>/dev/null | grep -E "^version"')
     if "version:" in out:
+        prune_stale_options(run, run_ha)
         print(f"updating {SLUG} (rebuild, takes a few minutes)...")
         rc, out, err = run_ha(f"ha addons update {SLUG}")
     else:

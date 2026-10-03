@@ -1,7 +1,7 @@
 name: Solar Car CANbus Reader
-version: "0.10.0"
+version: "0.11.0"
 slug: solarcar_canbus
-description: Reads the EZkontrol motor controller and BESTGO battery from one shared CAN bus (SH-C31G on candlelight/gs_usb firmware, exposed as kernel SocketCAN can0), pushes sensors to Home Assistant, logs telemetry CSVs to /share and serves them for download (high-resolution mode via input_boolean.canbus_high_res)
+description: Reads the EZkontrol motor controller and BESTGO battery from one shared CAN bus (SH-C31G on candlelight/gs_usb firmware, exposed as kernel SocketCAN can0), pushes sensors to Home Assistant, logs telemetry CSVs to /share and serves them for download (update interval adjustable live via input_number.canbus_update_interval)
 arch:
   - aarch64
 startup: services
@@ -29,9 +29,7 @@ options:
   ezkontrol_push_interval: 2
   bestgo_dummy: false
   bestgo_push_interval: 5
-  high_res_push_interval: 0.5
   telemetry_log: true
-  telemetry_log_interval: 2
   telemetry_log_keep_days: 30
 schema:
   can_bitrate: int(1000,1000000)
@@ -39,7 +37,5 @@ schema:
   ezkontrol_push_interval: int(1,60)
   bestgo_dummy: bool
   bestgo_push_interval: int(1,60)
-  high_res_push_interval: float(0.1,10)
   telemetry_log: bool
-  telemetry_log_interval: float(0.2,60)
   telemetry_log_keep_days: int(1,365)
