@@ -53,10 +53,6 @@ details coming here from Evana
 > [!IMPORTANT]
 > to turn off the home assistant it is best to do a software shutdown before unplugging the power, it avoids possible sdcard corruption.  under solarcar tab, push the shutdown system button at the bottom and wait for screen to show poweroff message, maybe 1 minute.
 
-> [!CAUTION]
-> Only the Ezkontrol is connected right now, not the bestgo battery.
-> > We never got a chance to test some recent software changes, and will need a little work to try a new CANbus cable. in the meantime, use the Smart BMS app (hold it very close to the battery) to get actual value of SOC, don't trust the battery displays until they are calibrated.
-
 
 in case of sdcard failure we will have a backup, as well as a backup rpi.
 
