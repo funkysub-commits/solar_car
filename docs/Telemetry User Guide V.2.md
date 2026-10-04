@@ -2,14 +2,11 @@
 
 # Telemetry Guide
 
-The Raspberry Pi on the car reads the motor controller and the battery over the CAN bus
-and shows everything in two places: the **e-ink screen on the car**, and a **Home Assistant
-dashboard** you open in a browser on your phone, tablet or laptop. This guide covers turning
-it on, connecting to it, getting the data off it, and what to do when something looks wrong.
+The Raspberry Pi on the car reads the motor controller and the battery over the CAN bus and shows everything in two places: the **e-ink screen on the car**, and a **Home Assistant dashboard** you open in a browser on your phone, tablet or laptop. This guide covers turning it on, connecting to it, getting the data off it, and what to do when something looks wrong.
 
-You do not need to know anything about the software to use it — just follow
-[Turning on Telemetry](#turning-on-telemetry), and if something looks off go to
-[Common Problems](#common-problems).
+You do not need to know anything about the software to use it — just follow [Turning on Telemetry](#turning-on-telemetry), and if something looks off go to [Common Problems](#common-problems).
+  
+The screen will show some of the most important data to a driver, along with warnings and a message from the dashboard. The clock should constantly change, showing that the system is running (see [The Clock Has Stopped Ticking](#the-clock-in-the-corner-has-stopped-ticking) if it stops). A warning symbol next to a value shows that the Pi is failing to get new data, so that value may be old.
 
 > [!CAUTION]
 > **Always shut the Pi down in software before you pull the power.** Yanking 12V from a
@@ -35,7 +32,7 @@ For anyone who has done this before:
 
 1. Power on the 12V circuit → wait ~30 s for the e-ink screen to redraw.
 2. Check the CAN-to-USB adapter shows a **green** LED, not just red.
-3. Join the Wi-Fi **dd-wrt** (no password), type the IP from the top of the e-ink screen
+3. Join the Wi-Fi **dd-wrt** (no password) or the **hotspot**, type the IP from the top of the e-ink screen
    into your browser's address bar, log in with **sct / letsgo**.
 4. Turn the car on — motor and battery data should appear on the **Solar Car** tab.
 
@@ -316,6 +313,7 @@ One device has stopped sending, while the adapter itself is fine.
 - **Check you are still on the car's Wi-Fi** — phones switch back to mobile data silently.
 - **Login fails?** It is user **sct**, password **letsgo**, all lowercase.
 - Easiest fix of all: scan the **Connect to Pi** QR code.
+- The Pi may just still be turning on. The the webpage is often last to boot up.
 
 ### My phone keeps dropping the car's Wi-Fi
 
@@ -325,7 +323,7 @@ it to stay put — turn it back on afterwards.
 
 ### The dashboard loads but the numbers are blank or "unknown"
 
-Home Assistant is up but nothing is feeding it. Check
+If the car isn't on yet, this is normal. Otherwise, Home Assistant is up but nothing is feeding it. Check
 **Settings → Add-ons → Solar Car CANbus Reader** — it should say *Started*. If it isn't, start
 it; if it is, open its **Log** tab, which says what it is doing (bringing up the interface,
 retrying, or pushing readings). Readings that were there a moment ago and are now flat are
