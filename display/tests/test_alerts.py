@@ -2,6 +2,7 @@
 """Unit tests for the warning/staleness/hide logic (alerts.py) and the
 ha_client readers. Pure stdlib: python -m unittest discover display/tests
 """
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -274,17 +275,31 @@ class IpQrSensors(unittest.TestCase):
         ha_client._wifi_ip = None
         self.addCleanup(lambda: setattr(ha_client, "_router_ip", None))
         self.addCleanup(lambda: setattr(ha_client, "_wifi_ip", None))
+        # QR PNGs go to a scratch folder, not the Pi's /homeassistant/www
+        import os, tempfile
+        tmp = tempfile.TemporaryDirectory()
+        orig_dir = config.QR_DIR
+        config.QR_DIR = os.path.join(tmp.name, "www", "solarcar")
+        self.addCleanup(lambda: setattr(config, "QR_DIR", orig_dir))
+        self.addCleanup(tmp.cleanup)
 
     def posted(self):
         return {e: (s, a) for e, s, a in self.posts}
 
-    def test_qr_is_a_png_data_uri(self):
-        uri = ha_client._qr_data_uri("http://10.0.0.5:8123")
+    def test_qr_is_a_png(self):
+        png = ha_client._qr_png("http://10.0.0.5:8123")
         # qrcode is a soft dependency; only assert the shape when it's present
-        if uri is not None:
-            self.assertTrue(uri.startswith("data:image/png;base64,"))
-            import base64
-            base64.b64decode(uri.split(",", 1)[1])   # valid base64 payload
+        if png is not None:
+            self.assertEqual(png[:8], b"\x89PNG\r\n\x1a\n")
+
+    def test_qr_file_written_and_path_published(self):
+        ha_client._router_ip = "10.0.0.5"
+        ha_client.publish_ip_sensors()
+        s, a = self.posted()[config.ENT_PI_ROUTER_IP]
+        if "qr_path" in a:                            # qrcode present on this PC
+            self.assertEqual(a["qr_path"], f"{config.QR_URL_BASE}/qr_router.png")
+            self.assertTrue(os.path.exists(os.path.join(config.QR_DIR, "qr_router.png")))
+        self.assertNotIn("qr", a)                     # data: URI is gone (markdown card refused it)
 
     def test_connected_link_publishes_ip_url_and_flag(self):
         ha_client._router_ip = "192.168.0.243"

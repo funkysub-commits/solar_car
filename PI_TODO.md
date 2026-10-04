@@ -16,6 +16,26 @@ as work on the PC piles up changes that need the Pi.
       one new token and set it as `HA_TOKEN` in the PC environment — do not
       write it to a file in the repo.
 
+## Deploy e-ink add-on 1.12.0 (working "Connect to Pi" QR codes) — NOT YET DEPLOYED
+
+The old QR cards never showed an image because HA's markdown card refuses
+`data:` image URIs (the `qr` attribute). 1.12.0 writes the QR PNGs into HA's
+`www` folder instead (`/config/www/solarcar/qr_router.png`, `qr_hotspot.png`),
+HA serves them at `/local/solarcar/...`, and the sensors carry `qr_path`.
+New `map: homeassistant_config` = capability change -> `update`, and
+**Protection Mode flips back ON** (e-ink needs it OFF for the panel).
+
+- [ ] `python CANbus_data/tools/deploy_addon.py --addon eink` (creates
+      `/config/www/solarcar` first). If `/config/www` did NOT exist before,
+      **restart HA Core once** (`ha core restart`) — HA only serves `/local/`
+      when the folder existed at start-up.
+- [ ] Settings → Add-ons → E-Ink → Protection mode OFF → Start. Log should show
+      no "cannot write QR" warning; `ls /config/www/solarcar/` shows the PNGs;
+      `http://<pi>:8123/local/solarcar/qr_router.png` opens in a browser.
+- [ ] Replace the old "Connect to Pi" section on the solarcar dashboard with
+      `display/ha/dashboard_qr_section.yaml` (uses `qr_path`, not `qr`). Scan
+      both codes with a phone on each network.
+
 ## Deploy CANbus add-on 0.12.0 (interval setting + on-demand export) — NOT YET DEPLOYED
 
 0.10.0 (toggle + CSV-log version) is what's running on the Pi (deployed +

@@ -82,16 +82,25 @@ re-publish `sensor.eink_warnings`.
 
 Adds a **Connect to Pi** section with a QR code for each LAN link the Pi has —
 **Router** (on-car Ethernet, no internet) and **Hotspot** (phone Wi-Fi) — each shown
-only while that link is connected. Scanning opens Home Assistant at that address. The
-QR images are generated **offline by the add-on** (no external QR service, so they
-work on the car's no-internet router LAN) and published as the `qr` attribute of
-`sensor.pi_router_ip` / `sensor.pi_hotspot_ip`. Paste the block from
+only while that link is connected. Scanning opens Home Assistant at that address.
+
+The QR images are generated **offline by the add-on** (no external QR service, so they
+work on the car's no-internet router LAN). Since add-on **1.12.0** they are written as
+PNG files into HA's `www` folder (`/config/www/solarcar/qr_router.png`,
+`qr_hotspot.png`; the add-on maps `homeassistant_config`), so HA serves them at
+`/local/solarcar/...` and the markdown cards reference that path via the `qr_path`
+attribute of `sensor.pi_router_ip` / `sensor.pi_hotspot_ip`. Paste the block from
 [dashboard_qr_section.yaml](dashboard_qr_section.yaml) into the view's `sections:`
 list the same way.
 
-> These two sensors carry a small base64 PNG in their `qr` attribute. If you want to
-> keep it out of the recorder database, exclude `sensor.pi_router_ip` and
-> `sensor.pi_hotspot_ip` in your `recorder:` config.
+> **Why files?** The first version (≤1.11) put a base64 `data:` PNG in a `qr`
+> attribute and showed it with `![]({{ state_attr(...,'qr') }})`. HA's markdown card
+> strips `data:` image sources, so the card rendered the URL but no code. A file served
+> by HA itself works from any network the viewer came in on (router, hotspot,
+> Tailscale).
+
+> HA only serves `/local/` if `/config/www` existed when it started: create the folder
+> once (the add-on does, on first run) and restart HA if the images 404.
 
 ## Warning keys (for reference)
 

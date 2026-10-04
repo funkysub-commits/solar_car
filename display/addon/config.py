@@ -159,12 +159,19 @@ ENT_HIDDEN = os.environ.get("ENT_HIDDEN", "input_text.eink_hidden")
 
 # The add-on already resolves the Pi's two LAN addresses for the panel header
 # (Router = on-car Ethernet, no internet; Hotspot = phone Wi-Fi, has internet).
-# It republishes them here as HA sensors carrying a scannable QR of the HA URL,
-# so a dashboard can show "scan to open" codes - one per link, each conditional
-# on that link being connected. State = the IP (or "unavailable" when the link
-# is down); attributes carry the url, a connected flag, and the QR data-URI.
+# It republishes them here as HA sensors so a dashboard can show "scan to
+# open Home Assistant" QR codes - one per link, each conditional on that link
+# being connected. State = the IP (or "unavailable" when the link is down);
+# attributes carry the url, a connected flag and `qr_path`, the HA-served
+# path of a QR PNG the add-on writes into HA's `www` folder (QR_DIR, mapped
+# via `homeassistant_config` in config.yaml; served by HA at QR_URL_BASE).
+# Files are used instead of a base64 data: URI because HA's markdown card
+# refuses data: image sources, and a file served by HA itself loads no matter
+# which network / Tailscale path the viewer reached HA through.
 ENT_PI_ROUTER_IP = os.environ.get("ENT_PI_ROUTER_IP", "sensor.pi_router_ip")
 ENT_PI_HOTSPOT_IP = os.environ.get("ENT_PI_HOTSPOT_IP", "sensor.pi_hotspot_ip")
+QR_DIR = os.environ.get("QR_DIR", "/homeassistant/www/solarcar")
+QR_URL_BASE = os.environ.get("QR_URL_BASE", "/local/solarcar")
 
 # CAN health sensors, published by the solar-car-canbus app (1 = up, 0 = down):
 # canadapter_status (USB-CAN bus open), bestgo_status (battery sending frames),

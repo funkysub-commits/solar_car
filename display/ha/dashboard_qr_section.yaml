@@ -1,8 +1,18 @@
 # 'Connect to Pi' QR section - one QR per LAN link (Router = on-car Ethernet,
 # Hotspot = phone Wi-Fi), each shown only while that link is connected. Scanning
-# opens Home Assistant at the Pi's address. QRs are generated offline by the
-# add-on (sensor.pi_router_ip / sensor.pi_hotspot_ip, attribute `qr`), so they
-# render with no internet. Paste as a new entry in the view's `sections:` list.
+# opens Home Assistant at the Pi's address on that network.
+#
+# The e-ink add-on (1.12.0+) generates the QR PNGs offline and writes them into
+# HA's www folder, so HA itself serves them at /local/solarcar/qr_router.png and
+# /local/solarcar/qr_hotspot.png (the `qr_path` attribute of sensor.pi_router_ip /
+# sensor.pi_hotspot_ip). Earlier versions embedded a base64 data: URI in the
+# `qr` attribute, which HA's markdown card silently refuses to render - that is
+# why the first attempt showed no image. The ?v= query is a cache-buster so a
+# changed IP shows the new code immediately.
+#
+# Paste as a new entry in the view's `sections:` list (or Edit dashboard -> Add
+# card -> Manual, one card at a time). Needs HA to have a /config/www folder at
+# start-up (HA only serves /local/ if the folder existed when it booted).
 
 type: grid
 cards:
@@ -11,33 +21,35 @@ cards:
   icon: mdi:qrcode-scan
   visibility:
   - condition: template
-    value_template: '{{ has_value(''sensor.pi_router_ip'') or has_value(''sensor.pi_hotspot_ip'') }}'
+    value_template: "{{ has_value('sensor.pi_router_ip') or has_value('sensor.pi_hotspot_ip') }}"
 - type: horizontal-stack
   cards:
   - type: markdown
-    content: '### Router
+    content: >-
+      ### Router
 
+      {% set p = state_attr('sensor.pi_router_ip','qr_path') %}
+      {% if p %}![Scan to open Home Assistant via the car router]({{ p }}?v={{ states('sensor.pi_router_ip') }}){% endif %}
 
-      ![]({{ state_attr(''sensor.pi_router_ip'',''qr'') }})
+      [{{ state_attr('sensor.pi_router_ip','url') }}]({{ state_attr('sensor.pi_router_ip','url') }})
 
-
-      [{{ state_attr(''sensor.pi_router_ip'',''url'') }}]({{ state_attr(''sensor.pi_router_ip'',''url'')
-      }})'
+      <small>Phone on the car Wi-Fi (dd-wrt). No internet on this one.</small>
     visibility:
     - condition: template
-      value_template: '{{ has_value(''sensor.pi_router_ip'') }}'
+      value_template: "{{ has_value('sensor.pi_router_ip') }}"
   - type: markdown
-    content: '### Hotspot
+    content: >-
+      ### Hotspot
 
+      {% set p = state_attr('sensor.pi_hotspot_ip','qr_path') %}
+      {% if p %}![Scan to open Home Assistant via the phone hotspot]({{ p }}?v={{ states('sensor.pi_hotspot_ip') }}){% endif %}
 
-      ![]({{ state_attr(''sensor.pi_hotspot_ip'',''qr'') }})
+      [{{ state_attr('sensor.pi_hotspot_ip','url') }}]({{ state_attr('sensor.pi_hotspot_ip','url') }})
 
-
-      [{{ state_attr(''sensor.pi_hotspot_ip'',''url'') }}]({{ state_attr(''sensor.pi_hotspot_ip'',''url'')
-      }})'
+      <small>Phone on the same hotspot as the Pi. Has internet.</small>
     visibility:
     - condition: template
-      value_template: '{{ has_value(''sensor.pi_hotspot_ip'') }}'
+      value_template: "{{ has_value('sensor.pi_hotspot_ip') }}"
   visibility:
   - condition: template
-    value_template: '{{ has_value(''sensor.pi_router_ip'') or has_value(''sensor.pi_hotspot_ip'') }}'
+    value_template: "{{ has_value('sensor.pi_router_ip') or has_value('sensor.pi_hotspot_ip') }}"

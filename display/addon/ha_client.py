@@ -6,8 +6,8 @@ Connection health is tracked across every request so the add-on can tell
 "Home Assistant itself is unreachable" apart from "the CAN sensors stopped
 updating" - two very different failures that would otherwise look identical
 on the panel and in the logs."""
-import base64
 import io
+import os
 import logging
 import threading
 import time
@@ -176,10 +176,9 @@ def connection_lines():
     return rows or [("", "Pi Offline")]
 
 
-def _qr_data_uri(text):
-    """A scannable QR of `text` as a PNG data: URI (renders inline in a Home
-    Assistant markdown card, offline - no external QR service, which matters on
-    the car's on-car router LAN that has no internet). Returns None if the
+def _qr_png(text):
+    """A scannable QR of `text` as PNG bytes, generated offline (no external
+    QR service - the car's router LAN has no internet). Returns None if the
     qrcode library is unavailable, so publishing degrades to just the URL text
     rather than failing. Imported lazily so the module still loads on a PC
     without qrcode installed (the tests import this module)."""
@@ -189,21 +188,55 @@ def _qr_data_uri(text):
         logging.debug(f"qrcode unavailable, skipping QR: {e}")
         return None
     try:
-        qr = qrcode.QRCode(border=2, box_size=6,
+        qr = qrcode.QRCode(border=2, box_size=8,
                            error_correction=qrcode.constants.ERROR_CORRECT_M)
         qr.add_data(text)
         qr.make(fit=True)
         img = qr.make_image(fill_color="black", back_color="white")
         buf = io.BytesIO()
         img.save(buf, format="PNG")
-        return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+        return buf.getvalue()
     except Exception as e:
         logging.debug(f"QR render failed: {e}")
         return None
 
 
-# Last-published (state, qr) per IP entity, so an unchanged link doesn't re-POST
-# every heartbeat and we only re-render a QR when the URL actually changes.
+_qr_dir_warned = False
+
+
+def _write_qr_file(name, url):
+    """Render a QR of `url` and write it to config.QR_DIR/<name>.png - HA's
+    `www` folder, which HA serves at config.QR_URL_BASE/<name>.png (/local/...).
+    Written atomically (tmp + rename) so a dashboard never loads a half file.
+    Returns the HA-served path, or None when the QR couldn't be produced or the
+    folder isn't writable (logged once; the sensor then carries just the URL).
+
+    Why a file and not a data: URI: HA's markdown card strips data: image
+    sources, so the earlier base64 attribute never rendered; a file served by
+    HA itself also loads regardless of which network the viewer came in on."""
+    global _qr_dir_warned
+    png = _qr_png(url)
+    if png is None:
+        return None
+    path = os.path.join(config.QR_DIR, f"{name}.png")
+    try:
+        os.makedirs(config.QR_DIR, exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "wb") as f:
+            f.write(png)
+        os.replace(tmp, path)
+        _qr_dir_warned = False
+        return f"{config.QR_URL_BASE}/{name}.png"
+    except OSError as e:
+        if not _qr_dir_warned:
+            logging.warning(f"cannot write QR to {path}: {e} - is HA config mapped "
+                            "(config.yaml map: homeassistant_config)? QR cards will show the URL only")
+            _qr_dir_warned = True
+        return None
+
+
+# Last-published (state, qr_path) per IP entity, so an unchanged link doesn't
+# re-POST every heartbeat and we only re-render a QR when the URL changes.
 _ip_pub = {}
 _ip_pub_time = 0.0
 
@@ -212,35 +245,39 @@ def publish_ip_sensors():
     """Publish sensor.pi_router_ip / sensor.pi_hotspot_ip from the cached header
     addresses so a dashboard can show a "scan to open Home Assistant" QR per
     link. State is the LAN IP when the link is up (attributes: url, connected,
-    qr data-URI) and "unavailable" when it is down, so a conditional card can
-    show each QR only while connected. Republished on change and on a heartbeat
-    (PUBLISH_EVERY) so the REST-published states self-heal after an HA restart."""
+    qr_path = HA-served PNG written by _write_qr_file) and "unavailable" when
+    it is down, so a conditional card can show each QR only while connected.
+    Republished on change and on a heartbeat (PUBLISH_EVERY) so the
+    REST-published states self-heal after an HA restart; the heartbeat also
+    re-writes a QR file that has gone missing (e.g. a wiped www folder)."""
     global _ip_pub_time
     now = time.time()
     heartbeat = (now - _ip_pub_time) >= config.PUBLISH_EVERY
-    targets = [(config.ENT_PI_ROUTER_IP, "Pi Router IP", "mdi:router-network", _router_ip),
-               (config.ENT_PI_HOTSPOT_IP, "Pi Hotspot IP", "mdi:wifi", _wifi_ip)]
+    targets = [(config.ENT_PI_ROUTER_IP, "router", "Pi Router IP", "mdi:router-network", _router_ip),
+               (config.ENT_PI_HOTSPOT_IP, "hotspot", "Pi Hotspot IP", "mdi:wifi", _wifi_ip)]
     posted = False
-    for entity, name, icon, ip in targets:
+    for entity, name, friendly, icon, ip in targets:
         if ip:
             url = f"http://{ip}:{config.HA_PORT}"
-            prev_url, qr = _ip_pub.get(entity, (None, None))
-            if prev_url != url:                       # url changed -> new QR
-                qr = _qr_data_uri(url)
+            prev_url, qr_path = _ip_pub.get(entity, (None, None))
+            file_missing = qr_path is not None and not os.path.exists(
+                os.path.join(config.QR_DIR, f"qr_{name}.png"))
+            if prev_url != url or qr_path is None or file_missing:   # (re)render
+                qr_path = _write_qr_file(f"qr_{name}", url)
             elif not heartbeat:
                 continue                              # unchanged, not due -> skip
-            attrs = {"friendly_name": name, "icon": icon,
+            attrs = {"friendly_name": friendly, "icon": icon,
                      "url": url, "connected": True}
-            if qr:
-                attrs["qr"] = qr
+            if qr_path:
+                attrs["qr_path"] = qr_path
             ha_post_state(entity, ip, attrs)
-            _ip_pub[entity] = (url, qr)
+            _ip_pub[entity] = (url, qr_path)
             posted = True
         else:
             if _ip_pub.get(entity, (None, None))[0] == "unavailable" and not heartbeat:
                 continue
             ha_post_state(entity, "unavailable",
-                          {"friendly_name": name, "icon": icon, "connected": False})
+                          {"friendly_name": friendly, "icon": icon, "connected": False})
             _ip_pub[entity] = ("unavailable", None)
             posted = True
     if posted or heartbeat:

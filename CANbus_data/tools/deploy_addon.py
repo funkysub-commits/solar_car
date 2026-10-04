@@ -245,6 +245,19 @@ def main():
     if WITH_PACKAGES and _which == "canbus":
         push_packages(run, run_ha)
 
+    if _which == "eink":
+        # 1.12.0+ writes the "Connect to Pi" QR PNGs into HA's www folder. HA
+        # only serves /local/ if www existed when Core started, so create it
+        # now and tell the user whether a one-off Core restart is needed.
+        rc, out, err = run(
+            "for d in /homeassistant /config; do test -d $d && c=$d && break; done; "
+            "test -d $c/www && echo WWW_EXISTED || echo WWW_CREATED; "
+            "sudo mkdir -p $c/www/solarcar && echo $c/www/solarcar")
+        print("www folder:", out.strip().replace("\n", " "))
+        if "WWW_CREATED" in out:
+            print("NOTE: /config/www did not exist -> restart HA Core once "
+                  "(bash -lc 'ha core restart') or /local/ QR images will 404.")
+
     run_ha(f"ha addons start {SLUG} 2>/dev/null", timeout=120)
     time.sleep(5)
     rc, out, err = run_ha(f'ha addons info {SLUG} | grep -E "^(version|state|boot|protected|watchdog):"')

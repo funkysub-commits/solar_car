@@ -1,5 +1,5 @@
 name: Solar Car E-Ink Display
-version: "1.11.0"
+version: "1.12.0"
 slug: solar_epaper
 description: Renders a Solar Car telemetry dashboard (speedometer, battery, temperatures) on a Waveshare 7.5" V2 e-ink display
 arch:
@@ -10,6 +10,12 @@ init: false
 full_access: true
 homeassistant_api: true
 hassio_api: true
+# HA's config folder (mounted at /homeassistant): the add-on writes the
+# "Connect to Pi" QR PNGs into www/solarcar/ so HA serves them at
+# /local/solarcar/qr_router.png and qr_hotspot.png for the dashboard.
+map:
+  - type: homeassistant_config
+    read_only: false
 options:
   title: SOLAR STORMS
   speed_max: 40

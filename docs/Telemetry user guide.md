@@ -17,6 +17,7 @@
 5. the e-ink dash should display the ip of home assitant.  probaly `192.168.1.146:8123`
 6. put that into your phone browser to see home assistant login.  (make sure you arent doing a google search, just enter as a url)
 user:sct, passwd: letsgo
+   Shortcut: if someone is already in, the **Connect to Pi** section on the solar car tab shows a QR code per network (Router / Hotspot) — scan it with your phone camera and it opens Home Assistant directly.
 
 7. when ezkontrol is turned on you should see data from it, see the
 "solar car" tab in home assistant on the left in home assistant for most important data.
