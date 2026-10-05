@@ -1,0 +1,227 @@
+# Home Assistant package: live estimates derived from the telemetry analysis
+# (data_proccesing/analysis.py, first fitted on the 2026-10-03 drive).
+#
+#   sensor.solar_car_controller_power     controller input power (bus V x bus A)
+#   sensor.solar_car_controller_energy    running total of the above (kWh)
+#   sensor.solar_car_recent_wh_per_mile   Wh/mi over the last 15 min of driving
+#   sensor.solar_car_estimated_range      miles left at the recent Wh/mi
+#   sensor.solar_car_break_even_speed     fastest steady speed the solar input
+#                                         alone can sustain (set the solar watts)
+#   sensor.solar_car_motor_temp_forecast  motor temp it is heading for at the
+#                                         current load; attribute secs_to_limit
+#   binary_sensor.solar_car_motor_overheat_soon
+#                                         on when the motor is forecast to hit
+#                                         the stall temp within ~60 s
+#   automation: shows "Motor hot - ease off" on the e-ink message box while
+#   the binary sensor is on, and clears it (only if it's still our text).
+#
+# Model constants come from processed/<date>/analysis/*.json - update them here
+# when a new day's analysis disagrees. Rerun:  python data_proccesing/analysis.py
+#
+# Deploy: deploy_addon.py --with-packages copies this file, but it only reloads
+# input_number/input_boolean - template, statistics, integration and automation
+# entities need a full HA restart the first time.
+
+input_number:
+  # 0 = use the fitted default in the templates below.
+  solar_car_pack_capacity_wh:
+    name: Solar Car Usable Pack Energy
+    icon: mdi:battery-high
+    unit_of_measurement: Wh
+    min: 0
+    max: 10000
+    step: 10
+    mode: box
+  solar_car_solar_input_w:
+    name: Solar Car Solar Input
+    icon: mdi:solar-power
+    unit_of_measurement: W
+    min: 0
+    max: 2000
+    step: 5
+    mode: box
+
+template:
+  - sensor:
+      - name: "Solar Car Controller Power"
+        unique_id: solar_car_controller_power
+        unit_of_measurement: "W"
+        device_class: power
+        state_class: measurement
+        availability: >-
+          {{ has_value('sensor.ezkontrol_bus_voltage')
+             and has_value('sensor.ezkontrol_bus_current') }}
+        state: >-
+          {{ (states('sensor.ezkontrol_bus_voltage') | float(0)
+              * states('sensor.ezkontrol_bus_current') | float(0)) | round(0) }}
+
+      - name: "Solar Car Recent Wh per Mile"
+        unique_id: solar_car_recent_wh_per_mile
+        unit_of_measurement: "Wh/mi"
+        state_class: measurement
+        icon: mdi:lightning-bolt
+        # Falls back to the 2026-10-03 whole-day average (94.6 Wh/mi incl.
+        # stop-start) until 0.5 mi has been covered in the window.
+        state: >-
+          {% set kwh = states('sensor.solar_car_energy_last_15_min') | float(0) %}
+          {% set mi = states('sensor.solar_car_distance_last_15_min') | float(0) %}
+          {{ (kwh * 1000 / mi) | round(1) if mi >= 0.5 and kwh > 0 else 94.6 }}
+        attributes:
+          source: >-
+            {{ 'last 15 min' if states('sensor.solar_car_distance_last_15_min')
+               | float(0) >= 0.5 else 'default (2026-10-03 average)' }}
+
+      - name: "Solar Car Estimated Range"
+        unique_id: solar_car_estimated_range
+        unit_of_measurement: "mi"
+        state_class: measurement
+        icon: mdi:map-marker-distance
+        availability: "{{ has_value('sensor.bestgo_soc') }}"
+        # Usable energy measured 2026-10-03: 88.5 Ah / ~4490 Wh per 100% SOC
+        # (the pack is rated 100 Ah). Keeps a 10% SOC reserve.
+        state: >-
+          {% set cap = states('input_number.solar_car_pack_capacity_wh') | float(0) %}
+          {% set cap = cap if cap > 0 else 4489 %}
+          {% set soc = states('sensor.bestgo_soc') | float(0) %}
+          {% set whmi = states('sensor.solar_car_recent_wh_per_mile') | float(94.6) %}
+          {{ ([soc - 10, 0] | max / 100 * cap / whmi) | round(1) }}
+
+      - name: "Solar Car Break Even Speed"
+        unique_id: solar_car_break_even_speed
+        unit_of_measurement: "mph"
+        icon: mdi:solar-power-variant
+        # Cruise power fit P = c1*v + c3*v^3 (v in m/s) + 20 W aux; the
+        # fastest speed where that is <= solar input. Default solar = 725 W,
+        # the only parked charging window seen on 2026-10-03.
+        state: >-
+          {% set solar = states('input_number.solar_car_solar_input_w') | float(0) %}
+          {% set solar = solar if solar > 0 else 725 %}
+          {% set ns = namespace(best=0) %}
+          {% for i in range(0, 801) %}
+            {% set mph = i / 20 %}
+            {% set v = mph * 0.44704 %}
+            {% if 109.7 * v + 0.393 * v ** 3 + 20 <= solar %}{% set ns.best = mph %}{% endif %}
+          {% endfor %}
+          {{ ns.best | round(1) }}
+
+      - name: "Solar Car Motor Temp Forecast"
+        unique_id: solar_car_motor_temp_forecast
+        unit_of_measurement: "°C"
+        device_class: temperature
+        state_class: measurement
+        availability: >-
+          {{ has_value('sensor.ezkontrol_motor_temp')
+             and has_value('sensor.solar_car_phase_current_1_min') }}
+        # Thermal model fitted 2026-10-03 (R^2 0.98, RMSE 3.9 C):
+        #   dT/dt = a*(I/100)^2 + b*(rpm/1000) - (T - Tamb)/tau
+        # State = the temperature the motor settles at if this load continues.
+        state: >-
+          {% set i = states('sensor.solar_car_phase_current_1_min') | float(0) %}
+          {% set rpm = states('sensor.solar_car_motor_rpm_1_min') | float(0) | abs %}
+          {{ (20.9 + 793 * (0.02817 * (i / 100) ** 2 + 0.005566 * rpm / 1000)) | round(0) }}
+        attributes:
+          limit_c: 130
+          secs_to_limit: >-
+            {% set T = states('sensor.ezkontrol_motor_temp') | float(0) %}
+            {% set i = states('sensor.solar_car_phase_current_1_min') | float(0) %}
+            {% set rpm = states('sensor.solar_car_motor_rpm_1_min') | float(0) | abs %}
+            {% set tss = 20.9 + 793 * (0.02817 * (i / 100) ** 2 + 0.005566 * rpm / 1000) %}
+            {% if T >= 130 %}0
+            {% elif tss <= 130 %}none
+            {% else %}{{ (793 * log((tss - T) / (tss - 130))) | round(0) }}{% endif %}
+
+  - binary_sensor:
+      - name: "Solar Car Motor Overheat Soon"
+        unique_id: solar_car_motor_overheat_soon
+        device_class: heat
+        # The motor stalled at 130 C on 2026-10-03. Warn at 120 C, or when the
+        # forecast says the limit is under a minute away at the current load.
+        state: >-
+          {% set s = state_attr('sensor.solar_car_motor_temp_forecast', 'secs_to_limit') %}
+          {{ states('sensor.ezkontrol_motor_temp') | float(0) >= 120
+             or (s not in (none, 'none', '') and s | float(9999) < 60) }}
+        delay_off:
+          seconds: 30
+
+sensor:
+  - platform: integration
+    name: Solar Car Controller Energy
+    unique_id: solar_car_controller_energy
+    source: sensor.solar_car_controller_power
+    unit_prefix: k
+    unit_time: h
+    method: left
+    round: 4
+    max_sub_interval:
+      seconds: 10
+
+  - platform: statistics
+    name: Solar Car Energy Last 15 Min
+    unique_id: solar_car_energy_last_15_min
+    entity_id: sensor.solar_car_controller_energy
+    state_characteristic: change
+    max_age:
+      minutes: 15
+    sampling_size: 5000
+
+  - platform: statistics
+    name: Solar Car Distance Last 15 Min
+    unique_id: solar_car_distance_last_15_min
+    entity_id: sensor.odometer
+    state_characteristic: change
+    max_age:
+      minutes: 15
+    sampling_size: 5000
+
+  - platform: statistics
+    name: Solar Car Phase Current 1 Min
+    unique_id: solar_car_phase_current_1_min
+    entity_id: sensor.ezkontrol_phase_current
+    state_characteristic: mean
+    max_age:
+      minutes: 1
+    sampling_size: 500
+
+  - platform: statistics
+    name: Solar Car Motor RPM 1 Min
+    unique_id: solar_car_motor_rpm_1_min
+    entity_id: sensor.ezkontrol_motor_speed
+    state_characteristic: mean
+    max_age:
+      minutes: 1
+    sampling_size: 500
+
+automation:
+  - id: solar_car_motor_overheat_message
+    alias: "Solar car: motor heat warning on e-ink"
+    description: >-
+      Puts a warning in the e-ink message box while the motor is forecast to
+      overheat, and clears it afterwards if nobody has replaced the text.
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.solar_car_motor_overheat_soon
+        to: "on"
+        id: hot
+      - platform: state
+        entity_id: binary_sensor.solar_car_motor_overheat_soon
+        to: "off"
+        id: cool
+    action:
+      - choose:
+          - conditions: "{{ trigger.id == 'hot' }}"
+            sequence:
+              - service: input_text.set_value
+                target:
+                  entity_id: input_text.eink_message
+                data:
+                  value: "Motor hot - ease off"
+          - conditions: >-
+              {{ trigger.id == 'cool'
+                 and states('input_text.eink_message') == 'Motor hot - ease off' }}
+            sequence:
+              - service: input_text.set_value
+                target:
+                  entity_id: input_text.eink_message
+                data:
+                  value: ""
+    mode: queued

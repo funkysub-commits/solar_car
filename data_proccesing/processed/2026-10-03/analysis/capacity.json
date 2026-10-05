@@ -1,0 +1,11 @@
+{
+  "soc_from": 99.0,
+  "soc_to": 35.0,
+  "ah_counted": 57.5,
+  "wh_counted": 2922,
+  "usable_capacity_ah": 88.5,
+  "usable_capacity_wh": 4489,
+  "rated_capacity_ah": 100,
+  "median_pack_v": 52.1,
+  "note": "Capacity = Ah counted per 1% of BMS SOC drop x 100, vs the pack's 100 Ah rating (BWP-FE51100). Lower = capacity loss, an optimistic BMS SOC, or pack-current calibration; confirm with a full charge/discharge."
+}

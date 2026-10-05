@@ -1,0 +1,24 @@
+{
+  "equation": "dT/dt = a*(I_phase/100)^2 + b*(rpm/1000) - (T - T_amb)/tau  [C/s]",
+  "a": 0.028174589354658445,
+  "b": 0.00556647954792511,
+  "tau_s": 793.1665015931834,
+  "t_amb_c": 20.9124318255979,
+  "rmse_c": 3.8918482066200153,
+  "r2": 0.9825031681135131,
+  "points": 8498,
+  "limit_c": 130,
+  "steady_state_c": {
+    "100A@1500rpm": 49.9,
+    "150A@1500rpm": 77.8,
+    "200A@1500rpm": 116.9,
+    "300A@1000rpm": 226.5
+  },
+  "secs_to_limit_from_80c": {
+    "150A@1500rpm": null,
+    "200A@1500rpm": null,
+    "300A@1000rpm": 331
+  },
+  "max_continuous_phase_a_at_1500rpm": 214.0,
+  "warning_rule": "warn when the model predicts the motor reaches the limit within 60 s at the current load, i.e. T > Tss - (Tss - limit)*exp(60/tau)"
+}

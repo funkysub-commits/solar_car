@@ -10,9 +10,11 @@ Output: processed/<date>/
           sessions.csv           one row per logging session with headline stats
           drives.csv             one row per drive (moving, stops < 2 min merged)
           channels.csv           data dictionary: raw name -> column, unit, counts
+        processed/all_drives.csv every day's drives stacked, for cross-day trends
 
 Needs: pip install pandas xlrd pyarrow
-Usage:  python telemetry.py solarcar_raw_readings_2026-10-03.xls
+Usage:  python telemetry.py              (every *.xls in this folder)
+        python telemetry.py solarcar_raw_readings_2026-10-03.xls
 Load later with:  pd.read_parquet("processed/2026-10-03/wide_1s.parquet")
 """
 import argparse
@@ -22,6 +24,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+HERE = Path(__file__).parent
+PROCESSED = HERE / "processed"
 TZ = "America/Los_Angeles"
 SESSION_GAP = pd.Timedelta(minutes=5)   # no data for this long -> new session
 MOVING_MPH = 1.0
@@ -65,7 +69,8 @@ CHANNELS = {
 }
 
 # Columns in wide_1s, in order. Speed duplicates, static BMS limits and the
-# capacity channels (which currently just mirror SOC) stay in the long table.
+# capacity channels stay in the long table. (The BMS reports *remaining* Ah in
+# both capacity fields; on this 100 Ah pack that equals SOC %.)
 WIDE_COLUMNS = [
     "speed_mph", "odometer_mi", "throttle_pct", "motor_rpm",
     "mc_bus_voltage_v", "mc_bus_current_a", "mc_phase_current_a",
@@ -98,6 +103,9 @@ def load_raw(path):
     # HA writes "unavailable"/"unknown" when the source drops out. A blank
     # value with no status is a text sensor cleared to "" (e.g. errors gone).
     df["status"] = raw["status"].fillna("ok").astype("string")
+    # Add-on < 0.12.1 mis-decoded op mode 0/1; map old history to the fixed names.
+    om = df["channel"] == "ezkontrol_op_mode"
+    df.loc[om, "text"] = df.loc[om, "text"].replace({"Normal": "Stop", "?(1)": "Drive"})
     return df.sort_values("time", kind="stable").reset_index(drop=True)
 
 
@@ -129,6 +137,9 @@ def add_derived(wide, long):
     w["mc_power_w"] = w["mc_bus_voltage_v"] * w["mc_bus_current_a"]
     w["pack_energy_out_wh"] = (w["pack_power_w"].fillna(0) * dt_h).cumsum()
     w["mc_energy_wh"] = (w["mc_power_w"].fillna(0) * dt_h).cumsum()
+    # Regen: energy flowing back through the controller / into the pack.
+    w["mc_regen_wh"] = (-w["mc_power_w"].clip(upper=0).fillna(0) * dt_h).cumsum()
+    w["pack_charge_in_wh"] = (-w["pack_power_w"].clip(upper=0).fillna(0) * dt_h).cumsum()
     w["distance_mi"] = (w["speed_mph"].clip(lower=0).fillna(0) * dt_h).cumsum()
     w["moving"] = w["speed_mph"].abs() > MOVING_MPH
     # Sessions: split wherever the logger went quiet for SESSION_GAP.
@@ -150,6 +161,12 @@ def build_events(long):
     ev = ev[["time", "channel", "state"]]
     # keep only actual changes per channel
     ev = ev[ev.groupby("channel")["state"].transform(lambda s: s.ne(s.shift()))]
+    ev["note"] = ""
+    contactor = ev["channel"] == "ezkontrol_dc_contactor"
+    # The driver keys the controller off to clear a latched error - not a cutout.
+    ev.loc[contactor & (ev["state"] == "Off"), "note"] = "controller switched off (power cycle to clear errors)"
+    ev.loc[contactor & (ev["state"] == "On"), "note"] = "controller back on"
+    ev.loc[(ev["channel"] == "bestgo_charging") & (ev["state"] == "on"), "note"] = "regen"
     return ev.reset_index(drop=True)
 
 
@@ -157,6 +174,7 @@ def _stats(s):
     mv = s[s["moving"]]
     dist = s["distance_mi"].iloc[-1] - s["distance_mi"].iloc[0]
     mc_wh = s["mc_energy_wh"].iloc[-1] - s["mc_energy_wh"].iloc[0]
+    regen_wh = s["mc_regen_wh"].iloc[-1] - s["mc_regen_wh"].iloc[0]
     pack_wh = s["pack_energy_out_wh"].iloc[-1] - s["pack_energy_out_wh"].iloc[0]
     soc = s["soc_pct"].dropna()
     return {
@@ -170,6 +188,8 @@ def _stats(s):
         # reporting, so pack energy can undercount.
         "mc_energy_wh": round(mc_wh),
         "wh_per_mi": round(mc_wh / dist, 1) if dist > 0.1 else np.nan,
+        "regen_wh": round(regen_wh),
+        "regen_pct": round(100 * regen_wh / (mc_wh + regen_wh), 1) if mc_wh > 0 else np.nan,
         "pack_energy_out_wh": round(pack_wh),
         "bms_coverage_pct": round(100 * s["pack_current_a"].notna().mean()),
         "soc_start": soc.iloc[0] if len(soc) else np.nan,
@@ -216,19 +236,14 @@ def channel_table(long):
     return t.sort_values("readings", ascending=False)
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("xls", type=Path)
-    ap.add_argument("--freq", default="1s", help="wide-table resolution (default 1s)")
-    ap.add_argument("--out", type=Path, help="output dir (default processed/<date>)")
-    a = ap.parse_args()
-
-    long = load_raw(a.xls)
+def process(xls, freq="1s", out=None, quiet=False):
+    """Convert one export; returns the output directory."""
+    long = load_raw(xls)
     day = long["time"].iloc[0].strftime("%Y-%m-%d")
-    out = a.out or Path(__file__).parent / "processed" / day
+    out = out or PROCESSED / day
     out.mkdir(parents=True, exist_ok=True)
 
-    wide = to_wide(long, a.freq)
+    wide = to_wide(long, freq)
     events = build_events(long)
     sessions = summarise_sessions(wide)
     drives = summarise_drives(wide)
@@ -241,11 +256,41 @@ def main():
     drives.to_csv(out / "drives.csv", index=False)
     channel_table(long).to_csv(out / "channels.csv", index=False, float_format="%.4g")
 
-    print(f"{len(long)} readings, {long['channel'].nunique()} channels -> {out}")
-    print(f"wide: {wide.shape[0]} rows x {wide.shape[1]} cols, {len(events)} events")
-    with pd.option_context("display.width", 200, "display.max_columns", 30):
-        print(sessions.drop(columns=["end"]).to_string(index=False))
-        print(drives.drop(columns=["end"]).to_string(index=False))
+    if not quiet:
+        print(f"{xls.name}: {len(long)} readings, {long['channel'].nunique()} channels -> {out}")
+        print(f"wide: {wide.shape[0]} rows x {wide.shape[1]} cols, {len(events)} events")
+        with pd.option_context("display.width", 250, "display.max_columns", 40):
+            print(drives.drop(columns=["end"]).to_string(index=False))
+    return out
+
+
+def build_index():
+    """Stack every processed day's drives into processed/all_drives.csv."""
+    frames = []
+    for f in sorted(PROCESSED.glob("*/drives.csv")):
+        d = pd.read_csv(f)
+        d.insert(0, "date", f.parent.name)
+        frames.append(d)
+    if frames:
+        alld = pd.concat(frames, ignore_index=True)
+        alld.to_csv(PROCESSED / "all_drives.csv", index=False)
+        print(f"all_drives.csv: {len(alld)} drives over {len(frames)} day(s)")
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("xls", type=Path, nargs="*",
+                    help="export(s) to convert (default: every *.xls next to this script)")
+    ap.add_argument("--freq", default="1s", help="wide-table resolution (default 1s)")
+    ap.add_argument("--out", type=Path, help="output dir (single file only; default processed/<date>)")
+    a = ap.parse_args()
+
+    files = a.xls or sorted(HERE.glob("*.xls"))
+    if a.out and len(files) > 1:
+        ap.error("--out only works with a single file")
+    for f in files:
+        process(f, a.freq, a.out)
+    build_index()
 
 
 if __name__ == "__main__":

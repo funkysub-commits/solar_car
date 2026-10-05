@@ -1,0 +1,117 @@
+{
+  "model": "P = c0 + c1*v + c3*v^3 + m*a*v  (v m/s, a m/s^2, P controller input W)",
+  "c0_w": 3.5031272484113236e-15,
+  "c1_w_per_mps": 109.70681204759212,
+  "c3_w_per_mps3": 0.39320183095150113,
+  "mass_kg": 236.75970455271045,
+  "rolling_plus_grade_force_n": 109.7,
+  "drag_area_cda_m2": 0.66,
+  "r2": 0.4794956882204102,
+  "points": 1511,
+  "aux_load_w_assumed": 20,
+  "solar": {
+    "windows": [
+      {
+        "start": "2026-10-03T13:54:52-07:00",
+        "end": "2026-10-03T13:59:11-07:00",
+        "secs": 260,
+        "median_w": 725
+      }
+    ],
+    "solar_w": 725,
+    "parked_secs": 2467,
+    "parked_secs_reading_zero": 2101,
+    "note": "Net solar = pack charge power while parked with the controller idle. Most parked time reads exactly 0 A, so the array was only feeding the pack (or in sun) during the windows listed - treat as provisional."
+  },
+  "break_even": [
+    {
+      "solar_w": 300,
+      "break_even_mph": 5.5,
+      "p10_mph": 4.6,
+      "p90_mph": 6.5
+    },
+    {
+      "solar_w": 500,
+      "break_even_mph": 9.2,
+      "p10_mph": 8.0,
+      "p90_mph": 10.3
+    },
+    {
+      "solar_w": 725,
+      "break_even_mph": 12.8,
+      "p10_mph": 11.5,
+      "p90_mph": 13.9
+    },
+    {
+      "solar_w": 1000,
+      "break_even_mph": 16.6,
+      "p10_mph": 15.2,
+      "p90_mph": 17.7
+    },
+    {
+      "solar_w": 1200,
+      "break_even_mph": 19.0,
+      "p10_mph": 17.5,
+      "p90_mph": 20.1
+    }
+  ],
+  "cruise_curve": [
+    {
+      "mph": 5,
+      "power_w": 250,
+      "p10_w": 213,
+      "p90_w": 302,
+      "wh_per_mi": 49.9
+    },
+    {
+      "mph": 10,
+      "power_w": 526,
+      "p10_w": 460,
+      "p90_w": 602,
+      "wh_per_mi": 52.6
+    },
+    {
+      "mph": 15,
+      "power_w": 854,
+      "p10_w": 779,
+      "p90_w": 962,
+      "wh_per_mi": 56.9
+    },
+    {
+      "mph": 20,
+      "power_w": 1262,
+      "p10_w": 1166,
+      "p90_w": 1421,
+      "wh_per_mi": 63.1
+    },
+    {
+      "mph": 25,
+      "power_w": 1775,
+      "p10_w": 1627,
+      "p90_w": 2085,
+      "wh_per_mi": 71.0
+    },
+    {
+      "mph": 30,
+      "power_w": 2420,
+      "p10_w": 2166,
+      "p90_w": 2984,
+      "wh_per_mi": 80.7
+    },
+    {
+      "mph": 35,
+      "power_w": 3223,
+      "p10_w": 2780,
+      "p90_w": 4220,
+      "wh_per_mi": 92.1
+    },
+    {
+      "mph": 40,
+      "power_w": 4210,
+      "p10_w": 3475,
+      "p90_w": 5743,
+      "wh_per_mi": 105.2
+    }
+  ],
+  "note": "Break-even = fastest steady speed where cruise power + aux load <= solar, i.e. range limited only by daylight. Average for the route driven (grade is folded into c1). p10/p90 from a 60 s block bootstrap."
+}

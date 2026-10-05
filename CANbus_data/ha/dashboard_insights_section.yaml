@@ -1,0 +1,33 @@
+# Dashboard section for packages/solar_car_insights.yaml. Paste into a
+# sections-view dashboard (raw configuration editor) or add the cards by hand.
+type: grid
+cards:
+  - type: heading
+    heading: Range & motor heat
+  - type: tile
+    entity: sensor.solar_car_estimated_range
+  - type: tile
+    entity: sensor.solar_car_recent_wh_per_mile
+  - type: tile
+    entity: sensor.solar_car_break_even_speed
+  - type: tile
+    entity: binary_sensor.solar_car_motor_overheat_soon
+  - type: entities
+    title: Motor heat forecast
+    entities:
+      - entity: sensor.ezkontrol_motor_temp
+        name: Motor temp now
+      - entity: sensor.solar_car_motor_temp_forecast
+        name: Heading for (at this load)
+      - type: attribute
+        entity: sensor.solar_car_motor_temp_forecast
+        attribute: secs_to_limit
+        name: Seconds to 130 °C
+        suffix: s
+  - type: entities
+    title: Estimate settings (0 = fitted default)
+    entities:
+      - entity: input_number.solar_car_solar_input_w
+        name: Solar input (default 725 W)
+      - entity: input_number.solar_car_pack_capacity_wh
+        name: Usable pack energy (default 4489 Wh)
