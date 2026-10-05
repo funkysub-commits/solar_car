@@ -75,8 +75,13 @@ capture logs/bestgo-probe-20260518-195228.txt, as a sanity check.
 --- 0x35F  Battery info ----------------------------------------------------
   Byte 0-1  u16  Battery / cell chemistry type code   [0x0000]
   Byte 2-3  u16  BMS firmware version  (0x0101 = v1.1)
-  Byte 4-5  u16  1 Ah   Nominal capacity                  [56 Ah]
+  Byte 4-5  u16  1 Ah   "Nominal capacity" -- see NOTE    [56 Ah]
   Byte 6-7  u16  Reserved / manufacturer code         [0x0000]
+  NOTE (corrected 2026-10-04): this BMS sends REMAINING capacity here, not a
+  rated constant. The capture's "56 Ah" was taken at SOC 56 %, and the pack
+  is a BWP-FE51100 (51.2 V 100 Ah), so remaining Ah == SOC % -- on the
+  2026-10-03 drive this field stepped 99, 98, ... 35 in lockstep with SOC.
+  Same for 0x379 below.
 
 --- 0x370 / 0x371  Battery name (ASCII, 16 bytes total) --------------------
   0x370 Byte 0-7  ASCII  Battery name characters  0-7
@@ -109,7 +114,9 @@ capture logs/bestgo-probe-20260518-195228.txt, as a sanity check.
   The indices change between cycles as the pack balances - expected.
 
 --- 0x379  Installed capacity ----------------------------------------------
-  Byte 0-1  u16  1 Ah   Installed (rated) pack capacity    [56 Ah]
+  Byte 0-1  u16  1 Ah   "Installed" capacity               [56 Ah]
+                         Actually remaining Ah on this BMS (== SOC % for the
+                         100 Ah pack); see the 0x35F NOTE.
   Byte 2-7  -            unused
 
 4. Implementation notes

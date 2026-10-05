@@ -7,7 +7,10 @@ and asserts the output matches BOTH pre-consolidation lineages
   * script short field names -> canonical names (sensor.<prefix>_<field>)
   * unrounded script floats  -> rounded to the canonical decimals
   * gear 0: "NO" -> "None"; brake/contactor "ON"/"off" -> "On"/"Off"
-  * op_mode: raw int (old add-on) -> name string
+  * op_mode: raw int (old add-on) -> name string; and the old name table
+    {0: "Normal", 2..4} missed the "0: Stop / 1: Drive" half of the enum that
+    sits on the other side of a page break in the PDF, so 0 is now "Stop"
+    (was "Normal") and 1 is "Drive" (was "?(1)")
   * errors: abbreviated names, ","-joined -> full names, ", "-joined
   * battery name: the old scripts concatenated the two name-frame payloads
     BEFORE the stop-at-first-NUL scan, so a NUL-padded first half swallowed
@@ -65,9 +68,10 @@ EZ_SCRIPT_MAP = [
     ("tctrl",     "controller_temp", None),
     ("tmot",      "motor_temp",      None),
     ("accel",     "throttle",        None),
-    ("mode",      "op_mode",         None),
     ("life",      "life",            None),
 ]
+
+SCRIPT_MODE_RENAMED = {"Normal": "Stop", "?(1)": "Drive"}
 
 ERR_SHORT2FULL = dict(
     list(zip(gold.ERRORS_A, gold.ERROR_BITS_BYTE4))
@@ -181,6 +185,8 @@ def test_ezkontrol_fixture_against_script_lineage():
         else:
             continue
         assert_mapped(new, old, EZ_SCRIPT_MAP, f"0x{arb:X}")
+        if "mode" in old:   # intentional: 0 "Normal" -> "Stop", 1 "?(1)" -> "Drive"
+            assert new["op_mode"] == SCRIPT_MODE_RENAMED.get(old["mode"], old["mode"])
         if "gear" in old:
             want = "None" if old["gear"] == "NO" else old["gear"]
             assert new["gear"] == want
@@ -213,6 +219,53 @@ def test_vendored_addon_package_in_sync():
         assert dst.exists(), f"{dst} missing -- run sync_addon.py"
         assert dst.read_text(encoding="utf-8") == sync_addon.vendored(f), \
             f"{dst.name} is stale -- run sync_addon.py"
+
+
+def test_op_mode_names_full_enum():
+    """Byte 3 bits 6-4: 0 Stop, 1 Drive, 2 Cruise, 3 EBS, 4 Hold (spec p.3-4)."""
+    dec = EzkontrolDecoder()
+    want = {0: "Stop", 1: "Drive", 2: "Cruise", 3: "EBS", 4: "Hold",
+            5: "?(5)", 6: "?(6)", 7: "?(7)"}
+    for mode, name in want.items():
+        data = bytes([60, 60, 0, (mode << 4) | 0x84, 0, 0, 0, 0])  # D2, contactor on
+        f = dec.decode(ezkontrol.MSG2_ID, data)
+        assert f["op_mode"] == name, f"mode {mode}: {f['op_mode']!r}"
+        assert f["gear"] == "D2" and f["dc_contactor"] == "On" and f["brake"] == "Off"
+
+
+def test_op_mode_seen_in_fixture():
+    """The bench capture has both mode 0 and mode 1 frames; neither may decode
+    to an unknown '?(n)' placeholder."""
+    modes = {EzkontrolDecoder().decode(arb, data)["op_mode"]
+             for arb, data in read_frames("ezkontrol-capture.asc")
+             if arb == ezkontrol.MSG2_ID}
+    assert {"Stop", "Drive"} <= modes, modes
+    assert not any(m.startswith("?") for m in modes), modes
+
+
+def test_bestgo_capacity_fields_track_soc_in_fixture():
+    """Documents real BMS behaviour (not a decoder bug): 0x35F bytes 4-5 and
+    0x379 bytes 0-1 carry remaining Ah, which on this 100 Ah pack equals SOC %.
+    Each comes from its own frame -- the decoder must not copy SOC into them."""
+    dec = BestgoDecoder()
+    soc = nom = inst = None
+    for arb, data in read_frames("bestgo-capture.asc"):
+        f = dec.decode(arb, data) or {}
+        if arb == bestgo.ID_SOC:
+            soc = f["soc"]
+            assert "nominal_capacity" not in f and "installed_capacity" not in f
+        elif arb == bestgo.ID_INFO:
+            nom = f["nominal_capacity"]
+            assert set(f) == {"chemistry", "firmware", "nominal_capacity"}
+        elif arb == bestgo.ID_CAPACITY:
+            inst = f["installed_capacity"]
+            assert set(f) == {"installed_capacity"}
+    assert soc == nom == inst == 56, (soc, nom, inst)
+    # and they really are independent bytes: a 0x35F with a different value
+    f = dec.decode(bestgo.ID_INFO, bytes([0, 0, 1, 1, 100, 0, 0, 0]))
+    assert f["nominal_capacity"] == 100
+    f = dec.decode(bestgo.ID_CAPACITY, bytes([0x2C, 0x01, 0, 0, 0, 0, 0, 0]))
+    assert f["installed_capacity"] == 300
 
 
 def test_foreign_and_short_frames():

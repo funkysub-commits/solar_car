@@ -357,8 +357,10 @@ vs. add-on not running (sensors `unavailable`).
 
 > [!NOTE]
 > Since app version 0.4.0, `sensor.ezkontrol_op_mode` reads a mode name
-> (`Normal` / `Cruise` / `EBS` / `Hold`) instead of a raw number — update
-> any automation that compared it numerically.
+> instead of a raw number — update any automation that compared it
+> numerically. Since 0.12.1 the names are `Stop` / `Drive` / `Cruise` /
+> `EBS` / `Hold` (mode 0 used to read `Normal` and mode 1 `?(1)`; EBS is
+> regen braking).
 
 `run.sh` brings up the `can0` interface at the configured bitrate before
 starting. If the USB-CAN adapter came up in STM32 DFU mode (so there is no

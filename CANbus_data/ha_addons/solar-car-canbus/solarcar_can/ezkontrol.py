@@ -21,7 +21,15 @@ MSG1_ID = 0x180117EF  # voltage, current, speed
 MSG2_ID = 0x180217EF  # temps, status, errors
 
 GEAR_NAMES = {0: "None", 1: "R", 2: "N", 3: "D1", 4: "D2", 5: "D3", 6: "S", 7: "P"}
-OP_MODE_NAMES = {0: "Normal", 2: "Cruise", 3: "EBS", 4: "Hold"}
+# Byte 3 bits 6-4. The MCU-to-Meter v1.1 PDF splits this list across a page
+# break: page 3 ends with an unlabelled "0: Stope / 1: Drive" row and page 4
+# continues "6-4 Operation Mode 2: Cruise 3: EBS 4: Hold" -- the two rows are
+# ONE enum. (Earlier decoders missed page 3's half, so 0 read "Normal" and 1
+# "?(1)".) Confirmed on the 2026-10-03 drive: 0 = standstill (rpm 0, throttle
+# 0, no current), 1 = throttle applied and pulling current, 3 = EBS
+# (electronic/regen braking: throttle released while rolling, bus current
+# negative).
+OP_MODE_NAMES = {0: "Stop", 1: "Drive", 2: "Cruise", 3: "EBS", 4: "Hold"}
 
 ERROR_BITS_BYTE4 = [
     "Overcurrent", "Overload", "Overvoltage", "Undervoltage",
@@ -135,7 +143,7 @@ def dummy_frames(t):
     tctrl = int(32 + throttle * 0.12)
     tmot = int(38 + throttle * 0.18)
     brake = 1 if math.sin(t / 4.0) > 0.8 else 0
-    sb = (4 & 7) | (brake << 3) | (1 << 7)        # gear D2, contactor ON
+    sb = (4 & 7) | (brake << 3) | (1 << 4) | (1 << 7)   # gear D2, mode Drive, contactor ON
     life = int(t * 10) & 0x0F
 
     m1 = bytearray(8)
@@ -165,7 +173,7 @@ def dummy_fields():
         "throttle":        random.randint(0, 100),
         "gear":            random.choice(["D1", "D2", "D3", "N"]),
         "brake":           random.choice(["Off", "Off", "Off", "On"]),
-        "op_mode":         "Normal",
+        "op_mode":         "Drive",
         "dc_contactor":    "On",
         "errors":          "None",
         "error_count":     0,

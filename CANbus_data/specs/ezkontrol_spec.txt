@@ -291,6 +291,9 @@ Brake
 1：Brake
 0：Stope
 1：Drive
+[PROJECT NOTE: this unlabelled row is the first half of the Operation Mode
+ enum (byte 3 bits 6-4) continued on page 4 -- full enum: 0 Stop, 1 Drive,
+ 2 Cruise, 3 EBS, 4 Hold. Confirmed against the 2026-10-03 drive data.]
 
 [page has 2 embedded images]
 

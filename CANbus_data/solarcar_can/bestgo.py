@@ -7,6 +7,16 @@ specs/bestgo_spec.txt for the full frame breakdown.
 NOTE: captured frames decode correctly against the spec, but the
 alarm/warning bit map (0x35A) is unverified, so the decoder reports the raw
 alarm/warning bytes (hex) rather than naming individual bits.
+
+CAPACITY FIELDS: on this pack (BWP-FE51100, 51.2 V 100 Ah) the BMS fills
+0x35F bytes 4-5 ("nominal capacity") and 0x379 bytes 0-1 ("installed
+capacity") with the REMAINING capacity in Ah, not a rated constant. With a
+100 Ah pack that is numerically equal to SOC %, so sensor.bestgo_nominal_
+capacity / _installed_capacity follow sensor.bestgo_soc step for step
+(99, 98, ... on the 2026-10-03 drive; 56/56/56 in the 2026-05-30 fixture).
+That is the BMS's data, not a decoder mix-up: the bytes are decoded from
+their own frames exactly per the protocol. The entity ids are kept so HA
+history stays continuous.
 """
 import math
 import random
@@ -20,7 +30,7 @@ ID_SOC      = 0x355   # SOC / SOH / hi-res SOC
 ID_MEAS     = 0x356   # pack voltage / current / temperature
 ID_ALARMS   = 0x35A   # alarm + warning bitfields
 ID_MFR      = 0x35E   # manufacturer name (ASCII)
-ID_INFO     = 0x35F   # chemistry / firmware version / capacity
+ID_INFO     = 0x35F   # chemistry / firmware version / capacity (tracks SOC, see below)
 ID_NAME0    = 0x370   # battery name chars 0-7 (ASCII)
 ID_NAME1    = 0x371   # battery name chars 8-15 (ASCII)
 ID_CELLEXT  = 0x373   # cell V & T min/max
@@ -28,7 +38,7 @@ ID_CELL_VLO = 0x374   # ID of min-voltage cell      (not decoded yet)
 ID_CELL_VHI = 0x375   # ID of max-voltage cell      (not decoded yet)
 ID_CELL_TLO = 0x376   # ID of min-temperature cell  (not decoded yet)
 ID_CELL_THI = 0x377   # ID of max-temperature cell  (not decoded yet)
-ID_CAPACITY = 0x379   # installed (rated) capacity
+ID_CAPACITY = 0x379   # "installed" capacity (tracks SOC on this BMS, see below)
 
 # IDs the decoder claims (a claimed ID never falls through to other decoders)
 BG_IDS = {ID_LIMITS, ID_SOC, ID_MEAS, ID_ALARMS, ID_MFR, ID_INFO,
