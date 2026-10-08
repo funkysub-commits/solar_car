@@ -1,6 +1,0 @@
-pandas>=2.2
-numpy
-scipy
-matplotlib
-pyarrow
-xlrd

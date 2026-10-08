@@ -271,14 +271,10 @@ def build(day):
     shutil.copytree(src / "figures", out / "figures")
     shutil.copy(src / "dashboard.html", out / "dashboard.html")
 
-    pit = out / "process_it_yourself"
-    (pit / "raw").mkdir(parents=True)
-    for f in SCRIPTS:
-        shutil.copy(HERE / f, pit / f)
-    (pit / "requirements.txt").write_text(REQUIREMENTS)
+    (out / "raw").mkdir(parents=True)
     raws = raw_files_for(day)
     for f in raws:
-        shutil.copy(f, pit / "raw" / f.name)
+        shutil.copy(f, out / "raw" / f.name)
 
     text = readme(day, drives, ov, models["motor_heat"], models["road_load_break_even"],
                   models["battery_capacity"], models["battery_health"], [f.name for f in raws])
