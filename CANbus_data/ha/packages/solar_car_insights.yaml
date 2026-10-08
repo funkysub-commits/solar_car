@@ -1,5 +1,5 @@
 # Home Assistant package: live estimates derived from the telemetry analysis
-# (data_proccesing/analysis.py, first fitted on the 2026-10-03 drive).
+# (data_processing/analysis.py, first fitted on the 2026-10-03 drive).
 #
 #   sensor.solar_car_controller_power     controller input power (bus V x bus A)
 #   sensor.solar_car_controller_energy    running total of the above (kWh)
@@ -16,7 +16,7 @@
 #   the binary sensor is on, and clears it (only if it's still our text).
 #
 # Model constants come from processed/<date>/analysis/*.json - update them here
-# when a new day's analysis disagrees. Rerun:  python data_proccesing/analysis.py
+# when a new day's analysis disagrees. Rerun:  python data_processing/analysis.py
 #
 # Deploy: deploy_addon.py --with-packages copies this file, but it only reloads
 # input_number/input_boolean - template, statistics, integration and automation
@@ -90,8 +90,9 @@ template:
         unique_id: solar_car_break_even_speed
         unit_of_measurement: "mph"
         icon: mdi:solar-power-variant
-        # Cruise power fit P = c1*v + c3*v^3 (v in m/s) + 20 W aux; the
-        # fastest speed where that is <= solar input. Default solar = 725 W,
+        # Cruise power fit P = c1*v + c3*v^3 (v in m/s), fitted above 8 mph;
+        # accessories run off their own battery so nothing else is added.
+        # State = the fastest speed where that is <= solar input. Default solar = 725 W,
         # the only parked charging window seen on 2026-10-03.
         state: >-
           {% set solar = states('input_number.solar_car_solar_input_w') | float(0) %}
@@ -100,7 +101,7 @@ template:
           {% for i in range(0, 801) %}
             {% set mph = i / 20 %}
             {% set v = mph * 0.44704 %}
-            {% if 109.7 * v + 0.393 * v ** 3 + 20 <= solar %}{% set ns.best = mph %}{% endif %}
+            {% if 109.9 * v + 0.392 * v ** 3 <= solar %}{% set ns.best = mph %}{% endif %}
           {% endfor %}
           {{ ns.best | round(1) }}
 

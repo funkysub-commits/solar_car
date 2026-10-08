@@ -1,0 +1,34 @@
+column,unit,description
+time,,Local time (Pacific) with UTC offset; one row per second.
+speed_mph,mph,Vehicle speed. Unreliable below ~8 mph (motor jumps around).
+odometer_mi,mi,"HA odometer (integrated speed), if it was exported."
+throttle_pct,%,Throttle pedal position.
+motor_rpm,rpm,Motor speed from the controller (5:1 to the wheel).
+mc_bus_voltage_v,V,Controller DC input voltage.
+mc_bus_current_a,A,Controller DC input current (negative = regen).
+mc_phase_current_a,A,Motor phase current - what heats the motor.
+pack_voltage_v,V,Main battery voltage (BMS).
+pack_current_a,A,Main battery current (BMS). Negative = discharging.
+soc_pct,%,Main battery state of charge (BMS).
+cell_v_min_mv,mV,Lowest cell voltage.
+cell_v_max_mv,mV,Highest cell voltage.
+cell_v_delta_mv,mV,Spread between highest and lowest cell (balance).
+mc_temp_c,°C,Motor controller temperature.
+motor_temp_c,°C,Motor temperature (reported in 5 °C steps).
+cell_temp_min_c,°C,Coolest cell temperature.
+cell_temp_max_c,°C,Hottest cell temperature.
+pack_temp_c,°C,Battery pack temperature.
+pi_cpu_temp_f,°F,Raspberry Pi CPU temperature (logger health).
+mc_online,,1 = motor controller sending data.
+bms_online,,1 = battery BMS sending data.
+can_adapter_up,,1 = USB-CAN adapter working.
+mc_error_count,,Number of active controller errors.
+pack_power_w,W,Battery power out (W). Negative = charging (solar/regen).
+mc_power_w,W,Controller input power (W) = bus V x bus A.
+pack_energy_out_wh,Wh,Running total of battery energy out (Wh).
+mc_energy_wh,Wh,Running total of controller energy in (Wh).
+mc_regen_wh,Wh,Running total of energy regenerated through the controller (Wh).
+pack_charge_in_wh,Wh,Running total of energy into the battery (Wh).
+distance_mi,mi,Running total distance from integrated speed (mi).
+moving,,True when |speed| > 1 mph.
+session,,Logging session number (new one after a 5 min gap in data).

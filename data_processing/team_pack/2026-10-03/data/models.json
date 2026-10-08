@@ -1,0 +1,166 @@
+{
+  "motor_heat": {
+    "equation": "dT/dt = a*(I_phase/100)^2 + b*(rpm/1000) - (T - T_amb)/tau  [C/s]",
+    "a": 0.028174589354658445,
+    "b": 0.00556647954792511,
+    "tau_s": 793.1665015931834,
+    "t_amb_c": 20.9124318255979,
+    "rmse_c": 3.8918482066200153,
+    "r2": 0.9825031681135131,
+    "points": 8498,
+    "limit_c": 130,
+    "steady_state_c": {
+      "100A@1500rpm": 49.9,
+      "150A@1500rpm": 77.8,
+      "200A@1500rpm": 116.9,
+      "300A@1000rpm": 226.5
+    },
+    "secs_to_limit_from_80c": {
+      "150A@1500rpm": null,
+      "200A@1500rpm": null,
+      "300A@1000rpm": 331
+    },
+    "max_continuous_phase_a_at_1500rpm": 214.0,
+    "warning_rule": "warn when the model predicts the motor reaches the limit within 60 s at the current load, i.e. T > Tss - (Tss - limit)*exp(60/tau)"
+  },
+  "road_load_break_even": {
+    "model": "P = c0 + c1*v + c3*v^3 + m*a*v  (v m/s, a m/s^2, P controller input W)",
+    "c0_w": 1.26122991507125e-14,
+    "c1_w_per_mps": 109.85795546163082,
+    "c3_w_per_mps3": 0.39221026515295876,
+    "mass_kg": 236.49576950279314,
+    "rolling_plus_grade_force_n": 109.9,
+    "drag_area_cda_m2": 0.65,
+    "r2": 0.43883859964981997,
+    "points": 1398,
+    "aux_load_w_assumed": 0,
+    "solar": {
+      "windows": [
+        {
+          "start": "2026-10-03T13:54:52-07:00",
+          "end": "2026-10-03T13:59:11-07:00",
+          "secs": 260,
+          "median_w": 725
+        }
+      ],
+      "solar_w": 725,
+      "parked_secs": 2467,
+      "parked_secs_reading_zero": 2101,
+      "note": "Net solar = pack charge power while parked with the controller idle. Most parked time reads exactly 0 A, so the array was only feeding the pack (or in sun) during the windows listed - treat as provisional."
+    },
+    "break_even": [
+      {
+        "solar_w": 300,
+        "break_even_mph": 5.9,
+        "p10_mph": 4.7,
+        "p90_mph": 6.9
+      },
+      {
+        "solar_w": 500,
+        "break_even_mph": 9.5,
+        "p10_mph": 8.1,
+        "p90_mph": 10.7
+      },
+      {
+        "solar_w": 725,
+        "break_even_mph": 13.1,
+        "p10_mph": 11.5,
+        "p90_mph": 14.3
+      },
+      {
+        "solar_w": 1000,
+        "break_even_mph": 16.9,
+        "p10_mph": 15.3,
+        "p90_mph": 18.0
+      },
+      {
+        "solar_w": 1200,
+        "break_even_mph": 19.3,
+        "p10_mph": 17.7,
+        "p90_mph": 20.6
+      }
+    ],
+    "cruise_curve": [
+      {
+        "mph": 5,
+        "power_w": 250,
+        "p10_w": 210,
+        "p90_w": 313,
+        "wh_per_mi": 50.0
+      },
+      {
+        "mph": 10,
+        "power_w": 526,
+        "p10_w": 456,
+        "p90_w": 621,
+        "wh_per_mi": 52.6
+      },
+      {
+        "mph": 15,
+        "power_w": 855,
+        "p10_w": 770,
+        "p90_w": 977,
+        "wh_per_mi": 57.0
+      },
+      {
+        "mph": 20,
+        "power_w": 1263,
+        "p10_w": 1150,
+        "p90_w": 1401,
+        "wh_per_mi": 63.1
+      },
+      {
+        "mph": 25,
+        "power_w": 1775,
+        "p10_w": 1603,
+        "p90_w": 2050,
+        "wh_per_mi": 71.0
+      },
+      {
+        "mph": 30,
+        "power_w": 2419,
+        "p10_w": 2178,
+        "p90_w": 2995,
+        "wh_per_mi": 80.6
+      },
+      {
+        "mph": 35,
+        "power_w": 3221,
+        "p10_w": 2808,
+        "p90_w": 4234,
+        "wh_per_mi": 92.0
+      },
+      {
+        "mph": 40,
+        "power_w": 4207,
+        "p10_w": 3501,
+        "p90_w": 5927,
+        "wh_per_mi": 105.2
+      }
+    ],
+    "note": "Break-even = fastest steady speed where cruise power <= solar, i.e. range limited only by daylight. Fitted above 8 mph only; average for the route driven (grade is folded into c1). p10/p90 from a 60 s block bootstrap."
+  },
+  "battery_capacity": {
+    "soc_from": 99.0,
+    "soc_to": 35.0,
+    "ah_counted": 57.5,
+    "wh_counted": 2922,
+    "usable_capacity_ah": 88.5,
+    "usable_capacity_wh": 4489,
+    "rated_capacity_ah": 100,
+    "median_pack_v": 52.1,
+    "note": "Capacity = Ah counted per 1% of BMS SOC drop x 100, vs the pack's 100 Ah rating (BWP-FE51100). Lower = capacity loss, an optimistic BMS SOC, or pack-current calibration; confirm with a full charge/discharge."
+  },
+  "battery_health": {
+    "pack_resistance_mohm": 18.4,
+    "weakest_cell_resistance_mohm": 1.21,
+    "cell_delta_at_rest_mv_median": 4.0,
+    "cell_delta_over_50a_mv_median": 11.5,
+    "cell_delta_max_mv": 85.0,
+    "min_cell_mv": 3120.0,
+    "max_cell_temp_c": 31.9,
+    "samples": 666,
+    "pack_vs_mc_current_ratio": 1.118,
+    "note": "Resistances from voltage sag vs current (SOC as covariate). Track these day to day: rising resistance or rest-delta = ageing / a weak cell. Nothing else runs off the main battery, so pack_vs_mc_current_ratio should be ~1; the gap is calibration between the two current sensors."
+  }
+}

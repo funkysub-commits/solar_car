@@ -39,3 +39,5 @@ haos_recovery_data/
 display/tests/golden/*.png
 
 logs/
+# Generated team hand-out zips (rebuild: python data_processing/make_team_pack.py)
+data_processing/team_pack/*.zip
