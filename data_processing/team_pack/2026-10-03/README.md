@@ -63,7 +63,6 @@ Charts for each drive: [Drive 1](figures/drive_01.png) · [Drive 2](figures/driv
 | `data/events.csv` | Log of state changes: errors, drive mode, regen, sensors dropping out. |
 | `data/efficiency_vs_speed.csv` | Power and Wh/mile at steady speeds, by speed band. |
 | `data/models.json` | Fitted numbers: motor heat model, road-load / break-even model, battery capacity and health. |
-| `process_it_yourself/` | The scripts and the raw export, to rerun or extend the analysis (below). |
 
 ## Look at the data yourself
 
@@ -77,23 +76,6 @@ import pandas as pd
 df = pd.read_csv("data/telemetry_1s.csv", parse_dates=["time"], index_col="time")
 df.loc[df.moving, ["speed_mph", "mc_power_w"]].plot(subplots=True)
 ```
-
-## Rerun the processing
-
-You need Python 3.10+.
-
-```
-cd process_it_yourself
-pip install -r requirements.txt
-python telemetry.py        # raw/ export(s) -> processed/<date>/ tables
-python analysis.py         # -> processed/<date>/analysis/, figures/, dashboard.html
-python make_team_pack.py   # rebuild a folder like this one
-```
-
-`telemetry.py` reads every export in `raw/` (`solarcar_raw_readings_2026-10-03.xls`).
-New exports come from the CANbus add-on's **Telemetry Export** page in Home Assistant
-(the CSV with a `time_utc` column); drop them into `raw/` and rerun. The older
-"Raw readings" `.xls` lists work too.
 
 ## Words used here
 
