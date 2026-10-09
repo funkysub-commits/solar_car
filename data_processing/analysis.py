@@ -154,16 +154,134 @@ def thermal_model(w):
 
 # --- 3. Efficiency vs speed --------------------------------------------------------
 
-def efficiency_vs_speed(w, window=8):
+CAR_MASS_KG = 237  # car + driver, from the road-load fit; used for kinetic energy
+BRAKE_DRAG_RATIO = 1.6  # steady W/mph this many times the day's median = brake dragging
+
+
+def _steady(w, window=8, band=3.0):
+    """Rolling windows where speed stays within `band` mph and above LOW_SPEED_MPH."""
+    roll = w["speed_mph"].rolling(window)
+    return ((roll.max() - roll.min()) < band) & (roll.min() > LOW_SPEED_MPH)
+
+
+def drive_efficiency(w, drives):
+    """Per-drive driving-style and efficiency numbers, plus a brake-drag flag.
+
+    A drive whose steady-speed power per mph is far above the others' had
+    something fighting the motor (on 2026-10-03 the brake was held down), so
+    it is flagged and kept out of the cruise-efficiency fits.
+    """
+    r = w[["speed_mph", "mc_power_w"]].rolling(8).mean()
+    steady = _steady(w)
+    rows = []
+    for _, d in drives.iterrows():
+        s = w.loc[d["start"]:d["end"]]
+        st = r.loc[d["start"]:d["end"]][steady.loc[d["start"]:d["end"]]]
+        mv = s[s["speed_mph"] > LOW_SPEED_MPH]
+        v = s["speed_mph"].clip(lower=0).rolling(3, center=True).mean() * MPS
+        dke = (0.5 * CAR_MASS_KG * v ** 2).diff()
+        e_in = s["mc_power_w"].clip(lower=0).sum() / 3600
+        regen = -s["mc_power_w"].clip(upper=0).sum() / 3600
+        accel = dke[dke > 0].sum() / 3600
+        rows.append({
+            "drive": int(d["drive"]), "distance_mi": d["distance_mi"],
+            "wh_per_mi": d["wh_per_mi"], "avg_moving_mph": d["avg_moving_mph"],
+            "steady_w_per_mph": round(float((st["mc_power_w"] / st["speed_mph"]).median()), 1)
+            if len(st) else np.nan,
+            "mean_throttle_pct": round(float(mv["throttle_pct"].mean()), 0) if len(mv) else np.nan,
+            "full_throttle_pct": round(float(100 * (mv["throttle_pct"] >= 99).mean()), 0)
+            if len(mv) else np.nan,
+            "slowing_on_throttle_s": int(((s["throttle_pct"] > 50)
+                                          & (s["speed_mph"].diff(3) < -3)).sum()),
+            "coasting_s": int(((s["throttle_pct"] == 0) & (s["speed_mph"] > LOW_SPEED_MPH)).sum()),
+            "stops": int(((s["speed_mph"] < 1) & (s["speed_mph"].shift() >= 1)).sum()),
+            "energy_in_wh": round(e_in),
+            "speeding_up_wh": round(accel),
+            "speeding_up_pct": round(100 * accel / e_in, 1) if e_in > 0 else np.nan,
+            "regen_wh": round(regen, 1),
+            "regen_of_speeding_up_pct": round(100 * regen / accel, 1) if accel > 0 else np.nan,
+            "mc_errors": int(d["mc_errors"]),
+        })
+    df = pd.DataFrame(rows)
+    med = df["steady_w_per_mph"].median()
+    df["brake_drag_suspected"] = df["steady_w_per_mph"] > BRAKE_DRAG_RATIO * med
+    return df
+
+
+def fit_mask(w, drives, exclude):
+    """True everywhere except inside the excluded drives."""
+    m = pd.Series(True, index=w.index)
+    for _, d in drives[drives["drive"].isin(exclude)].iterrows():
+        m.loc[d["start"]:d["end"]] = False
+    return m
+
+
+def power_gap(w, long):
+    """Battery (BMS) vs motor controller: where the two power readings differ.
+
+    Uses only the high-resolution stretch (both logged ~1 s) when there is
+    one; 10 s battery samples are too coarse to compare second by second.
+    """
+    # Sample spacing of the raw battery-current readings (the 1 s table holds
+    # values forward, so it can't show this).
+    t = long.loc[long["channel"] == "pack_current_a", "time"].sort_values()
+    gaps = t.diff().dt.total_seconds().rolling(30).median()
+    fast_from = t[gaps < 2.5]
+    hi = w.loc[fast_from.iloc[0].floor("s"):] if len(fast_from) else w.iloc[0:0]
+    out = {"hi_res_from": hi.index[0].isoformat() if len(hi) else None}
+    both = lambda s: s["pack_current_a"].notna() & s["mc_bus_current_a"].notna() & controller_active(s)
+    for name, s in [("hi_res", hi), ("whole_day", w)]:
+        b = both(s)
+        ib, im = -s.loc[b, "pack_current_a"], s.loc[b, "mc_bus_current_a"]
+        out[name] = {"seconds": int(b.sum()),
+                     "battery_ah": round(float(ib.sum() / 3600), 2),
+                     "controller_ah": round(float(im.sum() / 3600), 2),
+                     "battery_wh": round(float(s.loc[b, "pack_power_w"].sum() / 3600)),
+                     "controller_wh": round(float(s.loc[b, "mc_power_w"].sum() / 3600))}
+    src = hi if len(hi) > 300 else w
+    x, y = -src["pack_current_a"], src["mc_bus_current_a"]
+    lags = range(0, 8)
+    corr = [x.shift(-l)[(x.shift(-l).notna() & y.notna() & src["moving"])].corr(
+        y[(x.shift(-l).notna() & y.notna() & src["moving"])]) for l in lags]
+    lag = int(np.nanargmax(corr))
+    xs, ys = x.shift(-lag).rolling(10).mean(), y.rolling(10).mean()
+    ok = xs.notna() & ys.notna() & (ys > 5)
+    slope, offset = np.polyfit(ys[ok], xs[ok], 1)
+    idle = controller_active(w) & (w["speed_mph"].abs() < 0.3) & (w["throttle_pct"] == 0)
+    load = w["mc_bus_current_a"] > 5
+    dv = (w["pack_voltage_v"] - w["mc_bus_voltage_v"])
+    r_mohm = 1000 * np.polyfit(w.loc[load & dv.notna(), "mc_bus_current_a"], dv[load & dv.notna()], 1)[0]
+    return out | {
+        "battery_lag_s": lag,
+        "fit_battery_a_vs_controller_a": {"slope": round(float(slope), 3),
+                                          "offset_a": round(float(offset), 2),
+                                          "corr": round(float(xs[ok].corr(ys[ok])), 3)},
+        "extra_power_w_at_pack_v": round(float(offset * w["pack_voltage_v"].median())),
+        "idle_battery_a": float((-w.loc[idle, "pack_current_a"]).median()),
+        "idle_voltage_offset_v": round(float(dv[idle].median()), 2),
+        "wiring_resistance_mohm": round(float(r_mohm), 1),
+        "points": [[round(float(a), 1), round(float(b), 1)]
+                   for a, b in zip(ys[ok].iloc[::5], xs[ok].iloc[::5])],
+        "note": ("Battery current tracks controller current almost exactly in scale, but "
+                 "reads a steady offset higher whenever the motor runs (zero when parked): "
+                 "a small load that is only on while driving, or a ~1 A offset in the "
+                 "controller's current sensor. The battery also reads slightly higher "
+                 "voltage at rest (calibration) and the cabling/contactor/fuse drop adds "
+                 "a few milliohms. Before the high-resolution switch the battery current "
+                 "was logged only every ~10 s, so per-drive battery energy is noisy."),
+    }
+
+
+def efficiency_vs_speed(w, window=8, mask=None):
     """Wh/mi in steady cruising (speed within a 3 mph band over `window` s).
 
     Only above LOW_SPEED_MPH: below that the motor jumps around and the
-    readings aren't trustworthy.
+    readings aren't trustworthy. `mask` drops excluded stretches (brake drag).
     """
-    sp = w["speed_mph"]
-    roll = sp.rolling(window)
-    steady = ((roll.max() - roll.min()) < 3.0) & (roll.min() > LOW_SPEED_MPH) \
-        & w["mc_power_w"].rolling(window).count().eq(window)
+    steady = _steady(w, window) & w["mc_power_w"].rolling(window).count().eq(window)
+    if mask is not None:
+        steady &= mask
+    roll = w["speed_mph"].rolling(window)
     p = w["mc_power_w"].rolling(window).mean()
     v = roll.mean()
     pts = pd.DataFrame({"speed": v[steady], "power_w": p[steady]})
@@ -213,19 +331,22 @@ def solar_estimate(w, min_secs=60):
     }
 
 
-def road_load(w, n_boot=200, seed=0, max_accel=0.15):
+def road_load(w, n_boot=200, seed=0, max_accel=0.15, mask=None):
     """Fit P_controller = c0 + c1*v + c3*v^3 + m*a*v (all >= 0) on 5 s smoothed data.
 
-    c0 ~ controller/motor no-load loss, c1*v ~ rolling resistance (+ average
-    grade), c3*v^3 ~ aero drag, m ~ effective mass (kg). v in m/s.
-    Only near-steady samples (|a| < max_accel) are used, with a robust loss so
-    hill climbs and launches don't drag the cruise curve up.
+    c0 ~ controller/motor no-load loss, c1*v ~ rolling resistance plus
+    drivetrain/motor losses (the route was flat), c3*v^3 ~ aero drag,
+    m ~ effective mass (kg). v in m/s. Only near-steady samples
+    (|a| < max_accel) are used, with a robust loss so launches and the odd
+    spike don't drag the cruise curve up; `mask` drops excluded drives.
     """
     r = w[["speed_mph", "mc_power_w"]].rolling(5, center=True).mean()
     v = r["speed_mph"] * MPS
     a = (v.shift(-2) - v.shift(2)) / 4
     m = ((r["speed_mph"] > LOW_SPEED_MPH) & r["mc_power_w"].notna() & a.notna()
          & controller_active(w) & (a.abs() < max_accel))
+    if mask is not None:
+        m &= mask
     X = np.column_stack([np.ones(m.sum()), v[m], v[m] ** 3, (a * v)[m]])
     y = r["mc_power_w"][m].to_numpy()
 
@@ -260,10 +381,10 @@ def break_even(c, solar_w, aux_w=0):
     return float(ok.max()) if len(ok) else 0.0
 
 
-def solar_break_even(w, aux_w=0):
+def solar_break_even(w, aux_w=0, mask=None, excluded=()):
     # aux_w: other loads on the main battery. Accessories have their own
     # battery, so it is 0 on this car.
-    c, boots, r2, n = road_load(w)
+    c, boots, r2, n = road_load(w, mask=mask)
     sol = solar_estimate(w)
     levels = sorted({300, 500, 1000, 1200, sol["solar_w"] or 720})
     table = []
@@ -283,13 +404,14 @@ def solar_break_even(w, aux_w=0):
         "model": "P = c0 + c1*v + c3*v^3 + m*a*v  (v m/s, a m/s^2, P controller input W)",
         "c0_w": c[0], "c1_w_per_mps": c[1], "c3_w_per_mps3": c[2], "mass_kg": c[3],
         # Same terms in physical units (includes motor/controller losses).
-        "rolling_plus_grade_force_n": round(c[1], 1),
+        "rolling_and_drivetrain_force_n": round(c[1], 1),
         "drag_area_cda_m2": round(c[2] / (0.5 * 1.2), 2),
         "r2": r2, "points": n, "aux_load_w_assumed": aux_w,
+        "excluded_drives": [int(x) for x in excluded],
         "solar": sol, "break_even": table, "cruise_curve": curve,
         "note": ("Break-even = fastest steady speed where cruise power <= solar, "
-                 "i.e. range limited only by daylight. Fitted above 8 mph only; average for the route driven "
-                 "(grade is folded into c1). p10/p90 from a 60 s block bootstrap."),
+                 "i.e. range limited only by daylight. Flat route; fitted above 8 mph only, "
+                 "leaving out drives with brake drag. p10/p90 from a 60 s block bootstrap."),
     }
 
 
@@ -483,9 +605,110 @@ def analysis_figures(w, eff_tbl, eff_pts, thermal, model, ov, figdir):
     plt.close(fig)
 
 
+def efficiency_figures(de, gap, figdir):
+    """Per-drive Wh/mi, where each drive's energy went, battery vs controller current."""
+    brake = de["brake_drag_suspected"]
+    labels = [f"Drive {d}" for d in de["drive"]]
+
+    fig, ax = plt.subplots(figsize=(8, 4), facecolor=SURFACE)
+    _style(ax)
+    colors = [S2 if b else S1 for b in brake]
+    bars = ax.bar(labels, de["wh_per_mi"], color=colors, width=0.6)
+    for b, v, flag, thr in zip(bars, de["wh_per_mi"], brake, de["full_throttle_pct"]):
+        ax.text(b.get_x() + b.get_width() / 2, v + 2, f"{v:.0f}", ha="center", fontsize=9, color=INK)
+        if flag:
+            ax.text(b.get_x() + b.get_width() / 2, v + 14, "brake held", ha="center",
+                    fontsize=8, color=INK2)
+    ax.set_ylabel("Wh per mile (controller input)")
+    ax.set_title("Energy per mile by drive (lower is better)", loc="left", fontsize=10, color=INK)
+    ax.set_ylim(0, de["wh_per_mi"].max() * 1.25)
+    fig.savefig(figdir / "efficiency_by_drive.png", dpi=110, bbox_inches="tight", facecolor=SURFACE)
+    plt.close(fig)
+
+    # Where the energy went: speeding up vs everything else (cruising + losses).
+    fig, ax = plt.subplots(figsize=(8, 4), facecolor=SURFACE)
+    _style(ax)
+    acc = de["speeding_up_wh"].clip(upper=de["energy_in_wh"])
+    rest = de["energy_in_wh"] - acc
+    ax.bar(labels, rest, color=S1, width=0.6, label="cruising, losses and drag")
+    ax.bar(labels, acc, bottom=rest, color=S4, width=0.6, label="speeding up (kinetic energy)",
+           edgecolor=SURFACE, linewidth=2)
+    for i, (r, a, g) in enumerate(zip(rest, acc, de["regen_wh"])):
+        ax.text(i, r + a + 12, f"regen {abs(g):.0f} Wh", ha="center", fontsize=8, color=INK2)
+    ax.set_ylabel("Energy (Wh)")
+    ax.set_ylim(0, (rest + acc).max() * 1.15)
+    ax.legend(loc="upper left", frameon=False, fontsize=8, labelcolor=INK2)
+    ax.set_title(f"Where each drive's energy went (car + driver ≈ {CAR_MASS_KG} kg)",
+                 loc="left", fontsize=10, color=INK)
+    fig.savefig(figdir / "energy_breakdown.png", dpi=110, bbox_inches="tight", facecolor=SURFACE)
+    plt.close(fig)
+
+    # Battery vs controller current (10 s averages, high-res period).
+    pts = np.array(gap["points"]) if gap["points"] else np.empty((0, 2))
+    fig, ax = plt.subplots(figsize=(6, 5), facecolor=SURFACE)
+    _style(ax)
+    if len(pts):
+        ax.scatter(pts[:, 0], pts[:, 1], s=14, color=S1, alpha=.5, lw=0)
+        hi = max(pts.max(), 10)
+        ax.plot([0, hi], [0, hi], color=MUTED, lw=1)
+        f = gap["fit_battery_a_vs_controller_a"]
+        ax.plot([0, hi], [f["offset_a"], f["slope"] * hi + f["offset_a"]], color=S2, lw=2)
+        ax.text(hi * 0.04, hi * 0.92,
+                f"battery = {f['slope']:.2f} × controller + {f['offset_a']:.1f} A\n"
+                f"(≈ {gap['extra_power_w_at_pack_v']} W extra while driving)",
+                fontsize=9, color=INK, va="top")
+        ax.text(hi * 0.98, hi * 0.9, "equal", fontsize=8, color=MUTED, ha="right")
+    ax.set_xlabel("Controller input current (A, 10 s average)", color=INK2, fontsize=9)
+    ax.set_ylabel("Battery output current (A)")
+    ax.set_title("Battery vs controller current", loc="left", fontsize=10, color=INK)
+    fig.savefig(figdir / "battery_vs_controller.png", dpi=110, bbox_inches="tight", facecolor=SURFACE)
+    plt.close(fig)
+
+
 # --- Dashboard payload ------------------------------------------------------------
 
-def dashboard_payload(day, w, drives, ov, eff_tbl, model, cap, health, be):
+def md_to_html(md):
+    """Tiny Markdown subset for the day notes: #/## headings, - bullets, **bold**, paragraphs."""
+    import html
+    import re
+    out, para, items = [], [], []
+
+    def inline(t):
+        return re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", html.escape(t))
+
+    def flush():
+        if para:
+            out.append(f"<p>{inline(' '.join(para))}</p>"); para.clear()
+        if items:
+            out.append("<ul>" + "".join(f"<li>{inline(i)}</li>" for i in items) + "</ul>"); items.clear()
+    for line in md.splitlines():
+        t = line.strip()
+        if not t:
+            flush()
+        elif t.startswith("#"):
+            flush()
+            lvl = min(len(t) - len(t.lstrip("#")) + 1, 4)
+            out.append(f"<h{lvl}>{inline(t.lstrip('#').strip())}</h{lvl}>")
+        elif t.startswith(("- ", "* ")):
+            if para:
+                flush()
+            items.append(t[2:])
+        elif items and line.startswith("  "):
+            items[-1] += " " + t
+        else:
+            para.append(t)
+    flush()
+    return "\n".join(out)
+
+
+def day_notes(day):
+    """The team's own notes for the day (notes/<date>.md), if written."""
+    f = Path(__file__).parent / "notes" / f"{day}.md"
+    return f.read_text(encoding="utf-8") if f.exists() else ""
+
+
+def dashboard_payload(day, w, drives, ov, eff_tbl, model, cap, health, be,
+                      drive_eff=None, gap=None, notes=""):
     cols = ["speed_mph", "throttle_pct", "mc_power_w", "pack_power_w", "motor_temp_c",
             "mc_temp_c", "cell_temp_max_c", "soc_pct", "mc_phase_current_a",
             "cell_v_delta_mv", "pack_voltage_v"]
@@ -501,7 +724,10 @@ def dashboard_payload(day, w, drives, ov, eff_tbl, model, cap, health, be):
 
     return {"date": day, "series": series, "drives": rec(drives), "overloads": rec(ov),
             "efficiency": rec(eff_tbl), "thermal": model, "capacity": cap, "health": health,
-            "break_even": be}
+            "break_even": be,
+            "drive_eff": rec(drive_eff) if drive_eff is not None else [],
+            "power_gap": gap, "notes_html": md_to_html(notes) if notes else "",
+            "car_mass_kg": CAR_MASS_KG}
 
 
 # --- Driver --------------------------------------------------------------------------
@@ -523,9 +749,15 @@ def analyse(day_dir):
     model, thermal = thermal_model(w)
     thermal.round(2).to_csv(out / "thermal_fit.csv")
     (out / "thermal_model.json").write_text(json.dumps(model, indent=2))
-    eff_tbl, eff_pts = efficiency_vs_speed(w)
+    drive_eff = drive_efficiency(w, drives)
+    drive_eff.to_csv(out / "drive_efficiency.csv", index=False)
+    excluded = drive_eff.loc[drive_eff["brake_drag_suspected"], "drive"].tolist()
+    mask = fit_mask(w, drives, excluded)
+    eff_tbl, eff_pts = efficiency_vs_speed(w, mask=mask)
     eff_tbl.to_csv(out / "efficiency_vs_speed.csv", index=False)
-    be = solar_break_even(w)
+    gap = power_gap(w, long)
+    (out / "power_gap.json").write_text(json.dumps(gap, indent=2))
+    be = solar_break_even(w, mask=mask, excluded=excluded)
     (out / "solar_break_even.json").write_text(json.dumps(be, indent=2))
     break_even_figure(be, eff_tbl, figdir)
     cap = capacity(w)
@@ -543,8 +775,11 @@ def analyse(day_dir):
                            f"{len(ov)} controller errors (red lines) · 15 s averages",
                      smooth=15)
     analysis_figures(w, eff_tbl, eff_pts, thermal, model, ov, figdir)
+    efficiency_figures(drive_eff, gap, figdir)
 
-    payload = dashboard_payload(day, w, drives, ov, eff_tbl, model, cap, health, be)
+    notes = day_notes(day)
+    payload = dashboard_payload(day, w, drives, ov, eff_tbl, model, cap, health, be,
+                                drive_eff, gap, notes)
     data = json.dumps(payload, separators=(",", ":"))
     (out / "dashboard.json").write_text(data)
     tpl = (Path(__file__).parent / "dashboard_template.html").read_text(encoding="utf-8")
@@ -572,8 +807,9 @@ def analyse(day_dir):
     with pd.option_context("display.width", 250, "display.max_columns", 30):
         print(ov.to_string(index=False))
         print(eff_tbl.to_string(index=False))
+        print(drive_eff.to_string(index=False))
     for name, obj in [("thermal", model), ("capacity", cap), ("health", health),
-                      ("break_even", be)]:
+                      ("break_even", be), ("power_gap", {k: v for k, v in gap.items() if k != "points"})]:
         print(name, json.dumps(obj, indent=1, default=str))
 
 

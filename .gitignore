@@ -41,3 +41,5 @@ display/tests/golden/*.png
 logs/
 # Generated team hand-out zips (rebuild: python data_processing/make_team_pack.py)
 data_processing/team_pack/*.zip
+data_processing/site/public/
+data_processing/site/.firebase/

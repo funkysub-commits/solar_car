@@ -98,6 +98,13 @@ dl.stats { display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; margin
 dl.stats dt { color: var(--ink2); }
 dl.stats dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
 .notes { margin: 0; padding-left: 18px; display: grid; gap: 6px; color: var(--ink2); font-size: 0.86rem; }
+.divider { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+.divider::after { content: ""; flex: 1; height: 1px; background: var(--axis); }
+.story h2, .story h3 { margin: 4px 0 6px; }
+.story h3 { font-size: 1rem; color: var(--ink2); }
+.story p { margin: 0 0 8px; max-width: 75ch; }
+.story ul { margin: 0 0 10px; padding-left: 18px; display: grid; gap: 6px; }
+.story #story > h2:first-child { display: none; }
 @media (max-width: 560px) { .ctl { grid-template-columns: 1fr 64px; } .ctl label { grid-column: 1 / -1; } h1 { font-size: 1.7rem; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
@@ -109,11 +116,18 @@ dl.stats dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; 
     <p class="sub" id="lede"></p>
   </header>
 
+  <!-- 1. The day in brief -->
   <section class="tiles" id="tiles" aria-label="Day summary"></section>
 
-  <section class="panel" aria-labelledby="f-h">
-    <header><h2 id="f-h">What the data says</h2></header>
-    <ul class="findings" id="findings"></ul>
+  <section class="two">
+    <div class="panel story" aria-labelledby="s-h" id="story-panel">
+      <header><h2 id="s-h">The day</h2></header>
+      <div id="story"></div>
+    </div>
+    <div class="panel" aria-labelledby="f-h">
+      <header><h2 id="f-h">What the data says</h2></header>
+      <ul class="findings" id="findings"></ul>
+    </div>
   </section>
 
   <section class="panel" aria-labelledby="t-h">
@@ -124,9 +138,28 @@ dl.stats dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; 
     <div class="stack" id="stack"></div>
   </section>
 
+  <!-- 2. Efficiency -->
+  <div class="divider"><span class="eyebrow">Efficiency</span></div>
+  <section class="two">
+    <div class="panel" aria-labelledby="e1-h">
+      <header><div><h2 id="e1-h">Energy per mile by drive</h2><p>Controller input energy ÷ distance. Lower is better.</p></div></header>
+      <svg id="eff-bars" role="img" aria-label="Wh per mile for each drive"></svg>
+      <p class="fine" id="eff-bars-fine"></p>
+    </div>
+    <div class="panel" aria-labelledby="e2-h">
+      <header><div><h2 id="e2-h">Where the energy went</h2><p>Energy spent speeding the car up, against everything else.</p></div></header>
+      <svg id="eff-split" role="img" aria-label="Energy split per drive"></svg>
+      <div class="legend" style="margin-top:6px">
+        <span><i class="key" style="background:var(--s1);height:10px"></i>Cruising, losses and drag</span>
+        <span><i class="key" style="background:var(--s4);height:10px"></i>Speeding up</span>
+      </div>
+      <p class="fine" id="eff-split-fine"></p>
+    </div>
+  </section>
+
   <section class="tools">
     <div class="panel" aria-labelledby="be-h">
-      <header><div><h2 id="be-h">Solar break-even speed</h2><p>Fastest steady speed the array alone can sustain.</p></div></header>
+      <header><div><h2 id="be-h">Solar break-even speed</h2><p>Fastest steady speed the solar array alone can sustain.</p></div></header>
       <div class="controls">
         <div class="ctl"><label for="solar">Solar input</label><input id="solar" type="range" min="100" max="1500" step="5"><output id="solar-o"></output></div>
       </div>
@@ -140,6 +173,17 @@ dl.stats dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; 
       <p class="fine" id="be-fine"></p>
     </div>
 
+    <div class="panel" aria-labelledby="g-h">
+      <header><div><h2 id="g-h">Battery vs controller power</h2><p>The battery's own reading against what the motor controller says it draws.</p></div></header>
+      <div class="readout"><div class="big num" id="gap-big"></div><p id="gap-text"></p></div>
+      <svg id="gap-chart" role="img" aria-label="Battery current against controller current"></svg>
+      <dl class="stats" id="gap-stats" style="margin-top:10px"></dl>
+    </div>
+  </section>
+
+  <!-- 3. Motor and controller -->
+  <div class="divider"><span class="eyebrow">Motor and controller</span></div>
+  <section class="tools">
     <div class="panel" aria-labelledby="mh-h">
       <header><div><h2 id="mh-h">Motor heat</h2><p>Fitted thermal model. Where does the motor end up at a sustained load?</p></div></header>
       <div class="controls">
@@ -154,10 +198,12 @@ dl.stats dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; 
   </section>
 
   <section class="panel" aria-labelledby="o-h">
-    <header><div><h2 id="o-h">Controller errors</h2><p>The 20 s before each error. "Power cycle" means the controller was switched off to clear it.</p></div></header>
-    <div class="tablewrap"><table id="ov"></table></div>
-  </section>
+      <header><div><h2 id="o-h">Controller errors</h2><p>The 20 s before each error. "Power cycle" means the controller was switched off to clear it. * = below 8 mph, where readings are rough.</p></div></header>
+      <div class="tablewrap"><table id="ov"></table></div>
+    </section>
 
+  <!-- 4. Details -->
+  <div class="divider"><span class="eyebrow">Details</span></div>
   <section class="panel" aria-labelledby="d-h">
     <header><div><h2 id="d-h">Drives</h2><p>Moving stretches, merged across stops shorter than 2 min. Energy is controller input.</p></div></header>
     <div class="tablewrap"><table id="drives"></table></div>
@@ -197,7 +243,11 @@ const solarW = BE.solar.solar_w || 725;
 const beMain = BE.break_even.find(r => r.solar_w === solarW) || BE.break_even[0];
 document.getElementById("lede").textContent =
   `${drives.length} drives, ${fmt(dist, 1)} miles between ${hm(iso2s(drives[0].start))} and ${hm(iso2s(drives[drives.length - 1].end))} (Pacific). ` +
-  `Everything below is recomputed from the raw Home Assistant export by data_processing/analysis.py.`;
+  `The page starts with the day in brief and gets more detailed as you scroll.`;
+const DE = D.drive_eff || [], GAP = D.power_gap;
+const brakeDrives = DE.filter(d => d.brake_drag_suspected).map(d => d.drive);
+if (D.notes_html) document.getElementById("story").innerHTML = D.notes_html;
+else document.getElementById("story-panel").hidden = true;
 const tiles = [
   ["Distance", fmt(dist, 1), "mi", `${drives.length} drives`],
   ["Energy use", fmt(wh / dist, 0), "Wh/mi", "day average, incl. stop-start"],
@@ -217,8 +267,11 @@ const cc = Object.fromEntries(BE.cruise_curve.map(c => [c.mph, c]));
 const findings = [
   ["--critical", `<b>${launches.length} of ${ov.length} overload errors happened while pulling away from a stop</b>, nearly always at 100% throttle, with reported phase current peaks of ${fmt(minA)}–${fmt(peakA)} A. Low-speed readings are jumpy because the motor struggles there, so treat those peaks as rough. Easing into the throttle from a standstill, or lowering the controller's launch current limit, should remove most of them.`],
   ["--s2", stall ? `<b>The motor stalled at ${fmt(stall.motor_temp_c)} °C at ${hm(iso2s(stall.time))}</b> after a long stretch near full power (see the timeline). The fitted thermal model (time constant ${fmt(TM.tau_s / 60)} min) says the motor can sustain roughly ${fmt(TM.max_continuous_phase_a_at_1500rpm)} A of phase current at 1500 rpm before it reaches that limit.` : ""],
-  ["--s4", `<b>Break-even is about ${fmt(beMain.break_even_mph, 1)} mph with ${solarW} W of solar</b> (range ${fmt(beMain.p10_mph, 1)}–${fmt(beMain.p90_mph, 1)}). That solar figure comes from ${BE.solar.windows.length} parked charging window(s), so measure the array properly before relying on it.`],
-  ["--s1", `<b>Steady cruising costs about ${fmt(cc[10].wh_per_mi)} Wh/mi at 10 mph, ${fmt(cc[20].wh_per_mi)} at 20 and ${fmt(cc[30].wh_per_mi)} at 30.</b> The day average of ${fmt(wh / dist)} Wh/mi is higher because of launches and hills. Regen recovered under 5% on every drive.`],
+  ["--s2", brakeDrives.length ? (() => { const b = DE.find(d => d.drive === brakeDrives[0]); const others = DE.filter(d => !d.brake_drag_suspected); const med = others.map(d => d.steady_w_per_mph).sort((a, b) => a - b)[Math.floor(others.length / 2)];
+    return `<b>Drive ${brakeDrives.join(", ")} was driven with the brake held down.</b> At steady speeds it needed ${fmt(b.steady_w_per_mph)} W per mph against about ${fmt(med)} for the other drives, and spent ${fmt(b.full_throttle_pct)}% of the time at full throttle. That drive used ${fmt(b.wh_per_mi)} Wh/mi, and it's the one where the motor overheated. It's left out of the efficiency and break-even fits.`; })() : ""],
+  ["--s4", `<b>Break-even is about ${fmt(beMain.break_even_mph, 1)} mph with ${solarW} W of solar</b> (range ${fmt(beMain.p10_mph, 1)}–${fmt(beMain.p90_mph, 1)}). That solar figure comes from ${BE.solar.windows.length} parked charging ${BE.solar.windows.length === 1 ? "window" : "windows"}, so measure the array properly before relying on it.`],
+  ["--s1", `<b>Steady cruising costs about ${fmt(cc[10].wh_per_mi)} Wh/mi at 10 mph, ${fmt(cc[20].wh_per_mi)} at 20 and ${fmt(cc[30].wh_per_mi)} at 30.</b> The route was flat; the day average of ${fmt(wh / dist)} Wh/mi is higher because of starts, stops and the brake-held drive. Speeding up took ${fmt(Math.min(...DE.map(d => d.speeding_up_pct)))}–${fmt(Math.max(...DE.map(d => d.speeding_up_pct)))}% of each drive's energy, and regen gave back at most ${fmt(Math.max(...DE.map(d => d.regen_of_speeding_up_pct)))}% of that.`],
+  ["--s1", GAP && GAP.fit_battery_a_vs_controller_a ? `<b>The battery supplies about ${fmt(GAP.extra_power_w_at_pack_v)} W more than the controller reports</b> whenever the motor is running (${fmt(GAP.fit_battery_a_vs_controller_a.offset_a, 1)} A extra at any load; the two readings otherwise agree within ${fmt(Math.abs(1 - GAP.fit_battery_a_vs_controller_a.slope) * 100, 0)}%). Something is drawing power only while driving, or the controller's current sensor reads low.` : ""],
   ["--s3", CAP ? `<b>The pack delivered ${fmt(CAP.ah_counted, 1)} Ah while SOC fell ${fmt(CAP.soc_from)}→${fmt(CAP.soc_to)}%</b>, so about ${fmt(CAP.usable_capacity_ah, 1)} Ah per 100% SOC against a ${CAP.rated_capacity_ah} Ah rating. Cells stayed well balanced: ${fmt(H.cell_delta_at_rest_mv_median)} mV apart at rest, ${fmt(H.cell_delta_over_50a_mv_median, 1)} mV under load.` : ""],
 ].filter(f => f[1]);
 document.getElementById("findings").innerHTML = findings.map(([c, t]) => `<li><i class="dot" style="background:var(${c})"></i><p>${t}</p></li>`).join("");
@@ -354,9 +407,71 @@ function drawBE() {
   if (be > 0) { svg.append(el("line", { x1: x(be), x2: x(be), y1: y(solar), y2: H - b, stroke: "var(--ink2)", "stroke-width": 1, "stroke-dasharray": "0" }));
     svg.append(el("circle", { cx: x(be), cy: y(solar), r: 5, fill: "var(--ink)", stroke: "var(--surface)", "stroke-width": 2 })); }
   document.getElementById("be-fine").textContent =
-    `Fit: P = ${fmt(C[1], 0)}·v + ${fmt(C[2], 3)}·v³ W (v in m/s), from ${fmt(BE.points)} near-steady samples. That works out to about ${fmt(BE.rolling_plus_grade_force_n)} N of rolling resistance plus average grade, and a drag area of ${BE.drag_area_cda_m2} m². Band = 10th–90th percentile from resampling. Measured on this route, so hills are averaged in.`;
+    `Fit: P = ${fmt(C[1], 0)}·v + ${fmt(C[2], 3)}·v³ W (v in m/s), from ${fmt(BE.points)} near-steady samples. That works out to about ${fmt(BE.rolling_and_drivetrain_force_n)} N of rolling resistance plus drivetrain losses, and a drag area of ${BE.drag_area_cda_m2} m². Band = 10th–90th percentile from resampling. Flat route; only driving above 8 mph is used${BE.excluded_drives && BE.excluded_drives.length ? `, and drive ${BE.excluded_drives.join(", ")} (brake held) is left out` : ""}.`;
 }
 solarIn.oninput = drawBE;
+
+/* ---------- efficiency charts ---------- */
+function bars(svgId, rows, stacks, opts = {}) {
+  const svg = document.getElementById(svgId), W = svg.parentElement.clientWidth - 36, H = 230, l = 44, r = 8, t = 22, b = 28;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("height", H); svg.replaceChildren();
+  const tot = rows.map(d => stacks.reduce((a, s) => a + Math.max(0, d[s.key] || 0), 0));
+  const ymax = Math.max(...tot) * 1.18, y = v => t + (1 - v / ymax) * (H - t - b);
+  const step = (W - l - r) / rows.length, bw = Math.min(24 * 2, step * 0.55);
+  niceTicks(0, ymax).forEach(v => { svg.append(el("line", { x1: l, x2: W - r, y1: y(v), y2: y(v), stroke: "var(--grid)" })); svg.append(el("text", { x: l - 6, y: y(v) + 4, "text-anchor": "end" }, fmt(v))); });
+  rows.forEach((d, i) => {
+    const cx = l + step * (i + 0.5); let base = 0;
+    stacks.forEach((s, k) => {
+      const v = Math.max(0, d[s.key] || 0); if (!v) return;
+      const top = y(base + v), bot = y(base) - (k ? 2 : 0);
+      const rect = el("rect", { x: cx - bw / 2, y: top, width: bw, height: Math.max(1, bot - top), rx: k === stacks.length - 1 ? 4 : 0, fill: `var(${s.color(d)})` });
+      rect.append(el("title", {}, `Drive ${d.drive}: ${s.label} ${fmt(v)} ${opts.unit || ""}`)); svg.append(rect); base += v;
+    });
+    svg.append(el("text", { x: cx, y: y(base) - 6, "text-anchor": "middle", fill: "var(--ink)" }, opts.label ? opts.label(d) : fmt(base)));
+    svg.append(el("text", { x: cx, y: H - 8, "text-anchor": "middle" }, "D" + d.drive + (d.brake_drag_suspected ? " · brake" : "")));
+  });
+}
+function drawEff() {
+  if (!DE.length) return;
+  bars("eff-bars", DE, [{ key: "wh_per_mi", label: "Wh/mi", color: d => d.brake_drag_suspected ? "--s2" : "--s1" }], { unit: "Wh/mi" });
+  const best = [...DE].filter(d => d.distance_mi >= 0.5).sort((a, b) => a.wh_per_mi - b.wh_per_mi)[0];
+  document.getElementById("eff-bars-fine").textContent =
+    `Best: drive ${best.drive} at ${fmt(best.wh_per_mi)} Wh/mi (average ${fmt(best.avg_moving_mph, 1)} mph, full throttle ${fmt(best.full_throttle_pct)}% of the time). ` +
+    (brakeDrives.length ? `Orange = brake held. ` : "") + `Short drives with lots of stops cost more per mile.`;
+  const split = DE.map(d => ({ ...d, rest: d.energy_in_wh - Math.min(d.speeding_up_wh, d.energy_in_wh), acc: Math.min(d.speeding_up_wh, d.energy_in_wh) }));
+  bars("eff-split", split, [{ key: "rest", label: "cruising, losses and drag", color: () => "--s1" }, { key: "acc", label: "speeding up", color: () => "--s4" }],
+    { unit: "Wh", label: d => `${fmt(d.speeding_up_pct)}%` });
+  document.getElementById("eff-split-fine").textContent =
+    `Labels show the share spent speeding up: the kinetic energy given to a ${D.car_mass_kg || 237} kg car and driver. Regen recovered ${DE.map(d => fmt(d.regen_of_speeding_up_pct)).join(" / ")}% of it on drives ${DE.map(d => d.drive).join(" / ")}. Fewer stops and gentler starts save the yellow part.`;
+}
+
+function drawGap() {
+  const panel = document.getElementById("gap-chart").closest(".panel");
+  if (!GAP || !GAP.points || !GAP.points.length) { panel.hidden = true; return; }
+  const f = GAP.fit_battery_a_vs_controller_a;
+  document.getElementById("gap-big").innerHTML = `+${fmt(GAP.extra_power_w_at_pack_v)}<small>W</small>`;
+  document.getElementById("gap-text").textContent =
+    `The battery reads ${fmt(f.offset_a, 1)} A more than the controller at any load while the motor runs, and the same as it (0 A) when parked. Scale agrees within ${fmt(Math.abs(1 - f.slope) * 100, 1)}%. Accessories have their own battery, so this is either a load that only runs while driving or an offset in the controller's current sensor.`;
+  const svg = document.getElementById("gap-chart"), W = svg.parentElement.clientWidth - 36, H = 240, l = 40, r = 10, t = 10, b = 28;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("height", H); svg.replaceChildren();
+  const mx = Math.max(10, ...GAP.points.flat()) * 1.05, x = v => l + v / mx * (W - l - r), y = v => t + (1 - v / mx) * (H - t - b);
+  niceTicks(0, mx).forEach(v => { svg.append(el("line", { x1: l, x2: W - r, y1: y(v), y2: y(v), stroke: "var(--grid)" })); svg.append(el("text", { x: l - 6, y: y(v) + 4, "text-anchor": "end" }, v));
+    svg.append(el("text", { x: x(v), y: H - 10, "text-anchor": "middle" }, v)); });
+  svg.append(el("text", { x: W - r, y: H - 0, "text-anchor": "end" }, "controller A →"));
+  svg.append(el("line", { x1: x(0), y1: y(0), x2: x(mx), y2: y(mx), stroke: "var(--muted)" }));
+  svg.append(el("text", { x: x(mx * 0.97), y: y(mx * 0.97) + 14, "text-anchor": "end" }, "equal"));
+  GAP.points.forEach(([a, bb]) => svg.append(el("circle", { cx: x(a), cy: y(bb), r: 3, fill: "var(--s1)", opacity: 0.45 })));
+  svg.append(el("line", { x1: x(0), y1: y(f.offset_a), x2: x(mx), y2: y(Math.min(mx, f.slope * mx + f.offset_a)), stroke: "var(--s2)", "stroke-width": 2 }));
+  svg.append(el("text", { x: l + 6, y: t + 12 }, "battery A ↑"));
+  const hr = GAP.hi_res || {};
+  document.getElementById("gap-stats").innerHTML = [
+    ["Fast-logging stretch (from " + (GAP.hi_res_from ? hm(iso2s(GAP.hi_res_from)) : "–") + ")", `battery ${fmt(hr.battery_wh)} Wh · controller ${fmt(hr.controller_wh)} Wh`],
+    ["Whole day", `battery ${fmt(GAP.whole_day.battery_wh)} Wh · controller ${fmt(GAP.whole_day.controller_wh)} Wh`],
+    ["Battery reading lags the controller by", `${GAP.battery_lag_s} s`],
+    ["Battery vs controller voltage at rest", `+${fmt(GAP.idle_voltage_offset_v, 1)} V (calibration)`],
+    ["Voltage lost in cables, fuse and contactor", `≈ ${fmt(GAP.wiring_resistance_mohm, 1)} mΩ`],
+  ].map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+}
 
 /* ---------- motor heat tool ---------- */
 const ampsIn = document.getElementById("amps"), rpmIn = document.getElementById("rpm"), t0In = document.getElementById("t0");
@@ -393,9 +508,9 @@ document.getElementById("ov").innerHTML =
   ov.map(o => `<tr><td>${hm(iso2s(o.time), true)}</td><td>${o.error}</td><td><span class="pill"><i style="background:var(${ctxColor[o.context] || "--muted"})"></i>${o.context}</span></td>` +
     `<td class="r">${fmt(o.speed_mph, 1)} mph${o.low_speed_reading ? "*" : ""}</td><td class="r">${fmt(o.max_throttle_pct)}%</td><td class="r">${o.secs_at_full_throttle} s</td><td class="r">${fmt(o.max_phase_current_a)}</td><td class="r">${fmt(o.motor_temp_c)}</td><td>${o.cleared_by}</td></tr>`).join("") + `</tbody>`;
 document.getElementById("drives").innerHTML =
-  `<thead><tr><th>Drive</th><th>Start</th><th class="r">Miles</th><th class="r">Moving min</th><th class="r">Avg mph</th><th class="r">Max mph</th><th class="r">Wh/mi</th><th class="r">Regen</th><th class="r">SOC</th><th class="r">Motor max °C</th><th class="r">Errors</th></tr></thead><tbody>` +
-  drives.map(d => `<tr><td>${d.drive}</td><td>${hm(iso2s(d.start))}</td><td class="r">${fmt(d.distance_mi, 2)}</td><td class="r">${fmt(d.moving_min, 1)}</td><td class="r">${fmt(d.avg_moving_mph, 1)}</td><td class="r">${fmt(d.max_mph, 1)}</td>` +
-    `<td class="r">${fmt(d.wh_per_mi, 1)}</td><td class="r">${fmt(d.regen_pct, 1)}%</td><td class="r">${d.soc_start == null ? "no BMS data" : fmt(d.soc_start) + "→" + fmt(d.soc_end) + "%"}</td><td class="r">${fmt(d.max_motor_temp_c)}</td><td class="r">${d.mc_errors}</td></tr>`).join("") + `</tbody>`;
+  `<thead><tr><th>Drive</th><th>Start</th><th class="r">Miles</th><th class="r">Moving min</th><th class="r">Avg mph</th><th class="r">Max mph</th><th class="r">Wh/mi</th><th class="r">Full throttle</th><th class="r">Speeding up</th><th class="r">Regen</th><th class="r">SOC</th><th class="r">Motor max °C</th><th class="r">Errors</th></tr></thead><tbody>` +
+  drives.map(d => { const e = DE.find(x => x.drive === d.drive) || {}; return `<tr><td>${d.drive}${e.brake_drag_suspected ? ' <span class="pill"><i style="background:var(--s2)"></i>brake</span>' : ""}</td><td>${hm(iso2s(d.start))}</td><td class="r">${fmt(d.distance_mi, 2)}</td><td class="r">${fmt(d.moving_min, 1)}</td><td class="r">${fmt(d.avg_moving_mph, 1)}</td><td class="r">${fmt(d.max_mph, 1)}</td>` +
+    `<td class="r">${fmt(d.wh_per_mi, 1)}</td><td class="r">${fmt(e.full_throttle_pct)}%</td><td class="r">${fmt(e.speeding_up_pct)}%</td><td class="r">${fmt(d.regen_pct, 1)}%</td><td class="r">${d.soc_start == null ? "no BMS data" : fmt(d.soc_start) + "→" + fmt(d.soc_end) + "%"}</td><td class="r">${fmt(d.max_motor_temp_c)}</td><td class="r">${d.mc_errors}</td></tr>`; }).join("") + `</tbody>`;
 
 const solarWin = BE.solar.windows.map(w => `${hm(iso2s(w.start))}–${hm(iso2s(w.end))}`).join(", ");
 const noBms = drives.filter(d => d.soc_start == null).map(d => d.drive);
@@ -417,12 +532,14 @@ document.getElementById("notes").innerHTML = [
   "Controller op mode 1 was shown as \"?(1)\" before add-on 0.12.1. It means Drive, and 0 means Stop. Older history is relabelled when it's processed.",
   "\"Nominal\" and \"Installed\" capacity both report remaining amp-hours, which on this 100 Ah pack equals SOC %.",
   BE.solar.solar_w ? `Solar input isn't logged directly. The ${BE.solar.solar_w} W figure is the pack charging while parked with the controller idle (${solarWin}); the rest of the parked time read 0 A.` : "No parked charging was seen, so the break-even tool starts at 725 W from 3 Oct 2026.",
-  "Accessories run off their own battery, so the main pack only feeds the motor controller. Even so, battery current reads about 12% higher than controller current while driving, so one of the two current sensors is off. Until that's checked, energy and capacity numbers carry roughly ±12% uncertainty.",
+  "Accessories run off their own battery, so the main pack only feeds the motor controller. The battery still reads a little more than the controller while driving (see Battery vs controller power), so energy and capacity numbers carry a few percent of uncertainty.",
+  GAP && GAP.hi_res_from ? `Logging got faster at ${hm(iso2s(GAP.hi_res_from))}: the controller went from every 2 s to every 0.5 s and the battery current from every ~10 s to every ~1 s. Earlier battery numbers are coarser.` : "",
+  "The route was flat, so the efficiency fits have no hills to account for.",
   `Below about 8 mph the motor struggles and speed, rpm and current jump around (the wheel can even read backwards). Those readings are shown but left out of the efficiency and break-even fits. Speeds marked * in the errors table are in that range.`,
 ].filter(Boolean).map(t => `<li>${t}</li>`).join("");
 
 /* ---------- boot ---------- */
-function drawAll() { drawTimeline(); drawBE(); drawMH(); }
+function drawAll() { drawTimeline(); drawEff(); drawBE(); drawGap(); drawMH(); }
 drawAll();
 let rz; new ResizeObserver(() => { clearTimeout(rz); rz = setTimeout(drawAll, 80); }).observe(document.querySelector(".wrap"));
 </script>

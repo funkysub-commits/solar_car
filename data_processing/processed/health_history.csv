@@ -1,2 +1,2 @@
 date,distance_mi,wh_per_mi,controller_errors,max_motor_temp_c,thermal_tau_min,usable_capacity_ah,pack_resistance_mohm,weakest_cell_resistance_mohm,cell_delta_at_rest_mv_median,cell_delta_over_50a_mv_median,solar_w,break_even_mph
-2026-10-03,28.289999999999996,94.6,9,130.0,13.2,88.5,18.4,1.21,4.0,11.5,725.0,13.1
+2026-10-03,28.289999999999996,94.6,9,130.0,13.2,88.5,18.4,1.21,4.0,11.5,725.0,13.6

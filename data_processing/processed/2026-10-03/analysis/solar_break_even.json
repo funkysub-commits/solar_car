@@ -1,14 +1,17 @@
 {
   "model": "P = c0 + c1*v + c3*v^3 + m*a*v  (v m/s, a m/s^2, P controller input W)",
-  "c0_w": 1.26122991507125e-14,
-  "c1_w_per_mps": 109.85795546163082,
-  "c3_w_per_mps3": 0.39221026515295876,
-  "mass_kg": 236.49576950279314,
-  "rolling_plus_grade_force_n": 109.9,
-  "drag_area_cda_m2": 0.65,
-  "r2": 0.43883859964981997,
-  "points": 1398,
+  "c0_w": 3.7896945916668714e-13,
+  "c1_w_per_mps": 108.59608411456641,
+  "c3_w_per_mps3": 0.262395889328682,
+  "mass_kg": 260.11465617108433,
+  "rolling_and_drivetrain_force_n": 108.6,
+  "drag_area_cda_m2": 0.44,
+  "r2": 0.5037240963706406,
+  "points": 1207,
   "aux_load_w_assumed": 0,
+  "excluded_drives": [
+    4
+  ],
   "solar": {
     "windows": [
       {
@@ -26,92 +29,92 @@
   "break_even": [
     {
       "solar_w": 300,
-      "break_even_mph": 5.9,
-      "p10_mph": 4.7,
-      "p90_mph": 6.9
+      "break_even_mph": 6.0,
+      "p10_mph": 5.3,
+      "p90_mph": 6.8
     },
     {
       "solar_w": 500,
-      "break_even_mph": 9.5,
-      "p10_mph": 8.1,
-      "p90_mph": 10.7
+      "break_even_mph": 9.8,
+      "p10_mph": 8.7,
+      "p90_mph": 10.8
     },
     {
       "solar_w": 725,
-      "break_even_mph": 13.1,
-      "p10_mph": 11.5,
-      "p90_mph": 14.3
+      "break_even_mph": 13.6,
+      "p10_mph": 12.4,
+      "p90_mph": 14.7
     },
     {
       "solar_w": 1000,
-      "break_even_mph": 16.9,
-      "p10_mph": 15.3,
-      "p90_mph": 18.0
+      "break_even_mph": 17.8,
+      "p10_mph": 16.4,
+      "p90_mph": 18.7
     },
     {
       "solar_w": 1200,
-      "break_even_mph": 19.3,
-      "p10_mph": 17.7,
-      "p90_mph": 20.6
+      "break_even_mph": 20.5,
+      "p10_mph": 19.1,
+      "p90_mph": 21.4
     }
   ],
   "cruise_curve": [
     {
       "mph": 5,
-      "power_w": 250,
-      "p10_w": 210,
-      "p90_w": 313,
-      "wh_per_mi": 50.0
+      "power_w": 246,
+      "p10_w": 215,
+      "p90_w": 281,
+      "wh_per_mi": 49.1
     },
     {
       "mph": 10,
-      "power_w": 526,
-      "p10_w": 456,
-      "p90_w": 621,
-      "wh_per_mi": 52.6
+      "power_w": 509,
+      "p10_w": 455,
+      "p90_w": 576,
+      "wh_per_mi": 50.9
     },
     {
       "mph": 15,
-      "power_w": 855,
-      "p10_w": 770,
-      "p90_w": 977,
-      "wh_per_mi": 57.0
+      "power_w": 807,
+      "p10_w": 740,
+      "p90_w": 897,
+      "wh_per_mi": 53.8
     },
     {
       "mph": 20,
-      "power_w": 1263,
-      "p10_w": 1150,
-      "p90_w": 1401,
-      "wh_per_mi": 63.1
+      "power_w": 1158,
+      "p10_w": 1094,
+      "p90_w": 1274,
+      "wh_per_mi": 57.9
     },
     {
       "mph": 25,
-      "power_w": 1775,
-      "p10_w": 1603,
-      "p90_w": 2050,
-      "wh_per_mi": 71.0
+      "power_w": 1580,
+      "p10_w": 1493,
+      "p90_w": 1708,
+      "wh_per_mi": 63.2
     },
     {
       "mph": 30,
-      "power_w": 2419,
-      "p10_w": 2178,
-      "p90_w": 2995,
-      "wh_per_mi": 80.6
+      "power_w": 2089,
+      "p10_w": 1956,
+      "p90_w": 2322,
+      "wh_per_mi": 69.6
     },
     {
       "mph": 35,
-      "power_w": 3221,
-      "p10_w": 2808,
-      "p90_w": 4234,
-      "wh_per_mi": 92.0
+      "power_w": 2704,
+      "p10_w": 2471,
+      "p90_w": 3130,
+      "wh_per_mi": 77.3
     },
     {
       "mph": 40,
-      "power_w": 4207,
-      "p10_w": 3501,
-      "p90_w": 5927,
-      "wh_per_mi": 105.2
+      "power_w": 3442,
+      "p10_w": 3037,
+      "p90_w": 4150,
+      "wh_per_mi": 86.1
     }
   ],
-  "note": "Break-even = fastest steady speed where cruise power <= solar, i.e. range limited only by daylight. Fitted above 8 mph only; average for the route driven (grade is folded into c1). p10/p90 from a 60 s block bootstrap."
+  "note": "Break-even = fastest steady speed where cruise power <= solar, i.e. range limited only by daylight. Flat route; fitted above 8 mph only, leaving out drives with brake drag. p10/p90 from a 60 s block bootstrap."
 }
