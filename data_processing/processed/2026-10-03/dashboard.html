@@ -105,6 +105,20 @@ dl.stats dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; 
 .story p { margin: 0 0 8px; max-width: 75ch; }
 .story ul { margin: 0 0 10px; padding-left: 18px; display: grid; gap: 6px; }
 .story #story > h2:first-child { display: none; }
+.ftip { position: fixed; z-index: 20; max-width: 280px; }
+.tip .hint, .hint { color: var(--muted); font-size: 0.76rem; }
+.tip .hint { margin-top: 4px; border-top: 1px solid var(--grid); padding-top: 4px; }
+.stack { touch-action: pan-y; cursor: crosshair; user-select: none; }
+.brush { position: absolute; top: 0; bottom: 0; background: var(--band); border-inline: 1px solid var(--s1); pointer-events: none; }
+.lkey { font: inherit; font-size: 0.8rem; color: var(--ink2); background: none; border: 0; padding: 0 2px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; border-radius: 4px; }
+.lkey[aria-pressed="false"] { opacity: 0.4; text-decoration: line-through; }
+.lkey:focus-visible, .hit:focus-visible, tr.click:focus-visible { outline: 2px solid var(--s1); outline-offset: 2px; }
+.hit { cursor: pointer; }
+tr.click { cursor: pointer; }
+tr.click:hover td { background: var(--band); }
+tr.sel td { background: var(--band); font-weight: 600; }
+svg.drag { cursor: ns-resize; }
+.howto { margin: 6px 0 0; }
 @media (max-width: 560px) { .ctl { grid-template-columns: 1fr 64px; } .ctl label { grid-column: 1 / -1; } h1 { font-size: 1.7rem; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
@@ -132,7 +146,7 @@ dl.stats dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; 
 
   <section class="panel" aria-labelledby="t-h">
     <header>
-      <div><h2 id="t-h">Timeline</h2><p>5 s averages (peaks for current). Red lines mark controller errors. Hover for values.</p></div>
+      <div><h2 id="t-h">Timeline</h2><p>5 s averages (peaks for current). Red lines mark controller errors. Hover for values, drag across to zoom, double-click to reset, click a legend item to hide it.</p></div>
       <div class="chips" id="range" role="group" aria-label="Time range"></div>
     </header>
     <div class="stack" id="stack"></div>
@@ -144,11 +158,13 @@ dl.stats dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; 
     <div class="panel" aria-labelledby="e1-h">
       <header><div><h2 id="e1-h">Energy per mile by drive</h2><p>Controller input energy ÷ distance. Lower is better.</p></div></header>
       <svg id="eff-bars" role="img" aria-label="Wh per mile for each drive"></svg>
+      <p class="hint howto">Hover a bar for details; click it to zoom the timeline to that drive.</p>
       <p class="fine" id="eff-bars-fine"></p>
     </div>
     <div class="panel" aria-labelledby="e2-h">
       <header><div><h2 id="e2-h">Where the energy went</h2><p>Energy spent speeding the car up, against everything else.</p></div></header>
       <svg id="eff-split" role="img" aria-label="Energy split per drive"></svg>
+      <p class="hint howto">Hover a bar for details; click it to zoom the timeline to that drive.</p>
       <div class="legend" style="margin-top:6px">
         <span><i class="key" style="background:var(--s1);height:10px"></i>Cruising, losses and drag</span>
         <span><i class="key" style="background:var(--s4);height:10px"></i>Speeding up</span>
@@ -165,6 +181,7 @@ dl.stats dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; 
       </div>
       <div class="readout"><div class="big num" id="be-big"></div><p id="be-text"></p></div>
       <svg id="be-chart" role="img" aria-label="Cruise power needed versus speed, with the solar input line"></svg>
+      <p class="hint howto">Hover for power at any speed. Drag the yellow solar line up or down to try another solar input.</p>
       <div class="legend" style="margin-top:6px">
         <span><i class="key" style="background:var(--s1)"></i>Power needed (fit)</span>
         <span><i class="key" style="background:var(--s1);height:8px;width:8px;border-radius:50%"></i>Measured steady-speed median</span>
@@ -177,6 +194,7 @@ dl.stats dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; 
       <header><div><h2 id="g-h">Battery vs controller power</h2><p>The battery's own reading against what the motor controller says it draws.</p></div></header>
       <div class="readout"><div class="big num" id="gap-big"></div><p id="gap-text"></p></div>
       <svg id="gap-chart" role="img" aria-label="Battery current against controller current"></svg>
+      <p class="hint howto">Each dot is a 10 s average while driving. Hover a dot for its values.</p>
       <dl class="stats" id="gap-stats" style="margin-top:10px"></dl>
     </div>
   </section>
@@ -193,19 +211,20 @@ dl.stats dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; 
       </div>
       <div class="readout"><div class="big num" id="mh-big"></div><p id="mh-text"></p></div>
       <svg id="mh-chart" role="img" aria-label="Predicted motor temperature over the next 20 minutes"></svg>
+      <p class="hint howto">Hover to read the predicted temperature at any time.</p>
       <p class="fine" id="mh-fine"></p>
     </div>
   </section>
 
   <section class="panel" aria-labelledby="o-h">
-      <header><div><h2 id="o-h">Controller errors</h2><p>The 20 s before each error. "Power cycle" means the controller was switched off to clear it. * = below 8 mph, where readings are rough.</p></div></header>
+      <header><div><h2 id="o-h">Controller errors</h2><p>The 20 s before each error. "Power cycle" means the controller was switched off to clear it. * = below 8 mph, where readings are rough. Click a row to see it on the timeline.</p></div></header>
       <div class="tablewrap"><table id="ov"></table></div>
     </section>
 
   <!-- 4. Details -->
   <div class="divider"><span class="eyebrow">Details</span></div>
   <section class="panel" aria-labelledby="d-h">
-    <header><div><h2 id="d-h">Drives</h2><p>Moving stretches, merged across stops shorter than 2 min. Energy is controller input.</p></div></header>
+    <header><div><h2 id="d-h">Drives</h2><p>Moving stretches, merged across stops shorter than 2 min. Energy is controller input. Click a row to see it on the timeline.</p></div></header>
     <div class="tablewrap"><table id="drives"></table></div>
   </section>
 
@@ -231,6 +250,23 @@ const hm = (sec, s = false) => new Date(sec * 1000).toLocaleTimeString("en-GB", 
 const iso2s = iso => Date.parse(iso) / 1000;
 const el = (tag, attrs = {}, html = "") => { const e = document.createElementNS("http://www.w3.org/2000/svg", tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (html) e.textContent = html; return e; };
 const S = D.series, T = S.t;
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const ftip = document.createElement("div"); ftip.className = "tip ftip"; ftip.hidden = true; document.body.append(ftip);
+function showTip(ev, html) {
+  ftip.innerHTML = html; ftip.hidden = false;
+  const w = ftip.offsetWidth, h = ftip.offsetHeight;
+  let x = ev.clientX + 14, y = ev.clientY + 14;
+  if (x + w > innerWidth - 8) x = ev.clientX - w - 14;
+  if (y + h > innerHeight - 8) y = ev.clientY - h - 14;
+  ftip.style.left = Math.max(4, x) + "px"; ftip.style.top = Math.max(4, y) + "px";
+}
+function hideTip() { ftip.hidden = true; }
+const trs = rows => rows.map(([k, v]) => `<div class="tr"><span>${k}</span><span>${v}</span></div>`).join("");
+function svgPt(svg, ev) {
+  const r = svg.getBoundingClientRect(), vb = svg.viewBox.baseVal;
+  return { x: (ev.clientX - r.left) * vb.width / r.width, y: (ev.clientY - r.top) * vb.height / r.height };
+}
+let selectedDrive = null;
 const drives = D.drives, ov = D.overloads, BE = D.break_even, TM = D.thermal, CAP = D.capacity, H = D.health;
 const errTimes = ov.map(o => iso2s(o.time));
 
@@ -291,12 +327,19 @@ const rows = PANELS.map(p => {
   const row = document.createElement("div"); row.className = "row";
   const lab = document.createElement("div"); lab.className = "rlabel";
   lab.innerHTML = `<span>${p.label} (${p.unit})</span>` + (p.series.length > 1
-    ? `<span class="legend">${p.series.map(([, c, n]) => `<span><i class="key" style="background:var(${c})"></i>${n}</span>`).join("")}</span>` : "");
+    ? `<span class="legend">${p.series.map(([k, c, n]) => `<button class="lkey" data-k="${k}" aria-pressed="true"><i class="key" style="background:var(${c})"></i>${n}</button>`).join("")}</span>` : "");
   const svg = el("svg", { role: "img", "aria-label": p.label + " over time" });
   row.append(lab, svg); stack.append(row);
   return { p, svg };
 });
 stack.append(tip);
+const hiddenSeries = new Set();
+stack.querySelectorAll(".lkey").forEach(b => b.addEventListener("click", () => {
+  const k = b.dataset.k, on = hiddenSeries.has(k);
+  on ? hiddenSeries.delete(k) : hiddenSeries.add(k);
+  b.setAttribute("aria-pressed", on); drawTimeline();
+}));
+const brush = document.createElement("div"); brush.className = "brush"; brush.hidden = true; stack.append(brush);
 
 function niceTicks(lo, hi, n = 4) {
   const span = hi - lo || 1, step0 = span / n, mag = 10 ** Math.floor(Math.log10(step0));
@@ -314,7 +357,7 @@ function drawTimeline() {
   rows.forEach(({ p, svg }, ri) => {
     const H = p.h; svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("height", H); svg.replaceChildren();
     let lo = Infinity, hi = -Infinity;
-    for (const [k] of p.series) for (let i = a; i <= b; i++) { const v = S[k][i]; if (v != null) { lo = Math.min(lo, v); hi = Math.max(hi, v); } }
+    for (const [k] of p.series) if (!hiddenSeries.has(k)) for (let i = a; i <= b; i++) { const v = S[k][i]; if (v != null) { lo = Math.min(lo, v); hi = Math.max(hi, v); } }
     if (p.limit) hi = Math.max(hi, p.limit + 5);
     if (p.zero || p.label === "Speed") lo = Math.min(lo, 0);
     if (!isFinite(lo)) { lo = 0; hi = 1; }
@@ -338,6 +381,7 @@ function drawTimeline() {
     errTimes.forEach(t => { if (t < view[0] || t > view[1]) return;
       svg.append(el("line", { x1: x(t), x2: x(t), y1: MT, y2: H - MB, stroke: "var(--critical)", "stroke-width": 1, opacity: 0.8 })); });
     for (const [k, c] of p.series) {
+      if (hiddenSeries.has(k)) continue;
       let dstr = "", pen = false;
       for (let i = a; i <= b; i++) { const v = S[k][i]; if (v == null) { pen = false; continue; }
         dstr += (pen ? "L" : "M") + x(T[i]).toFixed(1) + " " + y(v).toFixed(1); pen = true; }
@@ -351,15 +395,21 @@ function drawTimeline() {
   });
   stack._x = x; stack._W = W;
 }
+let drag = null;
+const tAt = px => view[0] + (px - ML) / (stack._W - ML - MR) * (view[1] - view[0]);
 function hover(ev) {
   const r = stack.getBoundingClientRect(), W = stack._W; const px = ev.clientX - r.left;
+  if (drag) {
+    drag.x1 = Math.min(Math.max(px, ML), W - MR);
+    brush.hidden = false; brush.style.left = Math.min(drag.x0, drag.x1) + "px"; brush.style.width = Math.abs(drag.x1 - drag.x0) + "px";
+  }
   if (px < ML || px > W - MR) return leave();
   const t = view[0] + (px - ML) / (W - ML - MR) * (view[1] - view[0]);
   let lo = 0, hi = T.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (T[m] < t) lo = m; else hi = m; }
   const i = Math.abs(T[lo] - t) < Math.abs(T[hi] - t) ? lo : hi; const X = stack._x(T[i]);
   rows.forEach(({ svg }) => { const l = svg.querySelector(".xh"); l.setAttribute("x1", X); l.setAttribute("x2", X); });
   const near = ov.filter(o => Math.abs(iso2s(o.time) - T[i]) < (view[1] - view[0]) / 120 + 5);
-  const lines = PANELS.flatMap(p => p.series.map(([k, , n]) => `<div class="tr"><span>${p.series.length > 1 ? p.label.split(" ")[0] + " · " + n : p.label}</span><span>${fmt(S[k][i], k.includes("power") ? 0 : 1)} ${p.unit}</span></div>`));
+  const lines = PANELS.flatMap(p => p.series.filter(([k]) => !hiddenSeries.has(k)).map(([k, , n]) => `<div class="tr"><span>${p.series.length > 1 ? p.label.split(" ")[0] + " · " + n : p.label}</span><span>${fmt(S[k][i], k.includes("power") ? 0 : 1)} ${p.unit}</span></div>`));
   const extra = `<div class="tr"><span>Throttle</span><span>${fmt(S.throttle_pct[i])} %</span></div><div class="tr"><span>Phase current (peak)</span><span>${fmt(S.mc_phase_current_a[i])} A</span></div>`;
   tip.innerHTML = `<b>${hm(T[i], true)}</b>${lines.join("")}${extra}` + near.map(o => `<div class="warn">⚠ ${o.error} · ${o.context}</div>`).join("");
   tip.hidden = false;
@@ -367,11 +417,40 @@ function hover(ev) {
 }
 function leave() { tip.hidden = true; rows.forEach(({ svg }) => { const l = svg.querySelector(".xh"); if (l) { l.setAttribute("x1", -10); l.setAttribute("x2", -10); } }); }
 stack.addEventListener("pointermove", hover); stack.addEventListener("pointerleave", leave);
+stack.addEventListener("pointerdown", ev => {
+  if (ev.button !== 0 || ev.target.closest(".lkey")) return;
+  const px = ev.clientX - stack.getBoundingClientRect().left;
+  if (px < ML || px > stack._W - MR) return;
+  drag = { x0: px, x1: px }; stack.setPointerCapture(ev.pointerId);
+});
+stack.addEventListener("pointerup", () => {
+  if (!drag) return;
+  const a = Math.min(drag.x0, drag.x1), b = Math.max(drag.x0, drag.x1);
+  drag = null; brush.hidden = true;
+  if (b - a > 6) setView([tAt(a), tAt(b)], null);
+});
+stack.addEventListener("dblclick", () => setView(opts[0][1], 0));
 
 const range = document.getElementById("range");
 const opts = [["All day", [T[0], T[T.length - 1]]], ...drives.map(d => [`Drive ${d.drive}`, [iso2s(d.start) - 30, iso2s(d.end) + 30]])];
 opts.forEach(([n, v], k) => { const b = document.createElement("button"); b.className = "chip"; b.id = "range-" + k; b.textContent = n; b.setAttribute("aria-pressed", k === 0);
-  b.onclick = () => { view = v; range.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", c === b)); drawTimeline(); }; range.append(b); });
+  b.onclick = () => setView(v, k); range.append(b); });
+function setView(v, chip) {
+  view = [Math.max(T[0], v[0]), Math.min(T[T.length - 1], v[1])];
+  if (view[1] - view[0] < 20) view = [view[0] - 10, view[1] + 10];
+  range.querySelectorAll(".chip").forEach((c, k) => c.setAttribute("aria-pressed", k === chip));
+  selectedDrive = chip > 0 ? drives[chip - 1].drive : null;
+  drawTimeline(); drawEff(); markRows();
+}
+function focusDrive(n, scroll = true) {
+  const k = drives.findIndex(d => d.drive === n) + 1;
+  if (k > 0) setView(opts[k][1], k);
+  if (scroll) document.getElementById("t-h").scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+}
+function focusTime(t) {
+  setView([t - 90, t + 30], null);
+  document.getElementById("t-h").scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+}
 
 /* ---------- break-even tool ---------- */
 const C = [BE.c0_w, BE.c1_w_per_mps, BE.c3_w_per_mps3];
@@ -402,14 +481,43 @@ function drawBE() {
   D.efficiency.forEach(e => {
     svg.append(el("line", { x1: x(e.speed_mph), x2: x(e.speed_mph), y1: y(e.power_w_p25), y2: y(e.power_w_p75), stroke: "var(--s1)", "stroke-width": 1.5, opacity: 0.5 }));
     const c = el("circle", { cx: x(e.speed_mph), cy: y(e.power_w), r: 5, fill: "var(--s1)", stroke: "var(--surface)", "stroke-width": 2 });
-    c.append(el("title", {}, `${fmt(e.speed_mph, 1)} mph: median ${fmt(e.power_w)} W (middle half ${fmt(e.power_w_p25)}–${fmt(e.power_w_p75)} W), ${e.n} windows`)); svg.append(c);
+    svg.append(c);
   });
+  svg._s = { x, y, l, r, t, b, W, H, xm, ym, solar };
+  svg.append(el("line", { class: "xh", x1: -10, x2: -10, y1: t, y2: H - b, stroke: "var(--ink2)", "stroke-width": 1 }));
+  svg.append(el("circle", { class: "hdot", cx: -10, cy: -10, r: 5, fill: "var(--s1)", stroke: "var(--surface)", "stroke-width": 2 }));
   if (be > 0) { svg.append(el("line", { x1: x(be), x2: x(be), y1: y(solar), y2: H - b, stroke: "var(--ink2)", "stroke-width": 1, "stroke-dasharray": "0" }));
     svg.append(el("circle", { cx: x(be), cy: y(solar), r: 5, fill: "var(--ink)", stroke: "var(--surface)", "stroke-width": 2 })); }
   document.getElementById("be-fine").textContent =
     `Fit: P = ${fmt(C[1], 0)}·v + ${fmt(C[2], 3)}·v³ W (v in m/s), from ${fmt(BE.points)} near-steady samples. That works out to about ${fmt(BE.rolling_and_drivetrain_force_n)} N of rolling resistance plus drivetrain losses, and a drag area of ${BE.drag_area_cda_m2} m². Band = 10th–90th percentile from resampling. Flat route; only driving above 8 mph is used${BE.excluded_drives && BE.excluded_drives.length ? `, and drive ${BE.excluded_drives.join(", ")} (brake held) is left out` : ""}.`;
 }
 solarIn.oninput = drawBE;
+{
+  const svg = document.getElementById("be-chart"); let dragging = false;
+  const nearSolar = p => Math.abs(p.y - svg._s.y(svg._s.solar)) < 9;
+  svg.addEventListener("pointerdown", ev => { if (nearSolar(svgPt(svg, ev))) { dragging = true; svg.setPointerCapture(ev.pointerId); ev.preventDefault(); } });
+  svg.addEventListener("pointerup", () => { dragging = false; });
+  svg.addEventListener("pointermove", ev => {
+    const s = svg._s, p = svgPt(svg, ev);
+    if (dragging) {
+      const w = (1 - (p.y - s.t) / (s.H - s.t - s.b)) * s.ym;
+      solarIn.value = Math.round(Math.min(+solarIn.max, Math.max(+solarIn.min, w)) / 5) * 5; drawBE(); hideTip(); return;
+    }
+    svg.classList.toggle("drag", nearSolar(p));
+    if (p.x < s.l || p.x > s.W - s.r) return beLeave();
+    const mph = Math.max(0.5, (p.x - s.l) / (s.W - s.l - s.r) * s.xm), need = P(mph), spare = s.solar - need;
+    const X = s.x(mph), xh = svg.querySelector(".xh"), dot = svg.querySelector(".hdot");
+    xh.setAttribute("x1", X); xh.setAttribute("x2", X); dot.setAttribute("cx", X); dot.setAttribute("cy", s.y(need));
+    const m = D.efficiency.find(e => Math.abs(e.speed_mph - mph) < 1.5);
+    showTip(ev, `<b>${fmt(mph, 1)} mph steady</b>` + trs([
+      ["Power needed", fmt(need) + " W"], ["Energy per mile", fmt(need / mph) + " Wh/mi"], ["Solar", s.solar + " W"],
+      [spare >= 0 ? "Solar spare" : "From the battery", fmt(Math.abs(spare)) + " W"],
+      ...(m ? [["Measured near here", `${fmt(m.power_w)} W median (${m.n} samples)`]] : []),
+    ]) + (spare >= 0 ? `<div class="hint">The sun covers it: no battery drain</div>` : `<div class="hint">Battery lasts about ${CAP ? fmt(CAP.usable_capacity_wh * 0.9 / -spare, 1) + " h from full" : "–"}</div>`));
+  });
+  function beLeave() { hideTip(); const xh = svg.querySelector(".xh"), dot = svg.querySelector(".hdot"); if (xh) { xh.setAttribute("x1", -10); xh.setAttribute("x2", -10); dot.setAttribute("cx", -10); } }
+  svg.addEventListener("pointerleave", () => { if (!dragging) beLeave(); });
+}
 
 /* ---------- efficiency charts ---------- */
 function bars(svgId, rows, stacks, opts = {}) {
@@ -421,16 +529,31 @@ function bars(svgId, rows, stacks, opts = {}) {
   niceTicks(0, ymax).forEach(v => { svg.append(el("line", { x1: l, x2: W - r, y1: y(v), y2: y(v), stroke: "var(--grid)" })); svg.append(el("text", { x: l - 6, y: y(v) + 4, "text-anchor": "end" }, fmt(v))); });
   rows.forEach((d, i) => {
     const cx = l + step * (i + 0.5); let base = 0;
+    const dim = selectedDrive != null && d.drive !== selectedDrive ? 0.35 : 1;
     stacks.forEach((s, k) => {
       const v = Math.max(0, d[s.key] || 0); if (!v) return;
       const top = y(base + v), bot = y(base) - (k ? 2 : 0);
-      const rect = el("rect", { x: cx - bw / 2, y: top, width: bw, height: Math.max(1, bot - top), rx: k === stacks.length - 1 ? 4 : 0, fill: `var(${s.color(d)})` });
-      rect.append(el("title", {}, `Drive ${d.drive}: ${s.label} ${fmt(v)} ${opts.unit || ""}`)); svg.append(rect); base += v;
+      svg.append(el("rect", { x: cx - bw / 2, y: top, width: bw, height: Math.max(1, bot - top), rx: k === stacks.length - 1 ? 4 : 0, fill: `var(${s.color(d)})`, opacity: dim }));
+      base += v;
     });
     svg.append(el("text", { x: cx, y: y(base) - 6, "text-anchor": "middle", fill: "var(--ink)" }, opts.label ? opts.label(d) : fmt(base)));
     svg.append(el("text", { x: cx, y: H - 8, "text-anchor": "middle" }, "D" + d.drive + (d.brake_drag_suspected ? " · brake" : "")));
+    // Whole-column hit target: bigger than the bar, so it's easy to hover and tap.
+    const hit = el("rect", { class: "hit", x: cx - step / 2, y: t, width: step, height: H - t - b, fill: "transparent", tabindex: 0, role: "button",
+      "aria-label": `Drive ${d.drive}, ${fmt(d.wh_per_mi)} Wh per mile. Show on timeline.` });
+    hit.addEventListener("pointermove", ev => showTip(ev, driveTip(d)));
+    hit.addEventListener("pointerleave", hideTip);
+    hit.addEventListener("click", () => { hideTip(); focusDrive(d.drive); });
+    hit.addEventListener("keydown", ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); focusDrive(d.drive); } });
+    svg.append(hit);
   });
 }
+const driveTip = d => `<b>Drive ${d.drive}${d.brake_drag_suspected ? " · brake held" : ""}</b>` + trs([
+  ["Energy per mile", fmt(d.wh_per_mi) + " Wh/mi"], ["Distance", fmt(d.distance_mi, 2) + " mi"],
+  ["Average moving speed", fmt(d.avg_moving_mph, 1) + " mph"], ["Full throttle", fmt(d.full_throttle_pct) + "% of the time"],
+  ["Energy used", fmt(d.energy_in_wh) + " Wh"], ["Speeding up", `${fmt(d.speeding_up_wh)} Wh (${fmt(d.speeding_up_pct)}%)`],
+  ["Regen back", fmt(Math.abs(d.regen_wh)) + " Wh"], ["Stops", d.stops], ["Controller errors", d.mc_errors],
+]) + `<div class="hint">Click to zoom the timeline to this drive</div>`;
 function drawEff() {
   if (!DE.length) return;
   bars("eff-bars", DE, [{ key: "wh_per_mi", label: "Wh/mi", color: d => d.brake_drag_suspected ? "--s2" : "--s1" }], { unit: "Wh/mi" });
@@ -461,6 +584,8 @@ function drawGap() {
   svg.append(el("line", { x1: x(0), y1: y(0), x2: x(mx), y2: y(mx), stroke: "var(--muted)" }));
   svg.append(el("text", { x: x(mx * 0.97), y: y(mx * 0.97) + 14, "text-anchor": "end" }, "equal"));
   GAP.points.forEach(([a, bb]) => svg.append(el("circle", { cx: x(a), cy: y(bb), r: 3, fill: "var(--s1)", opacity: 0.45 })));
+  svg.append(el("circle", { class: "hdot", cx: -10, cy: -10, r: 5, fill: "var(--s1)", stroke: "var(--surface)", "stroke-width": 2 }));
+  svg._s = { x, y };
   svg.append(el("line", { x1: x(0), y1: y(f.offset_a), x2: x(mx), y2: y(Math.min(mx, f.slope * mx + f.offset_a)), stroke: "var(--s2)", "stroke-width": 2 }));
   svg.append(el("text", { x: l + 6, y: t + 12 }, "battery A ↑"));
   const hr = GAP.hi_res || {};
@@ -471,6 +596,22 @@ function drawGap() {
     ["Battery vs controller voltage at rest", `+${fmt(GAP.idle_voltage_offset_v, 1)} V (calibration)`],
     ["Voltage lost in cables, fuse and contactor", `≈ ${fmt(GAP.wiring_resistance_mohm, 1)} mΩ`],
   ].map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+}
+
+{
+  const svg = document.getElementById("gap-chart");
+  svg.addEventListener("pointermove", ev => {
+    if (!svg._s) return;
+    const p = svgPt(svg, ev), { x, y } = svg._s; let best = null, bd = 14 * 14;
+    GAP.points.forEach(pt => { const dd = (x(pt[0]) - p.x) ** 2 + (y(pt[1]) - p.y) ** 2; if (dd < bd) { bd = dd; best = pt; } });
+    const dot = svg.querySelector(".hdot");
+    if (!best) { hideTip(); dot.setAttribute("cx", -10); return; }
+    dot.setAttribute("cx", x(best[0])); dot.setAttribute("cy", y(best[1]));
+    const diff = best[1] - best[0], V = 52;
+    showTip(ev, `<b>10 s average while driving</b>` + trs([["Controller", fmt(best[0], 1) + " A"], ["Battery", fmt(best[1], 1) + " A"],
+      ["Difference", `${diff >= 0 ? "+" : ""}${fmt(diff, 1)} A (≈ ${fmt(diff * V)} W)`]]));
+  });
+  svg.addEventListener("pointerleave", () => { hideTip(); const d = svg.querySelector(".hdot"); if (d) d.setAttribute("cx", -10); });
 }
 
 /* ---------- motor heat tool ---------- */
@@ -496,22 +637,47 @@ function drawMH() {
   let d = ""; for (let s = 0; s <= span; s += 10) d += (s ? "L" : "M") + x(s).toFixed(1) + " " + y(ss + (T0 - ss) * Math.exp(-s / TM.tau_s)).toFixed(1);
   svg.append(el("path", { d, fill: "none", stroke: "var(--s2)", "stroke-width": 2, "stroke-linecap": "round" }));
   if (secs != null && secs <= span) svg.append(el("circle", { cx: x(secs), cy: y(LIM), r: 5, fill: "var(--critical)", stroke: "var(--surface)", "stroke-width": 2 }));
+  svg.append(el("line", { class: "xh", x1: -10, x2: -10, y1: t, y2: H - b, stroke: "var(--ink2)", "stroke-width": 1 }));
+  svg.append(el("circle", { class: "hdot", cx: -10, cy: -10, r: 5, fill: "var(--s2)", stroke: "var(--surface)", "stroke-width": 2 }));
+  svg._s = { x, y, l, r, W, span, ss, T0, secs };
   document.getElementById("mh-fine").textContent =
     `dT/dt = ${TM.a.toFixed(4)}·(I/100)² + ${TM.b.toFixed(4)}·(rpm/1000) − (T − ${fmt(TM.t_amb_c, 1)})/${fmt(TM.tau_s)} per second. Fit to ${fmt(TM.points)} readings: R² ${TM.r2.toFixed(2)}, typical error ${fmt(TM.rmse_c, 1)} °C. The Home Assistant package uses the same model to warn the driver on the e-ink display.`;
 }
 ampsIn.oninput = drawMH; rpmIn.oninput = drawMH; t0In.oninput = drawMH;
+{
+  const svg = document.getElementById("mh-chart");
+  const off = () => { hideTip(); const xh = svg.querySelector(".xh"), d = svg.querySelector(".hdot"); if (xh) { xh.setAttribute("x1", -10); xh.setAttribute("x2", -10); d.setAttribute("cx", -10); } };
+  svg.addEventListener("pointermove", ev => {
+    const s = svg._s, p = svgPt(svg, ev);
+    if (p.x < s.l || p.x > s.W - s.r) return off();
+    const sec = (p.x - s.l) / (s.W - s.l - s.r) * s.span, temp = s.ss + (s.T0 - s.ss) * Math.exp(-sec / TM.tau_s);
+    const xh = svg.querySelector(".xh"), d = svg.querySelector(".hdot");
+    xh.setAttribute("x1", s.x(sec)); xh.setAttribute("x2", s.x(sec)); d.setAttribute("cx", s.x(sec)); d.setAttribute("cy", s.y(temp));
+    showTip(ev, `<b>After ${sec < 120 ? fmt(sec) + " s" : fmt(sec / 60, 1) + " min"}</b>` + trs([["Predicted motor temp", fmt(temp) + " °C"],
+      ["Headroom to " + LIM + " °C", temp >= LIM ? "none" : fmt(LIM - temp) + " °C"]]));
+  });
+  svg.addEventListener("pointerleave", off);
+}
 
 /* ---------- tables ---------- */
 const ctxColor = { "pulling away": "--warning", "under way": "--s1", "stalled under load": "--critical" };
 document.getElementById("ov").innerHTML =
   `<thead><tr><th>Time</th><th>Error</th><th>Situation</th><th class="r">Speed</th><th class="r">Throttle</th><th class="r">Full throttle</th><th class="r">Peak phase A</th><th class="r">Motor °C</th><th>Cleared by</th></tr></thead><tbody>` +
-  ov.map(o => `<tr><td>${hm(iso2s(o.time), true)}</td><td>${o.error}</td><td><span class="pill"><i style="background:var(${ctxColor[o.context] || "--muted"})"></i>${o.context}</span></td>` +
+  ov.map(o => `<tr class="click" tabindex="0" data-t="${iso2s(o.time)}"><td>${hm(iso2s(o.time), true)}</td><td>${o.error}</td><td><span class="pill"><i style="background:var(${ctxColor[o.context] || "--muted"})"></i>${o.context}</span></td>` +
     `<td class="r">${fmt(o.speed_mph, 1)} mph${o.low_speed_reading ? "*" : ""}</td><td class="r">${fmt(o.max_throttle_pct)}%</td><td class="r">${o.secs_at_full_throttle} s</td><td class="r">${fmt(o.max_phase_current_a)}</td><td class="r">${fmt(o.motor_temp_c)}</td><td>${o.cleared_by}</td></tr>`).join("") + `</tbody>`;
 document.getElementById("drives").innerHTML =
   `<thead><tr><th>Drive</th><th>Start</th><th class="r">Miles</th><th class="r">Moving min</th><th class="r">Avg mph</th><th class="r">Max mph</th><th class="r">Wh/mi</th><th class="r">Full throttle</th><th class="r">Speeding up</th><th class="r">Regen</th><th class="r">SOC</th><th class="r">Motor max °C</th><th class="r">Errors</th></tr></thead><tbody>` +
-  drives.map(d => { const e = DE.find(x => x.drive === d.drive) || {}; return `<tr><td>${d.drive}${e.brake_drag_suspected ? ' <span class="pill"><i style="background:var(--s2)"></i>brake</span>' : ""}</td><td>${hm(iso2s(d.start))}</td><td class="r">${fmt(d.distance_mi, 2)}</td><td class="r">${fmt(d.moving_min, 1)}</td><td class="r">${fmt(d.avg_moving_mph, 1)}</td><td class="r">${fmt(d.max_mph, 1)}</td>` +
+  drives.map(d => { const e = DE.find(x => x.drive === d.drive) || {}; return `<tr class="click" tabindex="0" data-drive="${d.drive}"><td>${d.drive}${e.brake_drag_suspected ? ' <span class="pill"><i style="background:var(--s2)"></i>brake</span>' : ""}</td><td>${hm(iso2s(d.start))}</td><td class="r">${fmt(d.distance_mi, 2)}</td><td class="r">${fmt(d.moving_min, 1)}</td><td class="r">${fmt(d.avg_moving_mph, 1)}</td><td class="r">${fmt(d.max_mph, 1)}</td>` +
     `<td class="r">${fmt(d.wh_per_mi, 1)}</td><td class="r">${fmt(e.full_throttle_pct)}%</td><td class="r">${fmt(e.speeding_up_pct)}%</td><td class="r">${fmt(d.regen_pct, 1)}%</td><td class="r">${d.soc_start == null ? "no BMS data" : fmt(d.soc_start) + "→" + fmt(d.soc_end) + "%"}</td><td class="r">${fmt(d.max_motor_temp_c)}</td><td class="r">${d.mc_errors}</td></tr>`; }).join("") + `</tbody>`;
 
+document.querySelectorAll("#drives tr[data-drive], #ov tr[data-t]").forEach(tr => {
+  const go = () => tr.dataset.drive ? focusDrive(+tr.dataset.drive) : focusTime(+tr.dataset.t);
+  tr.addEventListener("click", go);
+  tr.addEventListener("keydown", ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); go(); } });
+});
+function markRows() {
+  document.querySelectorAll("#drives tr[data-drive]").forEach(tr => tr.classList.toggle("sel", +tr.dataset.drive === selectedDrive));
+}
 const solarWin = BE.solar.windows.map(w => `${hm(iso2s(w.start))}–${hm(iso2s(w.end))}`).join(", ");
 const noBms = drives.filter(d => d.soc_start == null).map(d => d.drive);
 const packRows = [
